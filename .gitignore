@@ -1,0 +1,39 @@
+# Go builds
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go workspace cache
+**/.DS_Store
+*.out
+
+# Dependencies
+vendor/
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Logs & temp
+*.log
+tmp/
+
+# Environment
+.env
+.env.*
+
+# Frontend build artifacts
+node_modules/
+dist/
+build/
+.next/
+
+# Package managers
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
