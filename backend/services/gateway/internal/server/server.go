@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -43,6 +44,7 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/api/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/auth/logout", s.handleLogout)
 	s.mux.Handle("/api/users/me", s.authenticated(s.handleMe))
 
 	// books & chats (auth required)
@@ -55,7 +57,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/admin/books", s.adminOnly(s.handleAdminBooks))
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -84,12 +86,8 @@ func (s *Server) adminOnly(next authHandler) http.Handler {
 }
 
 func (s *Server) authorize(r *http.Request) (domain.User, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return domain.User{}, false
-	}
-	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	if token == "" {
+	token, ok := bearerToken(r)
+	if !ok {
 		return domain.User{}, false
 	}
 	return s.app.UserFromToken(token)
@@ -132,6 +130,23 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authResponse{Token: token, User: user})
 }
 
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	token, ok := bearerToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := s.app.Logout(token); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.User) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -146,7 +161,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	case http.MethodPost:
 		s.handleUploadBook(w, r, user)
 	case http.MethodGet:
-		s.handleListBooks(w, r, user)
+		s.handleListBooks(w, user)
 	default:
 		methodNotAllowed(w)
 	}
@@ -159,7 +174,11 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 		http.NotFound(w, r)
 		return
 	}
-	book, ok := s.app.GetBook(id)
+	book, ok, err := s.app.GetBook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	if !ok {
 		notFound(w, "book not found")
 		return
@@ -201,8 +220,12 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 	writeJSON(w, http.StatusCreated, book)
 }
 
-func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
-	books := s.app.ListBooks(user)
+func (s *Server) handleListBooks(w http.ResponseWriter, user domain.User) {
+	books, err := s.app.ListBooks(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": books,
 		"count": len(books),
@@ -243,7 +266,11 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 		methodNotAllowed(w)
 		return
 	}
-	users := s.app.ListUsers()
+	users, err := s.app.ListUsers()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": users,
 		"count": len(users),
@@ -255,7 +282,11 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user d
 		methodNotAllowed(w)
 		return
 	}
-	books := s.app.ListBooks(user)
+	books, err := s.app.ListBooks(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": books,
 		"count": len(books),
@@ -283,6 +314,20 @@ type authRequest struct {
 type authResponse struct {
 	Token string      `json:"token"`
 	User  domain.User `json:"user"`
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		slog.Warn("missing bearer prefix", "path", r.URL.Path)
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if token == "" {
+		slog.Warn("empty bearer token", "path", r.URL.Path)
+		return "", false
+	}
+	return token, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

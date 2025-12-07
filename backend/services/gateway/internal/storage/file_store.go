@@ -15,8 +15,8 @@ type FileStore struct {
 
 // NewFileStore creates the base directory if missing.
 func NewFileStore(basePath string) (*FileStore, error) {
-	if basePath == "" {
-		basePath = "./data"
+	if strings.TrimSpace(basePath) == "" {
+		return nil, fmt.Errorf("storage base path is required")
 	}
 	if err := os.MkdirAll(basePath, 0o755); err != nil {
 		return nil, fmt.Errorf("create storage dir: %w", err)

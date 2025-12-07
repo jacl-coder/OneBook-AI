@@ -21,7 +21,8 @@
 ## 后端（MVP 骨架）
 - 位置：`backend/services/gateway/`（单体入口；后续可拆到多服务）
 - 路由（均需 Bearer token，除认证与健康检查）：
-  - 认证：`POST /api/auth/signup`，`POST /api/auth/login` 返回 `token`；`GET /api/users/me`
+  - 认证：`POST /api/auth/signup`，`POST /api/auth/login` 返回 JWT；`GET /api/users/me`
+  - 登出：`POST /api/auth/logout`（需要 Bearer token，立即失效会话）
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE）
   - 对话：`POST /api/chats`（body: bookId + question）
   - 管理员：`GET /api/admin/users`，`GET /api/admin/books`
