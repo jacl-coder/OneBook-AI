@@ -1,0 +1,8 @@
+port: "8080"
+dataDir: "./data"
+databaseURL: "postgres://user:pass@localhost:5432/onebook?sslmode=disable"
+redisAddr: "localhost:6379"
+redisPassword: ""
+sessionTTL: "24h"
+logLevel: "info"
+jwtSecret: "change-me"

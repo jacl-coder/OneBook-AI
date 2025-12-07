@@ -2,19 +2,35 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
+	"onebookai/internal/util"
 	"onebookai/services/gateway/internal/app"
+	"onebookai/services/gateway/internal/config"
 	"onebookai/services/gateway/internal/server"
 )
 
 func main() {
-	port := env("PORT", "8080")
-	dataDir := env("DATA_DIR", "./data")
+	cfg, err := config.Load(config.ConfigPath)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	sessionTTL, err := config.ParseSessionTTL(cfg.SessionTTL)
+	if err != nil {
+		log.Fatalf("failed to parse session TTL: %v", err)
+	}
 
-	appCore, err := app.New(app.Config{StorageDir: dataDir})
+	logger := util.InitLogger(cfg.LogLevel)
+
+	appCore, err := app.New(app.Config{
+		StorageDir:    cfg.DataDir,
+		DatabaseURL:   cfg.DatabaseURL,
+		RedisAddr:     cfg.RedisAddr,
+		RedisPassword: cfg.RedisPassword,
+		SessionTTL:    sessionTTL,
+	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)
 	}
@@ -23,7 +39,7 @@ func main() {
 		App: appCore,
 	})
 
-	addr := ":" + port
+	addr := ":" + cfg.Port
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      httpServer.Router(),
@@ -32,15 +48,8 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("server listening on %s", addr)
+	slog.Info("server listening", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+		logger.Error("server error", "err", err)
 	}
-}
-
-func env(key, fallback string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return fallback
 }

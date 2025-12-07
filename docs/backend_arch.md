@@ -24,3 +24,4 @@
 
 ## 现状
 - 仓库内已按 `backend/services/<service>/` 划分目录；当前网关/单体逻辑在 `backend/services/gateway/`，其他服务为占位入口，后续逐步拆分实现。 
+- 网关实现：路由涵盖 signup/login/logout/me、书籍 CRUD、聊天、admin 查询、healthz；元数据存储在 Postgres，文件存储本地，会话 token 使用 JWT（HMAC，含 TTL，登出立即失效），向量检索尚未接入。
