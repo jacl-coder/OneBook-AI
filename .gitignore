@@ -26,6 +26,12 @@ tmp/
 .env
 .env.*
 
+# Backend build/cache & data
+backend/.cache/
+backend/data/
+backend/services/gateway/data/
+backend/services/gateway/.cache/
+
 # Frontend build artifacts
 node_modules/
 dist/
@@ -36,4 +42,3 @@ build/
 pnpm-lock.yaml
 yarn.lock
 package-lock.json
-

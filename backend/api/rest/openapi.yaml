@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: OneBook AI API
+  version: 0.1.0
+  description: |
+    REST API contract (draft). To be refined as services split (gateway/auth/ingest/indexer/chat).
+servers:
+  - url: http://localhost:8080
+    description: Local dev (gateway)
+tags:
+  - name: auth
+    description: Authentication and user management
+  - name: books
+    description: Book upload and management
+  - name: chat
+    description: Conversational endpoints
+  - name: admin
+    description: Admin/ops endpoints
+paths: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
