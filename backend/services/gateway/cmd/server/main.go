@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"onebookai/internal/util"
-	"onebookai/services/gateway/internal/app"
+	"onebookai/services/gateway/internal/authclient"
+	"onebookai/services/gateway/internal/bookclient"
+	"onebookai/services/gateway/internal/chatclient"
 	"onebookai/services/gateway/internal/config"
 	"onebookai/services/gateway/internal/server"
 )
@@ -17,26 +19,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	sessionTTL, err := config.ParseSessionTTL(cfg.SessionTTL)
-	if err != nil {
-		log.Fatalf("failed to parse session TTL: %v", err)
-	}
 
 	logger := util.InitLogger(cfg.LogLevel)
 
-	appCore, err := app.New(app.Config{
-		StorageDir:    cfg.DataDir,
-		DatabaseURL:   cfg.DatabaseURL,
-		RedisAddr:     cfg.RedisAddr,
-		RedisPassword: cfg.RedisPassword,
-		SessionTTL:    sessionTTL,
-	})
-	if err != nil {
-		log.Fatalf("failed to init app: %v", err)
-	}
+	authClient := authclient.NewClient(cfg.AuthServiceURL)
+	bookClient := bookclient.NewClient(cfg.BookServiceURL)
+	chatClient := chatclient.NewClient(cfg.ChatServiceURL)
 
 	httpServer := server.New(server.Config{
-		App: appCore,
+		Auth: authClient,
+		Book: bookClient,
+		Chat: chatClient,
 	})
 
 	addr := ":" + cfg.Port

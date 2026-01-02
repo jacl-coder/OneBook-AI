@@ -1,0 +1,73 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// FileConfig represents configuration loaded from YAML.
+type FileConfig struct {
+	Port           string `yaml:"port"`
+	DatabaseURL    string `yaml:"databaseURL"`
+	LogLevel       string `yaml:"logLevel"`
+	MinioEndpoint  string `yaml:"minioEndpoint"`
+	MinioAccessKey string `yaml:"minioAccessKey"`
+	MinioSecretKey string `yaml:"minioSecretKey"`
+	MinioBucket    string `yaml:"minioBucket"`
+	MinioUseSSL    bool   `yaml:"minioUseSSL"`
+	IngestURL      string `yaml:"ingestURL"`
+	InternalToken  string `yaml:"internalToken"`
+}
+
+// Load reads config from path (defaults to config.yaml).
+func Load(path string) (FileConfig, error) {
+	cfg := FileConfig{}
+	if path == "" {
+		path = ConfigPath
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, fmt.Errorf("read config: %w", err)
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+	if cfg.InternalToken == "" {
+		cfg.InternalToken = os.Getenv("ONEBOOK_INTERNAL_TOKEN")
+	}
+	if err := validateConfig(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func validateConfig(cfg FileConfig) error {
+	if cfg.Port == "" {
+		return errors.New("config: port is required (set in config.yaml)")
+	}
+	if cfg.DatabaseURL == "" {
+		return errors.New("config: databaseURL is required (set in config.yaml)")
+	}
+	if cfg.MinioEndpoint == "" {
+		return errors.New("config: minioEndpoint is required (set in config.yaml)")
+	}
+	if cfg.MinioAccessKey == "" {
+		return errors.New("config: minioAccessKey is required (set in config.yaml)")
+	}
+	if cfg.MinioSecretKey == "" {
+		return errors.New("config: minioSecretKey is required (set in config.yaml)")
+	}
+	if cfg.MinioBucket == "" {
+		return errors.New("config: minioBucket is required (set in config.yaml)")
+	}
+	if cfg.IngestURL == "" {
+		return errors.New("config: ingestURL is required (set in config.yaml)")
+	}
+	if cfg.InternalToken == "" {
+		return errors.New("config: internalToken is required (set in config.yaml or ONEBOOK_INTERNAL_TOKEN)")
+	}
+	return nil
+}

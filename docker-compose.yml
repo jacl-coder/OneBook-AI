@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: onebook-postgres
+    environment:
+      POSTGRES_USER: onebook
+      POSTGRES_PASSWORD: onebook
+      POSTGRES_DB: onebook
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/postgres-data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+  redis:
+    image: redis:7-alpine
+    container_name: onebook-redis
+    ports:
+      - "6379:6379"
+  minio:
+    image: minio/minio:latest
+    container_name: onebook-minio
+    environment:
+      MINIO_ROOT_USER: onebook
+      MINIO_ROOT_PASSWORD: onebook123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./docker/minio-data:/data
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "sleep 2; mc alias set local http://minio:9000 onebook onebook123; mc mb -p local/onebook; exit 0"
