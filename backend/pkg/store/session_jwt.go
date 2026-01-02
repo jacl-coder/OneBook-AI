@@ -12,8 +12,9 @@ import (
 
 // JWTSessionStore issues and validates HMAC-SHA256 JWT tokens.
 type JWTSessionStore struct {
-	secret []byte
-	ttl    time.Duration
+	secret  []byte
+	ttl     time.Duration
+	revoker TokenRevoker
 }
 
 type jwtClaims struct {
@@ -23,10 +24,11 @@ type jwtClaims struct {
 }
 
 // NewJWTSessionStore builds a stateless JWT session store.
-func NewJWTSessionStore(secret string, ttl time.Duration) *JWTSessionStore {
+func NewJWTSessionStore(secret string, ttl time.Duration, revoker TokenRevoker) *JWTSessionStore {
 	return &JWTSessionStore{
-		secret: []byte(secret),
-		ttl:    ttl,
+		secret:  []byte(secret),
+		ttl:     ttl,
+		revoker: revoker,
 	}
 }
 
@@ -51,12 +53,30 @@ func (s *JWTSessionStore) GetUserIDByToken(token string) (string, bool, error) {
 	if time.Unix(claims.Exp, 0).Before(time.Now().UTC()) {
 		return "", false, errors.New("token expired")
 	}
+	if s.revoker != nil {
+		revoked, err := s.revoker.IsRevoked(token)
+		if err != nil {
+			return "", false, err
+		}
+		if revoked {
+			return "", false, errors.New("token revoked")
+		}
+	}
 	return claims.Sub, true, nil
 }
 
-// DeleteSession is a no-op for stateless JWT; provided for interface parity.
-func (s *JWTSessionStore) DeleteSession(_ string) error {
-	return nil
+// DeleteSession revokes the token until it expires.
+func (s *JWTSessionStore) DeleteSession(token string) error {
+	if s.revoker == nil {
+		return nil
+	}
+	claims, err := parseAndVerify(token, s.secret)
+	if err != nil {
+		return nil
+	}
+	expiry := time.Unix(claims.Exp, 0)
+	ttl := time.Until(expiry)
+	return s.revoker.Revoke(token, ttl)
 }
 
 const headerSegment = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" // {"alg":"HS256","typ":"JWT"}

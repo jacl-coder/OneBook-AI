@@ -31,6 +31,9 @@ backend/.cache/
 backend/data/
 backend/services/gateway/data/
 backend/services/gateway/.cache/
+backend/services/book/data/
+docker/postgres-data/
+docker/minio-data/
 
 # Frontend build artifacts
 node_modules/

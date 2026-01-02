@@ -2,32 +2,39 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"onebookai/pkg/domain"
-	"onebookai/services/gateway/internal/app"
+	"onebookai/services/gateway/internal/authclient"
+	"onebookai/services/gateway/internal/bookclient"
+	"onebookai/services/gateway/internal/chatclient"
 )
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App *app.App
+	Auth *authclient.Client
+	Book *bookclient.Client
+	Chat *chatclient.Client
 }
 
 // Server exposes HTTP endpoints for the backend.
 type Server struct {
-	app *app.App
-	mux *http.ServeMux
+	auth  *authclient.Client
+	books *bookclient.Client
+	chat  *chatclient.Client
+	mux   *http.ServeMux
 }
 
 // New constructs the server with routes configured.
 func New(cfg Config) *Server {
 	s := &Server{
-		app: cfg.App,
-		mux: http.NewServeMux(),
+		auth:  cfg.Auth,
+		books: cfg.Book,
+		chat:  cfg.Chat,
+		mux:   http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -46,6 +53,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
 	s.mux.HandleFunc("/api/auth/logout", s.handleLogout)
 	s.mux.Handle("/api/users/me", s.authenticated(s.handleMe))
+	s.mux.Handle("/api/users/me/password", s.authenticated(s.handleChangePassword))
 
 	// books & chats (auth required)
 	s.mux.Handle("/api/books", s.authenticated(s.handleBooks))
@@ -54,6 +62,7 @@ func (s *Server) routes() {
 
 	// admin
 	s.mux.Handle("/api/admin/users", s.adminOnly(s.handleAdminUsers))
+	s.mux.Handle("/api/admin/users/", s.adminOnly(s.handleAdminUserByID))
 	s.mux.Handle("/api/admin/books", s.adminOnly(s.handleAdminBooks))
 }
 
@@ -90,7 +99,11 @@ func (s *Server) authorize(r *http.Request) (domain.User, bool) {
 	if !ok {
 		return domain.User{}, false
 	}
-	return s.app.UserFromToken(token)
+	user, err := s.auth.Me(token)
+	if err != nil {
+		return domain.User{}, false
+	}
+	return user, true
 }
 
 // auth handlers
@@ -104,9 +117,9 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, token, err := s.app.SignUp(req.Email, req.Password)
+	user, token, err := s.auth.SignUp(req.Email, req.Password)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAuthError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, authResponse{Token: token, User: user})
@@ -122,9 +135,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, token, err := s.app.Login(req.Email, req.Password)
+	user, token, err := s.auth.Login(req.Email, req.Password)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAuthError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, authResponse{Token: token, User: user})
@@ -140,19 +153,68 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	if err := s.app.Logout(token); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+	if err := s.auth.Logout(token); err != nil {
+		writeAuthError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.User) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, user)
+	case http.MethodPatch:
+		var req updateMeRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.Email == "" {
+			writeError(w, http.StatusBadRequest, "email is required")
+			return
+		}
+		token, ok := bearerToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		updated, err := s.auth.UpdateMe(token, req.Email)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, user domain.User) {
+	_ = user
+	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, user)
+	var req changePasswordRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "currentPassword and newPassword are required")
+		return
+	}
+	token, ok := bearerToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := s.auth.ChangePassword(token, req.CurrentPassword, req.NewPassword); err != nil {
+		writeAuthError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // /api/books
@@ -174,25 +236,17 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 		http.NotFound(w, r)
 		return
 	}
-	book, ok, err := s.app.GetBook(id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !ok {
-		notFound(w, "book not found")
-		return
-	}
-	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
-		writeError(w, http.StatusForbidden, "forbidden")
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		book, err := s.books.GetBook(user, id)
+		if err != nil {
+			writeBookError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, book)
 	case http.MethodDelete:
-		if err := s.app.DeleteBook(id); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+		if err := s.books.DeleteBook(user, id); err != nil {
+			writeBookError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -212,18 +266,18 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 		return
 	}
 	defer file.Close()
-	book, err := s.app.UploadBook(user, header.Filename, file, header.Size)
+	book, err := s.books.UploadBook(user, header.Filename, file)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBookError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, book)
 }
 
 func (s *Server) handleListBooks(w http.ResponseWriter, user domain.User) {
-	books, err := s.app.ListBooks(user)
+	books, err := s.books.ListBooks(user)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeBookError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -246,15 +300,14 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 		writeError(w, http.StatusBadRequest, "bookId is required")
 		return
 	}
-	ans, err := s.app.AskQuestion(user, req.BookID, req.Question)
+	book, err := s.books.GetBook(user, req.BookID)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, app.ErrBookNotReady) {
-			status = http.StatusConflict
-		} else if strings.Contains(err.Error(), "forbidden") {
-			status = http.StatusForbidden
-		}
-		writeError(w, status, err.Error())
+		writeBookError(w, err)
+		return
+	}
+	ans, err := s.chat.AskQuestion(user, book, req.Question)
+	if err != nil {
+		writeChatError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ans)
@@ -262,13 +315,19 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 
 // admin handlers
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user domain.User) {
+	_ = user
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	users, err := s.app.ListUsers()
+	token, ok := bearerToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	users, err := s.auth.AdminListUsers(token)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeAuthError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -277,14 +336,65 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 	})
 }
 
+func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, user domain.User) {
+	_ = user
+	id := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPatch {
+		methodNotAllowed(w)
+		return
+	}
+	var req adminUserUpdateRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	var role *domain.UserRole
+	if req.Role != "" {
+		parsed, ok := parseUserRole(req.Role)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid role")
+			return
+		}
+		role = &parsed
+	}
+	var status *domain.UserStatus
+	if req.Status != "" {
+		parsed, ok := parseUserStatus(req.Status)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid status")
+			return
+		}
+		status = &parsed
+	}
+	if role == nil && status == nil {
+		writeError(w, http.StatusBadRequest, "role or status is required")
+		return
+	}
+	token, ok := bearerToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	updated, err := s.auth.AdminUpdateUser(token, id, role, status)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	books, err := s.app.ListBooks(user)
+	books, err := s.books.ListBooks(user)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeBookError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -295,10 +405,6 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user d
 
 func methodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-}
-
-func notFound(w http.ResponseWriter, msg string) {
-	writeError(w, http.StatusNotFound, msg)
 }
 
 type chatRequest struct {
@@ -316,6 +422,20 @@ type authResponse struct {
 	User  domain.User `json:"user"`
 }
 
+type updateMeRequest struct {
+	Email string `json:"email"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+type adminUserUpdateRequest struct {
+	Role   string `json:"role"`
+	Status string `json:"status"`
+}
+
 func bearerToken(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
@@ -330,6 +450,28 @@ func bearerToken(r *http.Request) (string, bool) {
 	return token, true
 }
 
+func parseUserRole(role string) (domain.UserRole, bool) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case string(domain.RoleUser):
+		return domain.RoleUser, true
+	case string(domain.RoleAdmin):
+		return domain.RoleAdmin, true
+	default:
+		return "", false
+	}
+}
+
+func parseUserStatus(status string) (domain.UserStatus, bool) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case string(domain.StatusActive):
+		return domain.StatusActive, true
+	case string(domain.StatusDisabled):
+		return domain.StatusDisabled, true
+	default:
+		return "", false
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -338,4 +480,28 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeAuthError(w http.ResponseWriter, err error) {
+	if apiErr, ok := err.(*authclient.APIError); ok {
+		writeError(w, apiErr.Status, apiErr.Message)
+		return
+	}
+	writeError(w, http.StatusBadGateway, "auth service unavailable")
+}
+
+func writeBookError(w http.ResponseWriter, err error) {
+	if apiErr, ok := err.(*bookclient.APIError); ok {
+		writeError(w, apiErr.Status, apiErr.Message)
+		return
+	}
+	writeError(w, http.StatusBadGateway, "book service unavailable")
+}
+
+func writeChatError(w http.ResponseWriter, err error) {
+	if apiErr, ok := err.(*chatclient.APIError); ok {
+		writeError(w, apiErr.Status, apiErr.Message)
+		return
+	}
+	writeError(w, http.StatusBadGateway, "chat service unavailable")
 }
