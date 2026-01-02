@@ -87,7 +87,9 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 会同时启动 Auth 服务、Book 服务、Chat 服务、Ingest 服务、Indexer 服务与 Gateway。
 
 ## 接口文档
-- REST/OpenAPI：`backend/api/rest/openapi.yaml`
+- REST/OpenAPI（Gateway）：`backend/api/rest/openapi.yaml`
+- REST/OpenAPI（Internal）：`backend/api/rest/openapi-internal.yaml`
+- 本地 Swagger UI：`docker compose up -d swagger-ui` 后访问 `http://localhost:8086`（可在下拉中切换 Gateway/Internal）
 
 ## 后续步骤（建议）
 1) 接入异步队列（Kafka/NATS/Redis Streams）与任务重试。
