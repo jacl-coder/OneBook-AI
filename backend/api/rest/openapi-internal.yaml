@@ -1,0 +1,446 @@
+openapi: 3.0.3
+info:
+  title: OneBook AI Internal API
+  version: 0.1.0
+  description: |
+    Internal service APIs (book/chat/ingest/indexer). Do not expose publicly.
+servers:
+  - url: http://localhost:8082
+    description: Local dev (book service)
+  - url: http://localhost:8083
+    description: Local dev (chat service)
+  - url: http://localhost:8084
+    description: Local dev (ingest service)
+  - url: http://localhost:8085
+    description: Local dev (indexer service)
+tags:
+  - name: internal-book
+    description: Book service internal endpoints
+  - name: chat-internal
+    description: Chat service internal endpoint
+  - name: ingest
+    description: Ingest pipeline (internal)
+  - name: indexer
+    description: Indexer pipeline (internal)
+paths:
+  /healthz:
+    get:
+      tags: [internal-book, chat-internal, ingest, indexer]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /internal/books/{id}/file:
+    get:
+      tags: [internal-book]
+      summary: Get book file download URL
+      security:
+        - internalToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalBookFileResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /internal/books/{id}/status:
+    patch:
+      tags: [internal-book]
+      summary: Update book status
+      security:
+        - internalToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookStatusUpdateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats:
+    post:
+      tags: [chat-internal]
+      summary: Ask a question (chat service)
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/UserRoleHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatServiceRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Answer"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Book not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /ingest/jobs:
+    post:
+      tags: [ingest]
+      summary: Create ingest job
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJob"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /ingest/jobs/{id}:
+    get:
+      tags: [ingest]
+      summary: Get ingest job
+      security:
+        - internalToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJob"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /indexer/jobs:
+    post:
+      tags: [indexer]
+      summary: Create index job
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IndexRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexJob"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /indexer/jobs/{id}:
+    get:
+      tags: [indexer]
+      summary: Get index job
+      security:
+        - internalToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexJob"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  parameters:
+    UserIdHeader:
+      name: X-User-Id
+      in: header
+      required: true
+      schema:
+        type: string
+    UserRoleHeader:
+      name: X-User-Role
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [user, admin]
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Book:
+      type: object
+      properties:
+        id:
+          type: string
+        ownerId:
+          type: string
+        title:
+          type: string
+        originalFilename:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+        errorMessage:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, ownerId, title, originalFilename, status, sizeBytes, createdAt, updatedAt]
+    InternalBookFileResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        filename:
+          type: string
+      required: [url, filename]
+    BookStatusUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+        errorMessage:
+          type: string
+      required: [status]
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+    Source:
+      type: object
+      properties:
+        label:
+          type: string
+        location:
+          type: string
+        snippet:
+          type: string
+      required: [label, location, snippet]
+    Answer:
+      type: object
+      properties:
+        bookId:
+          type: string
+        question:
+          type: string
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        createdAt:
+          type: string
+          format: date-time
+      required: [bookId, question, answer, sources, createdAt]
+    ChatServiceRequest:
+      type: object
+      properties:
+        book:
+          $ref: "#/components/schemas/Book"
+        question:
+          type: string
+      required: [book, question]
+    IngestRequest:
+      type: object
+      properties:
+        bookId:
+          type: string
+      required: [bookId]
+    IndexRequest:
+      type: object
+      properties:
+        bookId:
+          type: string
+      required: [bookId]
+    IngestJob:
+      type: object
+      properties:
+        id:
+          type: string
+        bookId:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, done, failed]
+        errorMessage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, bookId, status, createdAt, updatedAt]
+    IndexJob:
+      type: object
+      properties:
+        id:
+          type: string
+        bookId:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, done, failed]
+        errorMessage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, bookId, status, createdAt, updatedAt]

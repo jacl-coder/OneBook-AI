@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$ROOT_DIR/backend/.cache/go-build"
 
 # Start local dependencies.
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init
+docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui
 
 # Run the auth service.
 cd "$ROOT_DIR/backend/services/auth"

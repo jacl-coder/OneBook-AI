@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"onebookai/internal/util"
 	"onebookai/pkg/domain"
 	"onebookai/services/gateway/internal/authclient"
 	"onebookai/services/gateway/internal/bookclient"
@@ -42,7 +43,7 @@ func New(cfg Config) *Server {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return s.mux
+	return util.WithCORS(s.mux)
 }
 
 func (s *Server) routes() {
