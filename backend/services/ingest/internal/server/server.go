@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"onebookai/internal/util"
 	"onebookai/services/ingest/internal/app"
 )
 
@@ -35,7 +36,7 @@ func New(cfg Config) *Server {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return s.mux
+	return util.WithCORS(s.mux)
 }
 
 func (s *Server) routes() {
