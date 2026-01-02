@@ -1,14 +1,20 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/pgvector/pgvector-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"onebookai/pkg/domain"
 )
+
+const migrateLockID int64 = 73217321
 
 // GormStore implements Store using GORM + Postgres.
 type GormStore struct {
@@ -21,10 +27,44 @@ func NewGormStore(dsn string) (*GormStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	if err := db.AutoMigrate(&UserModel{}, &BookModel{}, &MessageModel{}); err != nil {
-		return nil, fmt.Errorf("auto migrate: %w", err)
+	if err := withMigrationLock(db, func(tx *gorm.DB) error {
+		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+			return fmt.Errorf("create pgvector extension: %w", err)
+		}
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
+			return fmt.Errorf("auto migrate: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return &GormStore{db: db}, nil
+}
+
+func withMigrationLock(db *gorm.DB, fn func(*gorm.DB) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get sql db: %w", err)
+	}
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("open sql conn: %w", err)
+	}
+	defer conn.Close()
+	if err := execAdvisory(ctx, conn, "SELECT pg_advisory_lock($1)", migrateLockID); err != nil {
+		return fmt.Errorf("acquire migrate lock: %w", err)
+	}
+	defer func() {
+		_ = execAdvisory(ctx, conn, "SELECT pg_advisory_unlock($1)", migrateLockID)
+	}()
+	return fn(db)
+}
+
+func execAdvisory(ctx context.Context, conn *sql.Conn, query string, lockID int64) error {
+	_, err := conn.ExecContext(ctx, query, lockID)
+	return err
 }
 
 // SaveUser registers or updates a user.
@@ -32,7 +72,7 @@ func (s *GormStore) SaveUser(u domain.User) error {
 	model := userToModel(u)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"email", "password_hash", "role"}),
+		DoUpdates: clause.AssignmentColumns([]string{"email", "password_hash", "role", "status", "updated_at"}),
 	}).Create(&model).Error
 }
 
@@ -96,7 +136,7 @@ func (s *GormStore) SaveBook(b domain.Book) error {
 	model := bookToModel(b)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "status", "error_message", "size_bytes", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "storage_key", "status", "error_message", "size_bytes", "updated_at"}),
 	}).Create(&model).Error
 }
 
@@ -169,23 +209,90 @@ func (s *GormStore) AppendMessage(bookID string, msg domain.Message) error {
 	return s.db.Create(&model).Error
 }
 
+// ReplaceChunks replaces all chunks for a book.
+func (s *GormStore) ReplaceChunks(bookID string, chunks []domain.Chunk) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&ChunkModel{}, "book_id = ?", bookID).Error; err != nil {
+			return err
+		}
+		if len(chunks) == 0 {
+			return nil
+		}
+		models := make([]ChunkModel, 0, len(chunks))
+		for _, chunk := range chunks {
+			model := chunkToModel(chunk)
+			model.BookID = bookID
+			models = append(models, model)
+		}
+		return tx.CreateInBatches(&models, 200).Error
+	})
+}
+
+// ListChunksByBook returns chunks for a book.
+func (s *GormStore) ListChunksByBook(bookID string) ([]domain.Chunk, error) {
+	var models []ChunkModel
+	if err := s.db.Where("book_id = ?", bookID).Order("created_at ASC").Find(&models).Error; err != nil {
+		return nil, err
+	}
+	chunks := make([]domain.Chunk, 0, len(models))
+	for _, model := range models {
+		chunks = append(chunks, chunkFromModel(model))
+	}
+	return chunks, nil
+}
+
+// SetChunkEmbedding updates the embedding vector for a chunk.
+func (s *GormStore) SetChunkEmbedding(id string, embedding []float32) error {
+	return s.db.Model(&ChunkModel{}).Where("id = ?", id).
+		Update("embedding", pgvector.NewVector(embedding)).Error
+}
+
+// SearchChunks finds similar chunks by cosine distance.
+func (s *GormStore) SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error) {
+	if limit <= 0 {
+		return []domain.Chunk{}, nil
+	}
+	vec := pgvector.NewVector(embedding)
+	var models []ChunkModel
+	if err := s.db.Model(&ChunkModel{}).
+		Where("book_id = ? AND embedding IS NOT NULL", bookID).
+		Order(clause.Expr{SQL: "embedding <=> ?", Vars: []any{vec}}).
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	chunks := make([]domain.Chunk, 0, len(models))
+	for _, model := range models {
+		chunks = append(chunks, chunkFromModel(model))
+	}
+	return chunks, nil
+}
+
 func userToModel(u domain.User) UserModel {
 	return UserModel{
 		ID:           u.ID,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		Role:         string(u.Role),
+		Status:       string(u.Status),
 		CreatedAt:    u.CreatedAt,
+		UpdatedAt:    u.UpdatedAt,
 	}
 }
 
 func userFromModel(m UserModel) domain.User {
+	status := domain.UserStatus(m.Status)
+	if status == "" {
+		status = domain.StatusActive
+	}
 	return domain.User{
 		ID:           m.ID,
 		Email:        m.Email,
 		PasswordHash: m.PasswordHash,
 		Role:         domain.UserRole(m.Role),
+		Status:       status,
 		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
 	}
 }
 
@@ -195,6 +302,7 @@ func bookToModel(b domain.Book) BookModel {
 		OwnerID:          b.OwnerID,
 		Title:            b.Title,
 		OriginalFilename: b.OriginalFilename,
+		StorageKey:       b.StorageKey,
 		Status:           string(b.Status),
 		ErrorMessage:     b.ErrorMessage,
 		SizeBytes:        b.SizeBytes,
@@ -209,6 +317,7 @@ func bookFromModel(m BookModel) domain.Book {
 		OwnerID:          m.OwnerID,
 		Title:            m.Title,
 		OriginalFilename: m.OriginalFilename,
+		StorageKey:       m.StorageKey,
 		Status:           domain.BookStatus(m.Status),
 		ErrorMessage:     m.ErrorMessage,
 		SizeBytes:        m.SizeBytes,
@@ -224,5 +333,30 @@ func messageToModel(msg domain.Message) MessageModel {
 		Role:      msg.Role,
 		Content:   msg.Content,
 		CreatedAt: msg.CreatedAt,
+	}
+}
+
+func chunkToModel(chunk domain.Chunk) ChunkModel {
+	meta, _ := json.Marshal(chunk.Metadata)
+	return ChunkModel{
+		ID:        chunk.ID,
+		BookID:    chunk.BookID,
+		Content:   chunk.Content,
+		Metadata:  meta,
+		CreatedAt: chunk.CreatedAt,
+	}
+}
+
+func chunkFromModel(model ChunkModel) domain.Chunk {
+	var meta map[string]string
+	if len(model.Metadata) > 0 {
+		_ = json.Unmarshal(model.Metadata, &meta)
+	}
+	return domain.Chunk{
+		ID:        model.ID,
+		BookID:    model.BookID,
+		Content:   model.Content,
+		Metadata:  meta,
+		CreatedAt: model.CreatedAt,
 	}
 }

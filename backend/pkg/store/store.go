@@ -22,6 +22,12 @@ type Store interface {
 
 	// chats
 	AppendMessage(bookID string, msg domain.Message) error
+
+	// chunks
+	ReplaceChunks(bookID string, chunks []domain.Chunk) error
+	ListChunksByBook(bookID string) ([]domain.Chunk, error)
+	SetChunkEmbedding(id string, embedding []float32) error
+	SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error)
 }
 
 // SessionStore persists session tokens.
