@@ -35,8 +35,27 @@ func Load(path string) (FileConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
-	if cfg.InternalToken == "" {
-		cfg.InternalToken = os.Getenv("ONEBOOK_INTERNAL_TOKEN")
+	// Override with environment variables
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("MINIO_ENDPOINT"); v != "" {
+		cfg.MinioEndpoint = v
+	}
+	if v := os.Getenv("MINIO_ACCESS_KEY"); v != "" {
+		cfg.MinioAccessKey = v
+	}
+	if v := os.Getenv("MINIO_SECRET_KEY"); v != "" {
+		cfg.MinioSecretKey = v
+	}
+	if v := os.Getenv("MINIO_BUCKET"); v != "" {
+		cfg.MinioBucket = v
+	}
+	if v := os.Getenv("MINIO_USE_SSL"); v == "true" {
+		cfg.MinioUseSSL = true
+	}
+	if v := os.Getenv("ONEBOOK_INTERNAL_TOKEN"); v != "" {
+		cfg.InternalToken = v
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err

@@ -10,10 +10,10 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port           string `yaml:"port"`
-	DatabaseURL    string `yaml:"databaseURL"`
-	LogLevel       string `yaml:"logLevel"`
-	GeminiAPIKey   string `yaml:"geminiAPIKey"`
+	Port            string `yaml:"port"`
+	DatabaseURL     string `yaml:"databaseURL"`
+	LogLevel        string `yaml:"logLevel"`
+	GeminiAPIKey    string `yaml:"geminiAPIKey"`
 	GenerationModel string `yaml:"generationModel"`
 	EmbeddingModel  string `yaml:"embeddingModel"`
 	TopK            int    `yaml:"topK"`
@@ -32,8 +32,18 @@ func Load(path string) (FileConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
-	if cfg.GeminiAPIKey == "" {
-		cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY")
+	// Override with environment variables
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
+		cfg.GeminiAPIKey = v
+	}
+	if v := os.Getenv("GEMINI_GENERATION_MODEL"); v != "" {
+		cfg.GenerationModel = v
+	}
+	if v := os.Getenv("GEMINI_EMBEDDING_MODEL"); v != "" {
+		cfg.EmbeddingModel = v
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err

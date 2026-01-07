@@ -34,6 +34,19 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
+		if err := tx.Exec(`
+			DO $$
+			BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_name = 'chunk_models' AND column_name = 'embedding'
+			) THEN
+				ALTER TABLE chunk_models ALTER COLUMN embedding TYPE vector(3072);
+			END IF;
+			END $$;
+		`).Error; err != nil {
+			return fmt.Errorf("alter chunk embedding type: %w", err)
+		}
 		return nil
 	}); err != nil {
 		return nil, err

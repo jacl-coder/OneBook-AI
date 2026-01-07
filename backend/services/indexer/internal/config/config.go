@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,11 +34,23 @@ func Load(path string) (FileConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
-	if cfg.InternalToken == "" {
-		cfg.InternalToken = os.Getenv("ONEBOOK_INTERNAL_TOKEN")
+	// Override with environment variables
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
 	}
-	if cfg.GeminiAPIKey == "" {
-		cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY")
+	if v := os.Getenv("ONEBOOK_INTERNAL_TOKEN"); v != "" {
+		cfg.InternalToken = v
+	}
+	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
+		cfg.GeminiAPIKey = v
+	}
+	if v := os.Getenv("GEMINI_EMBEDDING_MODEL"); v != "" {
+		cfg.EmbeddingModel = v
+	}
+	if v := os.Getenv("GEMINI_EMBEDDING_DIM"); v != "" {
+		if dim, err := strconv.Atoi(v); err == nil {
+			cfg.EmbeddingDim = dim
+		}
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
