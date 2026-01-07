@@ -104,6 +104,28 @@ func (c *Client) DeleteBook(user domain.User, id string) error {
 	return c.do(req, nil)
 }
 
+// DownloadResponse contains pre-signed URL and filename for download.
+type DownloadResponse struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename"`
+}
+
+// GetDownloadURL returns a pre-signed download URL for the book file.
+func (c *Client) GetDownloadURL(user domain.User, id string) (DownloadResponse, error) {
+	path := fmt.Sprintf("%s/books/%s/download", c.baseURL, id)
+	req, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return DownloadResponse{}, err
+	}
+	addUserHeaders(req, user)
+
+	var resp DownloadResponse
+	if err := c.do(req, &resp); err != nil {
+		return DownloadResponse{}, err
+	}
+	return resp, nil
+}
+
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
