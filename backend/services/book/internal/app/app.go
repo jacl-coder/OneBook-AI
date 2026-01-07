@@ -173,12 +173,33 @@ func titleFromName(name string) string {
 }
 
 func buildStorageKey(bookID, filename string) string {
-	name := filepath.Base(filename)
-	name = strings.ReplaceAll(name, "/", "_")
-	name = strings.ReplaceAll(name, "\\", "_")
-	name = strings.TrimSpace(name)
+	name := sanitizeFilename(filepath.Base(filename))
 	if name == "" {
 		name = "book"
 	}
 	return path.Join("books", bookID, name)
+}
+
+func sanitizeFilename(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	lastUnderscore := false
+	for _, r := range name {
+		if r <= 0x7f {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+				b.WriteRune(r)
+				lastUnderscore = false
+				continue
+			}
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }

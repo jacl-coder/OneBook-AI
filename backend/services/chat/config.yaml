@@ -1,7 +1,5 @@
 port: "8083"
-databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
+# Secrets loaded from environment variables:
+# DATABASE_URL, GEMINI_API_KEY, GEMINI_GENERATION_MODEL, GEMINI_EMBEDDING_MODEL
 logLevel: "info"
-geminiAPIKey: "AIzaSyAfuUP-3Oy8d2zacgF_6V1MYaEHAf0G-x8"
-generationModel: "gemini-3-pro-preview"
-embeddingModel: "gemini-embedding-001"
 topK: 4
