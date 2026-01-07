@@ -102,13 +102,26 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	}
 }
 
-// /books/{id}
+// /books/{id} or /books/{id}/download
 func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user domain.User) {
-	id := strings.TrimPrefix(r.URL.Path, "/books/")
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.TrimPrefix(r.URL.Path, "/books/")
+	parts := strings.SplitN(path, "/", 2)
+	id := parts[0]
+	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
+
+	// Check if this is a download request
+	if len(parts) == 2 && parts[1] == "download" {
+		s.handleDownloadBook(w, r, user, id)
+		return
+	}
+	if len(parts) == 2 {
+		http.NotFound(w, r)
+		return
+	}
+
 	book, ok, err := s.app.GetBook(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -134,6 +147,36 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+// handleDownloadBook returns a pre-signed download URL for the book file.
+func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	book, ok, err := s.app.GetBook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		notFound(w, "book not found")
+		return
+	}
+	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	url, filename, err := s.app.GetDownloadURL(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate download URL")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"url":      url,
+		"filename": filename,
+	})
 }
 
 // /internal/books/{id}/file or /internal/books/{id}/status

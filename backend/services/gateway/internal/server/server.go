@@ -230,13 +230,26 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	}
 }
 
-// /api/books/{id}
+// /api/books/{id} or /api/books/{id}/download
 func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user domain.User) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/books/")
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.TrimPrefix(r.URL.Path, "/api/books/")
+	parts := strings.SplitN(path, "/", 2)
+	id := parts[0]
+	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
+
+	// Handle /api/books/{id}/download
+	if len(parts) == 2 && parts[1] == "download" {
+		s.handleDownloadBook(w, r, user, id)
+		return
+	}
+	if len(parts) == 2 {
+		http.NotFound(w, r)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		book, err := s.books.GetBook(user, id)
@@ -254,6 +267,20 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+// handleDownloadBook returns a pre-signed download URL for the book file.
+func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	resp, err := s.books.GetDownloadURL(user, id)
+	if err != nil {
+		writeBookError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user domain.User) {
