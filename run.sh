@@ -3,10 +3,32 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load environment variables from .env file
+if [ -f "$ROOT_DIR/.env" ]; then
+  echo "Loading environment variables from .env..."
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
 mkdir -p "$ROOT_DIR/backend/.cache/go-build"
 
 # Start local dependencies.
 docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui
+
+# Wait for MinIO to be ready.
+echo "Waiting for MinIO to be ready..."
+until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do
+  sleep 1
+done
+echo "MinIO is ready."
+
+# Wait for Postgres to be ready.
+echo "Waiting for Postgres to be ready..."
+until docker exec onebook-postgres pg_isready -U onebook >/dev/null 2>&1; do
+  sleep 1
+done
+echo "Postgres is ready."
 
 # Run the auth service.
 cd "$ROOT_DIR/backend/services/auth"

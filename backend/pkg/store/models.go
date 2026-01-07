@@ -44,6 +44,6 @@ type ChunkModel struct {
 	BookID    string          `gorm:"not null;index"`
 	Content   string          `gorm:"type:text;not null"`
 	Metadata  datatypes.JSON  `gorm:"type:jsonb"`
-	Embedding pgvector.Vector `gorm:"type:vector(768)"`
+	Embedding *pgvector.Vector `gorm:"type:vector(3072)"`
 	CreatedAt time.Time       `gorm:"not null;index"`
 }

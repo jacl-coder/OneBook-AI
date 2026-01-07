@@ -33,6 +33,19 @@ func Load(path string) (FileConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
+	// Override with environment variables
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("REDIS_ADDR"); v != "" {
+		cfg.RedisAddr = v
+	}
+	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
+		cfg.RedisPassword = v
+	}
+	if v := os.Getenv("JWT_SECRET"); v != "" {
+		cfg.JWTSecret = v
+	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
 	}

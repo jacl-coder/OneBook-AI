@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,6 +33,48 @@ func (a *App) parseAndChunk(filename, path string) ([]chunkPayload, error) {
 }
 
 func (a *App) parsePDF(path string) ([]chunkPayload, error) {
+	// Try pdftotext first (better support for complex/Chinese PDFs)
+	chunks, err := a.parsePDFWithPdftotext(path)
+	if err == nil && len(chunks) > 0 {
+		return chunks, nil
+	}
+	// Fallback to Go library
+	return a.parsePDFWithGoLib(path)
+}
+
+// parsePDFWithPdftotext uses the system pdftotext tool (poppler-utils)
+func (a *App) parsePDFWithPdftotext(path string) ([]chunkPayload, error) {
+	// Check if pdftotext is available
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		return nil, fmt.Errorf("pdftotext not found: %w", err)
+	}
+
+	// Run pdftotext to extract text
+	cmd := exec.Command("pdftotext", "-layout", "-enc", "UTF-8", path, "-")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("pdftotext failed: %w", err)
+	}
+
+	text := normalizeText(string(output))
+	if text == "" {
+		return nil, fmt.Errorf("no text extracted from PDF")
+	}
+
+	var chunks []chunkPayload
+	for idx, part := range chunkText(text, a.chunkSize, a.chunkOverlap) {
+		chunks = append(chunks, chunkPayload{
+			Content: part,
+			Metadata: map[string]string{
+				"chunk": strconv.Itoa(idx),
+			},
+		})
+	}
+	return chunks, nil
+}
+
+// parsePDFWithGoLib uses the Go PDF library (fallback)
+func (a *App) parsePDFWithGoLib(path string) ([]chunkPayload, error) {
 	file, reader, err := pdf.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open pdf: %w", err)
@@ -46,7 +89,8 @@ func (a *App) parsePDF(path string) ([]chunkPayload, error) {
 		}
 		text, err := page.GetPlainText(nil)
 		if err != nil {
-			return nil, fmt.Errorf("read pdf page: %w", err)
+			// Skip problematic pages instead of failing entirely
+			continue
 		}
 		text = normalizeText(text)
 		for idx, part := range chunkText(text, a.chunkSize, a.chunkOverlap) {
@@ -58,6 +102,9 @@ func (a *App) parsePDF(path string) ([]chunkPayload, error) {
 				},
 			})
 		}
+	}
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no text extracted from PDF")
 	}
 	return chunks, nil
 }
@@ -122,6 +169,8 @@ func (a *App) parseText(path string) ([]chunkPayload, error) {
 }
 
 func normalizeText(text string) string {
+	text = strings.ReplaceAll(text, "\x00", " ")
+	text = strings.ToValidUTF8(text, "")
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""

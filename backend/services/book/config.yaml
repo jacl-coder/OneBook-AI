@@ -1,10 +1,6 @@
 port: "8082"
-databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
+# Secrets loaded from environment variables:
+# DATABASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, ONEBOOK_INTERNAL_TOKEN
 logLevel: "info"
-minioEndpoint: "localhost:9000"
-minioAccessKey: "onebook"
-minioSecretKey: "onebook123"
-minioBucket: "onebook"
 minioUseSSL: false
 ingestURL: "http://localhost:8084"
-internalToken: "onebook-internal"

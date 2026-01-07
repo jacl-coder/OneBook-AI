@@ -1,8 +1,8 @@
 port: "8084"
-databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
+# Secrets loaded from environment variables:
+# DATABASE_URL, ONEBOOK_INTERNAL_TOKEN
 logLevel: "info"
 bookServiceURL: "http://localhost:8082"
 indexerURL: "http://localhost:8085"
-internalToken: "onebook-internal"
 chunkSize: 800
 chunkOverlap: 120
