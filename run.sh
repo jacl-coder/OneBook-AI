@@ -13,6 +13,9 @@ fi
 
 mkdir -p "$ROOT_DIR/backend/.cache/go-build"
 
+# Start Ollama (embeddings) if available.
+"$ROOT_DIR/scripts/ollama-embedding.sh"
+
 # Start local dependencies.
 docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui
 

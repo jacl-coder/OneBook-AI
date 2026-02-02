@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,6 +18,8 @@ type FileConfig struct {
 	BookServiceURL string `yaml:"bookServiceURL"`
 	InternalToken  string `yaml:"internalToken"`
 	GeminiAPIKey   string `yaml:"geminiAPIKey"`
+	EmbeddingProvider string `yaml:"embeddingProvider"`
+	EmbeddingBaseURL  string `yaml:"embeddingBaseURL"`
 	EmbeddingModel string `yaml:"embeddingModel"`
 	EmbeddingDim   int    `yaml:"embeddingDim"`
 }
@@ -46,10 +49,27 @@ func Load(path string) (FileConfig, error) {
 	}
 	if v := os.Getenv("GEMINI_EMBEDDING_MODEL"); v != "" {
 		cfg.EmbeddingModel = v
+		if cfg.EmbeddingProvider == "" {
+			cfg.EmbeddingProvider = "gemini"
+		}
 	}
 	if v := os.Getenv("GEMINI_EMBEDDING_DIM"); v != "" {
 		if dim, err := strconv.Atoi(v); err == nil {
 			cfg.EmbeddingDim = dim
+		}
+	}
+	if v := os.Getenv("OLLAMA_HOST"); v != "" {
+		cfg.EmbeddingBaseURL = v
+		cfg.EmbeddingProvider = "ollama"
+	}
+	if v := os.Getenv("OLLAMA_EMBEDDING_MODEL"); v != "" {
+		cfg.EmbeddingModel = v
+		cfg.EmbeddingProvider = "ollama"
+	}
+	if v := os.Getenv("OLLAMA_EMBEDDING_DIM"); v != "" {
+		if dim, err := strconv.Atoi(v); err == nil {
+			cfg.EmbeddingDim = dim
+			cfg.EmbeddingProvider = "ollama"
 		}
 	}
 	if err := validateConfig(cfg); err != nil {
@@ -71,11 +91,24 @@ func validateConfig(cfg FileConfig) error {
 	if cfg.InternalToken == "" {
 		return errors.New("config: internalToken is required (set in config.yaml or ONEBOOK_INTERNAL_TOKEN)")
 	}
-	if cfg.GeminiAPIKey == "" {
+	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
+	if provider == "" {
+		provider = "gemini"
+	}
+	if provider == "gemini" && cfg.GeminiAPIKey == "" {
 		return errors.New("config: geminiAPIKey is required (set in config.yaml or GEMINI_API_KEY)")
 	}
 	if cfg.EmbeddingModel == "" {
-		return errors.New("config: embeddingModel is required (set in config.yaml)")
+		return errors.New("config: embeddingModel is required (set in config.yaml, GEMINI_EMBEDDING_MODEL, or OLLAMA_EMBEDDING_MODEL)")
+	}
+	switch provider {
+	case "ollama":
+		if cfg.EmbeddingDim <= 0 {
+			return errors.New("config: embeddingDim is required for ollama (set in config.yaml or OLLAMA_EMBEDDING_DIM)")
+		}
+	case "gemini":
+	default:
+		return errors.New("config: embeddingProvider must be gemini or ollama")
 	}
 	return nil
 }

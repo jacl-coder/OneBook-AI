@@ -21,12 +21,14 @@ func main() {
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:    cfg.DatabaseURL,
-		BookServiceURL: cfg.BookServiceURL,
-		InternalToken:  cfg.InternalToken,
-		GeminiAPIKey:   cfg.GeminiAPIKey,
-		EmbeddingModel: cfg.EmbeddingModel,
-		EmbeddingDim:   cfg.EmbeddingDim,
+		DatabaseURL:      cfg.DatabaseURL,
+		BookServiceURL:   cfg.BookServiceURL,
+		InternalToken:    cfg.InternalToken,
+		GeminiAPIKey:     cfg.GeminiAPIKey,
+		EmbeddingProvider: cfg.EmbeddingProvider,
+		EmbeddingBaseURL:  cfg.EmbeddingBaseURL,
+		EmbeddingModel:    cfg.EmbeddingModel,
+		EmbeddingDim:      cfg.EmbeddingDim,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)
