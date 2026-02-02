@@ -21,11 +21,14 @@ func main() {
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:    cfg.DatabaseURL,
-		GeminiAPIKey:   cfg.GeminiAPIKey,
-		GenerationModel: cfg.GenerationModel,
-		EmbeddingModel:  cfg.EmbeddingModel,
-		TopK:            cfg.TopK,
+		DatabaseURL:      cfg.DatabaseURL,
+		GeminiAPIKey:     cfg.GeminiAPIKey,
+		GenerationModel:  cfg.GenerationModel,
+		EmbeddingProvider: cfg.EmbeddingProvider,
+		EmbeddingBaseURL:  cfg.EmbeddingBaseURL,
+		EmbeddingModel:    cfg.EmbeddingModel,
+		EmbeddingDim:      cfg.EmbeddingDim,
+		TopK:              cfg.TopK,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)

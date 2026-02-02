@@ -40,6 +40,8 @@ type Config struct {
 	BookServiceURL string
 	InternalToken  string
 	GeminiAPIKey   string
+	EmbeddingProvider string
+	EmbeddingBaseURL  string
 	EmbeddingModel string
 	EmbeddingDim   int
 }
@@ -50,8 +52,7 @@ type App struct {
 	jobs         map[string]Job
 	store        store.Store
 	bookClient   *bookClient
-	gemini       *ai.GeminiClient
-	embedModel   string
+	embedder     ai.Embedder
 	embedDim     int
 }
 
@@ -77,20 +78,39 @@ func New(cfg Config) (*App, error) {
 	if cfg.EmbeddingModel == "" {
 		return nil, fmt.Errorf("embedding model required")
 	}
-	gemini, err := ai.NewGeminiClient(cfg.GeminiAPIKey)
-	if err != nil {
-		return nil, err
+	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
+	if provider == "" {
+		provider = "gemini"
 	}
 	dim := cfg.EmbeddingDim
-	if dim <= 0 {
-		dim = 768
+	var embedder ai.Embedder
+	switch provider {
+	case "ollama":
+		if dim <= 0 {
+			return nil, fmt.Errorf("embedding dim required for ollama")
+		}
+		ollama := ai.NewOllamaClient(cfg.EmbeddingBaseURL)
+		embedder = ai.NewOllamaEmbedder(ollama, cfg.EmbeddingModel, dim)
+	case "gemini":
+		if cfg.GeminiAPIKey == "" {
+			return nil, fmt.Errorf("gemini api key required")
+		}
+		gemini, err := ai.NewGeminiClient(cfg.GeminiAPIKey)
+		if err != nil {
+			return nil, err
+		}
+		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel)
+		if dim <= 0 {
+			dim = 768
+		}
+	default:
+		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
 	}
 	return &App{
 		jobs:       make(map[string]Job),
 		store:      dataStore,
 		bookClient: newBookClient(cfg.BookServiceURL, cfg.InternalToken),
-		gemini:     gemini,
-		embedModel: cfg.EmbeddingModel,
+		embedder:   embedder,
 		embedDim:   dim,
 	}, nil
 }
@@ -145,7 +165,7 @@ func (a *App) process(id string) {
 		return
 	}
 	for _, chunk := range chunks {
-		embedding, err := a.gemini.EmbedText(ctx, a.embedModel, chunk.Content, "RETRIEVAL_DOCUMENT")
+		embedding, err := a.embedder.EmbedText(ctx, chunk.Content, "RETRIEVAL_DOCUMENT")
 		if err != nil {
 			a.failJob(id, job.BookID, err)
 			return

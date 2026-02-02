@@ -18,7 +18,10 @@ type Config struct {
 	Store           store.Store
 	GeminiAPIKey    string
 	GenerationModel string
+	EmbeddingProvider string
+	EmbeddingBaseURL  string
 	EmbeddingModel  string
+	EmbeddingDim    int
 	TopK            int
 }
 
@@ -26,8 +29,8 @@ type Config struct {
 type App struct {
 	store          store.Store
 	gemini         *ai.GeminiClient
+	embedder       ai.Embedder
 	generationModel string
-	embeddingModel  string
 	topK            int
 }
 
@@ -55,6 +58,23 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
+	if provider == "" {
+		provider = "gemini"
+	}
+	var embedder ai.Embedder
+	switch provider {
+	case "ollama":
+		if cfg.EmbeddingDim <= 0 {
+			return nil, fmt.Errorf("embedding dim required for ollama")
+		}
+		ollama := ai.NewOllamaClient(cfg.EmbeddingBaseURL)
+		embedder = ai.NewOllamaEmbedder(ollama, cfg.EmbeddingModel, cfg.EmbeddingDim)
+	case "gemini":
+		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel)
+	default:
+		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
+	}
 	topK := cfg.TopK
 	if topK <= 0 {
 		topK = 4
@@ -63,8 +83,8 @@ func New(cfg Config) (*App, error) {
 	return &App{
 		store:           dataStore,
 		gemini:          gemini,
+		embedder:        embedder,
 		generationModel: cfg.GenerationModel,
-		embeddingModel:  cfg.EmbeddingModel,
 		topK:            topK,
 	}, nil
 }
@@ -81,7 +101,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (
 		return domain.Answer{}, fmt.Errorf("question required")
 	}
 	ctx := context.Background()
-	queryEmbedding, err := a.gemini.EmbedText(ctx, a.embeddingModel, question, "RETRIEVAL_QUERY")
+	queryEmbedding, err := a.embedder.EmbedText(ctx, question, "RETRIEVAL_QUERY")
 	if err != nil {
 		return domain.Answer{}, fmt.Errorf("embed question: %w", err)
 	}
