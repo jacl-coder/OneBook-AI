@@ -47,6 +47,37 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		`).Error; err != nil {
 			return fmt.Errorf("alter chunk embedding type: %w", err)
 		}
+		if err := tx.Exec(`
+			DO $$
+			BEGIN
+				DELETE FROM chunk_models c
+				WHERE NOT EXISTS (SELECT 1 FROM book_models b WHERE b.id = c.book_id);
+				DELETE FROM message_models m
+				WHERE NOT EXISTS (SELECT 1 FROM book_models b WHERE b.id = m.book_id);
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE table_schema = 'public'
+					AND table_name = 'chunk_models'
+					AND constraint_name = 'chunk_models_book_id_fkey'
+				) THEN
+					ALTER TABLE chunk_models
+					ADD CONSTRAINT chunk_models_book_id_fkey
+					FOREIGN KEY (book_id) REFERENCES book_models(id) ON DELETE CASCADE;
+				END IF;
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE table_schema = 'public'
+					AND table_name = 'message_models'
+					AND constraint_name = 'message_models_book_id_fkey'
+				) THEN
+					ALTER TABLE message_models
+					ADD CONSTRAINT message_models_book_id_fkey
+					FOREIGN KEY (book_id) REFERENCES book_models(id) ON DELETE CASCADE;
+				END IF;
+			END $$;
+		`).Error; err != nil {
+			return fmt.Errorf("ensure book foreign keys: %w", err)
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -202,7 +233,7 @@ func (s *GormStore) GetBook(id string) (domain.Book, bool, error) {
 	return bookFromModel(model), true, nil
 }
 
-// DeleteBook removes book and messages.
+// DeleteBook removes book and messages (chunks handled by FK cascade).
 func (s *GormStore) DeleteBook(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&MessageModel{}, "book_id = ?", id).Error; err != nil {
