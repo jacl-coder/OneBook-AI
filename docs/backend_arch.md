@@ -19,15 +19,16 @@
 
 ## 运行与部署要点
 - 所有请求经 API Gateway，携带 Bearer Token 进入各服务。
-- 解析/嵌入可异步处理，状态可查询；当前实现为同步触发 + 后台处理。
-- 日志/指标/Tracing 统一采集，支持健康检查 `/healthz`。
-- 内部服务通过 `X-Internal-Token` 保护（Book/ingest/indexer 内部接口）。
+- 解析/嵌入当前为同步触发 + 后台 goroutine 处理（非持久队列）；状态可查询。
+- 日志/指标/Tracing 尚未统一采集，已提供健康检查 `/healthz`。
+- 内部服务通过 `X-Internal-Token` 保护（Book/Ingest/Indexer 内部接口）。
 
 ## 现状
 - 仓库内已按 `backend/services/<service>/` 划分目录；Gateway 作为统一入口，服务通过 HTTP/JSON 通信。 
 - Auth 服务：注册/登录/登出/用户自助/管理员用户管理，JWT 登出通过撤销列表生效。 
 - Book 服务：上传/列表/查询/删除，文件写入 MinIO，对外由 Gateway 统一暴露。 
-- Ingest 服务：拉取书籍文件，解析 PDF/EPUB/TXT，分块写入 Postgres（jsonb + pgvector）。 
-- Indexer 服务：调用 Gemini embedding（`text-embedding-004`）生成向量，写入 pgvector，回写状态。 
+- Ingest 服务：拉取书籍文件，解析 PDF/EPUB/TXT，语义分块写入 Postgres（jsonb + pgvector）。 
+- Indexer 服务：Embedding 可选 Ollama 或 Gemini，维度可配置；写入 pgvector 并回写状态。 
 - Chat 服务：检索 topK chunks，拼装提示并调用 Gemini 生成回答，附出处。 
+- Chunk metadata 已统一：`source_type/source_ref`，并保留 `page/section/chunk`。 
 - 网关实现：路由涵盖 signup/login/logout/me、书籍 CRUD、聊天、admin 查询、healthz；元数据存储在 Postgres；对象存储使用 MinIO；向量检索使用 pgvector。
