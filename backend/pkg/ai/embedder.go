@@ -7,6 +7,11 @@ type Embedder interface {
 	EmbedText(ctx context.Context, text, taskType string) ([]float32, error)
 }
 
+// BatchEmbedder optionally supports embedding multiple texts at once.
+type BatchEmbedder interface {
+	EmbedTexts(ctx context.Context, texts []string, taskType string) ([][]float32, error)
+}
+
 // GeminiEmbedder wraps Gemini embedding calls with a fixed model.
 type GeminiEmbedder struct {
 	client *GeminiClient
@@ -21,6 +26,19 @@ func NewGeminiEmbedder(client *GeminiClient, model string) *GeminiEmbedder {
 // EmbedText returns embeddings for text using Gemini.
 func (e *GeminiEmbedder) EmbedText(ctx context.Context, text, taskType string) ([]float32, error) {
 	return e.client.EmbedText(ctx, e.model, text, taskType)
+}
+
+// EmbedTexts returns embeddings for multiple texts using Gemini (sequential fallback).
+func (e *GeminiEmbedder) EmbedTexts(ctx context.Context, texts []string, taskType string) ([][]float32, error) {
+	out := make([][]float32, 0, len(texts))
+	for _, text := range texts {
+		embedding, err := e.client.EmbedText(ctx, e.model, text, taskType)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, embedding)
+	}
+	return out, nil
 }
 
 // OllamaEmbedder wraps Ollama embedding calls with a fixed model and dimension.
@@ -38,4 +56,9 @@ func NewOllamaEmbedder(client *OllamaClient, model string, dimensions int) *Olla
 // EmbedText returns embeddings for text using Ollama.
 func (e *OllamaEmbedder) EmbedText(ctx context.Context, text, taskType string) ([]float32, error) {
 	return e.client.EmbedText(ctx, e.model, text, e.dimensions)
+}
+
+// EmbedTexts returns embeddings for multiple texts using Ollama.
+func (e *OllamaEmbedder) EmbedTexts(ctx context.Context, texts []string, taskType string) ([][]float32, error) {
+	return e.client.EmbedTexts(ctx, e.model, texts, e.dimensions)
 }

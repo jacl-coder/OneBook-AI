@@ -7,6 +7,7 @@
 - 技术框架概览：见 `docs/tech_overview.md`
 - 后端服务已拆分并实现：上传 → 解析/分块 → 向量索引 → 检索问答链路。
 - Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini。
+- Ingest/Indexer 使用 Redis 持久队列，支持重试与失败恢复。
 
 ## 目标功能（MVP）
 - 上传 PDF/EPUB/TXT，处理状态可视（排队/处理中/可对话/失败）。
@@ -87,6 +88,15 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ./run.sh
 ```
 会同时启动 Auth 服务、Book 服务、Chat 服务、Ingest 服务、Indexer 服务与 Gateway。
+
+## Docker 构建（服务镜像）
+项目提供一个通用 `backend/Dockerfile`，通过构建参数指定服务与入口：
+```bash
+# 示例：构建 gateway
+docker build -f backend/Dockerfile -t onebook-gateway \\
+  --build-arg SERVICE=gateway --build-arg CMD=server \\
+  backend
+```
 
 ## 接口文档
 - REST/OpenAPI（Gateway）：`backend/api/rest/openapi.yaml`

@@ -12,16 +12,17 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port            string `yaml:"port"`
-	DatabaseURL     string `yaml:"databaseURL"`
-	LogLevel        string `yaml:"logLevel"`
-	GeminiAPIKey    string `yaml:"geminiAPIKey"`
-	GenerationModel string `yaml:"generationModel"`
+	Port              string `yaml:"port"`
+	DatabaseURL       string `yaml:"databaseURL"`
+	LogLevel          string `yaml:"logLevel"`
+	GeminiAPIKey      string `yaml:"geminiAPIKey"`
+	GenerationModel   string `yaml:"generationModel"`
 	EmbeddingProvider string `yaml:"embeddingProvider"`
 	EmbeddingBaseURL  string `yaml:"embeddingBaseURL"`
-	EmbeddingModel  string `yaml:"embeddingModel"`
-	EmbeddingDim    int    `yaml:"embeddingDim"`
-	TopK            int    `yaml:"topK"`
+	EmbeddingModel    string `yaml:"embeddingModel"`
+	EmbeddingDim      int    `yaml:"embeddingDim"`
+	TopK              int    `yaml:"topK"`
+	HistoryLimit      int    `yaml:"historyLimit"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -70,6 +71,11 @@ func Load(path string) (FileConfig, error) {
 		if dim, err := strconv.Atoi(v); err == nil {
 			cfg.EmbeddingDim = dim
 			cfg.EmbeddingProvider = "ollama"
+		}
+	}
+	if v := os.Getenv("CHAT_HISTORY_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.HistoryLimit = n
 		}
 	}
 	if err := validateConfig(cfg); err != nil {

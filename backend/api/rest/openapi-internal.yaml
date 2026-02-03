@@ -112,6 +112,9 @@ paths:
     post:
       tags: [chat-internal]
       summary: Ask a question (chat service)
+      description: |
+        The chat service may include recent conversation history when
+        generating the answer (history length is configurable).
       parameters:
         - $ref: "#/components/parameters/UserIdHeader"
         - $ref: "#/components/parameters/UserRoleHeader"
@@ -156,6 +159,9 @@ paths:
     post:
       tags: [ingest]
       summary: Create ingest job
+      description: |
+        Enqueue an ingest job into the Redis-backed queue. Retries and
+        failure handling are performed by the worker.
       security:
         - internalToken: []
       requestBody:

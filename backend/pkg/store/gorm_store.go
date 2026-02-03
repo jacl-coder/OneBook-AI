@@ -283,6 +283,25 @@ func (s *GormStore) AppendMessage(bookID string, msg domain.Message) error {
 	return s.db.Create(&model).Error
 }
 
+// ListMessages returns recent messages for a book (newest first, then reversed to chronological).
+func (s *GormStore) ListMessages(bookID string, limit int) ([]domain.Message, error) {
+	if limit <= 0 {
+		return []domain.Message{}, nil
+	}
+	var models []MessageModel
+	if err := s.db.Where("book_id = ?", bookID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	msgs := make([]domain.Message, 0, len(models))
+	for i := len(models) - 1; i >= 0; i-- {
+		msgs = append(msgs, messageFromModel(models[i]))
+	}
+	return msgs, nil
+}
+
 // ReplaceChunks replaces all chunks for a book.
 func (s *GormStore) ReplaceChunks(bookID string, chunks []domain.Chunk) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -407,6 +426,16 @@ func messageToModel(msg domain.Message) MessageModel {
 		Role:      msg.Role,
 		Content:   msg.Content,
 		CreatedAt: msg.CreatedAt,
+	}
+}
+
+func messageFromModel(m MessageModel) domain.Message {
+	return domain.Message{
+		ID:        m.ID,
+		BookID:    m.BookID,
+		Role:      m.Role,
+		Content:   m.Content,
+		CreatedAt: m.CreatedAt,
 	}
 }
 

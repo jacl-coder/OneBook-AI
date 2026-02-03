@@ -1,6 +1,9 @@
 port: "8082"
 # Secrets loaded from environment variables:
 # DATABASE_URL, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, ONEBOOK_INTERNAL_TOKEN
+# BOOK_MAX_UPLOAD_BYTES, BOOK_ALLOWED_EXTENSIONS
 logLevel: "info"
 minioUseSSL: false
 ingestURL: "http://localhost:8084"
+maxUploadBytes: 52428800 # 50MB
+allowedExtensions: [".pdf", ".epub", ".txt"]

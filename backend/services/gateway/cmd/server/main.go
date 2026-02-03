@@ -27,9 +27,11 @@ func main() {
 	chatClient := chatclient.NewClient(cfg.ChatServiceURL)
 
 	httpServer := server.New(server.Config{
-		Auth: authClient,
-		Book: bookClient,
-		Chat: chatClient,
+		Auth:              authClient,
+		Book:              bookClient,
+		Chat:              chatClient,
+		MaxUploadBytes:    cfg.MaxUploadBytes,
+		AllowedExtensions: cfg.AllowedExtensions,
 	})
 
 	addr := ":" + cfg.Port

@@ -13,23 +13,30 @@ import (
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App           *app.App
-	InternalToken string
+	App            *app.App
+	InternalToken  string
+	MaxUploadBytes int64
 }
 
 // Server exposes HTTP endpoints for the book service.
 type Server struct {
-	app           *app.App
-	internalToken string
-	mux           *http.ServeMux
+	app            *app.App
+	internalToken  string
+	mux            *http.ServeMux
+	maxUploadBytes int64
 }
 
 // New constructs the server with routes configured.
 func New(cfg Config) *Server {
+	maxUploadBytes := cfg.MaxUploadBytes
+	if maxUploadBytes <= 0 {
+		maxUploadBytes = 50 * 1024 * 1024
+	}
 	s := &Server{
-		app:           cfg.App,
-		internalToken: strings.TrimSpace(cfg.InternalToken),
-		mux:           http.NewServeMux(),
+		app:            cfg.App,
+		internalToken:  strings.TrimSpace(cfg.InternalToken),
+		mux:            http.NewServeMux(),
+		maxUploadBytes: maxUploadBytes,
 	}
 	s.routes()
 	return s
@@ -242,6 +249,9 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user domain.User) {
+	if s.maxUploadBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, s.maxUploadBytes)
+	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid form data")
 		return

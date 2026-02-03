@@ -4,17 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port           string `yaml:"port"`
-	LogLevel       string `yaml:"logLevel"`
-	AuthServiceURL string `yaml:"authServiceURL"`
-	BookServiceURL string `yaml:"bookServiceURL"`
-	ChatServiceURL string `yaml:"chatServiceURL"`
+	Port              string   `yaml:"port"`
+	LogLevel          string   `yaml:"logLevel"`
+	AuthServiceURL    string   `yaml:"authServiceURL"`
+	BookServiceURL    string   `yaml:"bookServiceURL"`
+	ChatServiceURL    string   `yaml:"chatServiceURL"`
+	MaxUploadBytes    int64    `yaml:"maxUploadBytes"`
+	AllowedExtensions []string `yaml:"allowedExtensions"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -29,6 +33,14 @@ func Load(path string) (FileConfig, error) {
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+	if v := os.Getenv("GATEWAY_MAX_UPLOAD_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.MaxUploadBytes = n
+		}
+	}
+	if v := os.Getenv("GATEWAY_ALLOWED_EXTENSIONS"); v != "" {
+		cfg.AllowedExtensions = splitCSV(v)
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
@@ -50,4 +62,17 @@ func validateConfig(cfg FileConfig) error {
 		return errors.New("config: chatServiceURL is required (set in config.yaml)")
 	}
 	return nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }

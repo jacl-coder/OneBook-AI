@@ -1,8 +1,15 @@
 port: "8084"
 # Secrets loaded from environment variables:
-# DATABASE_URL, ONEBOOK_INTERNAL_TOKEN
+# DATABASE_URL, ONEBOOK_INTERNAL_TOKEN, REDIS_ADDR, REDIS_PASSWORD
+# INGEST_QUEUE_NAME, INGEST_QUEUE_GROUP, INGEST_QUEUE_CONCURRENCY,
+# INGEST_QUEUE_MAX_RETRIES, INGEST_QUEUE_RETRY_DELAY_SECONDS
 logLevel: "info"
 bookServiceURL: "http://localhost:8082"
 indexerURL: "http://localhost:8085"
 chunkSize: 800
 chunkOverlap: 120
+queueName: "onebook:ingest"
+queueGroup: "ingest"
+queueConcurrency: 2
+queueMaxRetries: 3
+queueRetryDelaySeconds: 2

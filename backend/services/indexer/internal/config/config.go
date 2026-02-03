@@ -12,16 +12,25 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port           string `yaml:"port"`
-	LogLevel       string `yaml:"logLevel"`
-	DatabaseURL    string `yaml:"databaseURL"`
-	BookServiceURL string `yaml:"bookServiceURL"`
-	InternalToken  string `yaml:"internalToken"`
-	GeminiAPIKey   string `yaml:"geminiAPIKey"`
-	EmbeddingProvider string `yaml:"embeddingProvider"`
-	EmbeddingBaseURL  string `yaml:"embeddingBaseURL"`
-	EmbeddingModel string `yaml:"embeddingModel"`
-	EmbeddingDim   int    `yaml:"embeddingDim"`
+	Port                   string `yaml:"port"`
+	LogLevel               string `yaml:"logLevel"`
+	DatabaseURL            string `yaml:"databaseURL"`
+	BookServiceURL         string `yaml:"bookServiceURL"`
+	InternalToken          string `yaml:"internalToken"`
+	RedisAddr              string `yaml:"redisAddr"`
+	RedisPassword          string `yaml:"redisPassword"`
+	QueueName              string `yaml:"queueName"`
+	QueueGroup             string `yaml:"queueGroup"`
+	QueueConcurrency       int    `yaml:"queueConcurrency"`
+	QueueMaxRetries        int    `yaml:"queueMaxRetries"`
+	QueueRetryDelaySeconds int    `yaml:"queueRetryDelaySeconds"`
+	GeminiAPIKey           string `yaml:"geminiAPIKey"`
+	EmbeddingProvider      string `yaml:"embeddingProvider"`
+	EmbeddingBaseURL       string `yaml:"embeddingBaseURL"`
+	EmbeddingModel         string `yaml:"embeddingModel"`
+	EmbeddingDim           int    `yaml:"embeddingDim"`
+	EmbeddingBatchSize     int    `yaml:"embeddingBatchSize"`
+	EmbeddingConcurrency   int    `yaml:"embeddingConcurrency"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -44,6 +53,33 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("ONEBOOK_INTERNAL_TOKEN"); v != "" {
 		cfg.InternalToken = v
 	}
+	if v := os.Getenv("REDIS_ADDR"); v != "" {
+		cfg.RedisAddr = v
+	}
+	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
+		cfg.RedisPassword = v
+	}
+	if v := os.Getenv("INDEXER_QUEUE_NAME"); v != "" {
+		cfg.QueueName = v
+	}
+	if v := os.Getenv("INDEXER_QUEUE_GROUP"); v != "" {
+		cfg.QueueGroup = v
+	}
+	if v := os.Getenv("INDEXER_QUEUE_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.QueueConcurrency = n
+		}
+	}
+	if v := os.Getenv("INDEXER_QUEUE_MAX_RETRIES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.QueueMaxRetries = n
+		}
+	}
+	if v := os.Getenv("INDEXER_QUEUE_RETRY_DELAY_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.QueueRetryDelaySeconds = n
+		}
+	}
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.GeminiAPIKey = v
 	}
@@ -56,6 +92,16 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("GEMINI_EMBEDDING_DIM"); v != "" {
 		if dim, err := strconv.Atoi(v); err == nil {
 			cfg.EmbeddingDim = dim
+		}
+	}
+	if v := os.Getenv("EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.EmbeddingBatchSize = n
+		}
+	}
+	if v := os.Getenv("EMBEDDING_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.EmbeddingConcurrency = n
 		}
 	}
 	if v := os.Getenv("OLLAMA_HOST"); v != "" {
@@ -90,6 +136,9 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.InternalToken == "" {
 		return errors.New("config: internalToken is required (set in config.yaml or ONEBOOK_INTERNAL_TOKEN)")
+	}
+	if cfg.RedisAddr == "" {
+		return errors.New("config: redisAddr is required (set in config.yaml or REDIS_ADDR)")
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {

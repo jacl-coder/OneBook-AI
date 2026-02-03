@@ -21,14 +21,23 @@ func main() {
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:      cfg.DatabaseURL,
-		BookServiceURL:   cfg.BookServiceURL,
-		InternalToken:    cfg.InternalToken,
-		GeminiAPIKey:     cfg.GeminiAPIKey,
-		EmbeddingProvider: cfg.EmbeddingProvider,
-		EmbeddingBaseURL:  cfg.EmbeddingBaseURL,
-		EmbeddingModel:    cfg.EmbeddingModel,
-		EmbeddingDim:      cfg.EmbeddingDim,
+		DatabaseURL:            cfg.DatabaseURL,
+		BookServiceURL:         cfg.BookServiceURL,
+		InternalToken:          cfg.InternalToken,
+		RedisAddr:              cfg.RedisAddr,
+		RedisPassword:          cfg.RedisPassword,
+		QueueName:              cfg.QueueName,
+		QueueGroup:             cfg.QueueGroup,
+		QueueConcurrency:       cfg.QueueConcurrency,
+		QueueMaxRetries:        cfg.QueueMaxRetries,
+		QueueRetryDelaySeconds: cfg.QueueRetryDelaySeconds,
+		GeminiAPIKey:           cfg.GeminiAPIKey,
+		EmbeddingProvider:      cfg.EmbeddingProvider,
+		EmbeddingBaseURL:       cfg.EmbeddingBaseURL,
+		EmbeddingModel:         cfg.EmbeddingModel,
+		EmbeddingDim:           cfg.EmbeddingDim,
+		EmbeddingBatchSize:     cfg.EmbeddingBatchSize,
+		EmbeddingConcurrency:   cfg.EmbeddingConcurrency,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)

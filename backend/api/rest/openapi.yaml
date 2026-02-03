@@ -189,6 +189,9 @@ paths:
     post:
       tags: [books]
       summary: Upload book
+      description: |
+        Upload a PDF/EPUB/TXT file. Size and allowed extensions are configurable
+        on the server (default 50MB, .pdf/.epub/.txt).
       security:
         - bearerAuth: []
       requestBody:
@@ -324,6 +327,9 @@ paths:
     post:
       tags: [chat]
       summary: Ask a question about a book
+      description: |
+        The service may include the most recent conversation history when
+        generating the answer (history length is configurable).
       security:
         - bearerAuth: []
       requestBody:

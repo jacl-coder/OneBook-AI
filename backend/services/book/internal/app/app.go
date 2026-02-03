@@ -19,23 +19,27 @@ import (
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL    string
-	Store          store.Store
-	MinioEndpoint  string
-	MinioAccessKey string
-	MinioSecretKey string
-	MinioBucket    string
-	MinioUseSSL    bool
-	IngestURL      string
-	InternalToken  string
+	DatabaseURL       string
+	Store             store.Store
+	MinioEndpoint     string
+	MinioAccessKey    string
+	MinioSecretKey    string
+	MinioBucket       string
+	MinioUseSSL       bool
+	IngestURL         string
+	InternalToken     string
+	MaxUploadBytes    int64
+	AllowedExtensions []string
 }
 
 // App is the core application service wiring together storage and domain logic.
 type App struct {
-	store         store.Store
-	objects       storage.ObjectStore
-	ingest        ingestClient
-	presignExpiry time.Duration
+	store             store.Store
+	objects           storage.ObjectStore
+	ingest            ingestClient
+	presignExpiry     time.Duration
+	maxUploadBytes    int64
+	allowedExtensions map[string]struct{}
 }
 
 // New constructs the application with database-backed metadata storage and filesystem file storage.
@@ -63,10 +67,12 @@ func New(cfg Config) (*App, error) {
 	}
 
 	return &App{
-		store:         dataStore,
-		objects:       objStore,
-		ingest:        newIngestClient(cfg.IngestURL, cfg.InternalToken),
-		presignExpiry: 15 * time.Minute,
+		store:             dataStore,
+		objects:           objStore,
+		ingest:            newIngestClient(cfg.IngestURL, cfg.InternalToken),
+		presignExpiry:     15 * time.Minute,
+		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
+		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
 	}, nil
 }
 
@@ -74,6 +80,12 @@ func New(cfg Config) (*App, error) {
 func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size int64) (domain.Book, error) {
 	if filename == "" {
 		return domain.Book{}, errors.New("filename required")
+	}
+	if !a.isExtensionAllowed(filename) {
+		return domain.Book{}, fmt.Errorf("unsupported file type")
+	}
+	if a.maxUploadBytes > 0 && size > 0 && size > a.maxUploadBytes {
+		return domain.Book{}, fmt.Errorf("file too large")
 	}
 	id := util.NewID()
 	storageKey := buildStorageKey(id, filename)
@@ -202,4 +214,38 @@ func sanitizeFilename(name string) string {
 		}
 	}
 	return strings.Trim(b.String(), "_")
+}
+
+func normalizeMaxBytes(value int64) int64 {
+	if value <= 0 {
+		return 50 * 1024 * 1024
+	}
+	return value
+}
+
+func normalizeExtensions(exts []string) map[string]struct{} {
+	if len(exts) == 0 {
+		exts = []string{".pdf", ".epub", ".txt"}
+	}
+	out := make(map[string]struct{}, len(exts))
+	for _, ext := range exts {
+		ext = strings.ToLower(strings.TrimSpace(ext))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		out[ext] = struct{}{}
+	}
+	return out
+}
+
+func (a *App) isExtensionAllowed(filename string) bool {
+	if len(a.allowedExtensions) == 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	_, ok := a.allowedExtensions[ext]
+	return ok
 }

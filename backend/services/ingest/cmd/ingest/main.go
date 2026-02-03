@@ -21,12 +21,19 @@ func main() {
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:    cfg.DatabaseURL,
-		BookServiceURL: cfg.BookServiceURL,
-		IndexerURL:     cfg.IndexerURL,
-		InternalToken:  cfg.InternalToken,
-		ChunkSize:      cfg.ChunkSize,
-		ChunkOverlap:   cfg.ChunkOverlap,
+		DatabaseURL:            cfg.DatabaseURL,
+		BookServiceURL:         cfg.BookServiceURL,
+		IndexerURL:             cfg.IndexerURL,
+		InternalToken:          cfg.InternalToken,
+		RedisAddr:              cfg.RedisAddr,
+		RedisPassword:          cfg.RedisPassword,
+		QueueName:              cfg.QueueName,
+		QueueGroup:             cfg.QueueGroup,
+		QueueConcurrency:       cfg.QueueConcurrency,
+		QueueMaxRetries:        cfg.QueueMaxRetries,
+		QueueRetryDelaySeconds: cfg.QueueRetryDelaySeconds,
+		ChunkSize:              cfg.ChunkSize,
+		ChunkOverlap:           cfg.ChunkOverlap,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)

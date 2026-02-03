@@ -23,6 +23,7 @@ type Config struct {
 	EmbeddingModel    string
 	EmbeddingDim      int
 	TopK              int
+	HistoryLimit      int
 }
 
 // App is the core application service wiring together storage and chat logic.
@@ -32,6 +33,7 @@ type App struct {
 	embedder        ai.Embedder
 	generationModel string
 	topK            int
+	historyLimit    int
 }
 
 // New constructs the application with database-backed storage for messages.
@@ -79,6 +81,10 @@ func New(cfg Config) (*App, error) {
 	if topK <= 0 {
 		topK = 4
 	}
+	historyLimit := cfg.HistoryLimit
+	if historyLimit < 0 {
+		historyLimit = 0
+	}
 
 	return &App{
 		store:           dataStore,
@@ -86,6 +92,7 @@ func New(cfg Config) (*App, error) {
 		embedder:        embedder,
 		generationModel: cfg.GenerationModel,
 		topK:            topK,
+		historyLimit:    historyLimit,
 	}, nil
 }
 
@@ -112,8 +119,21 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (
 	if len(chunks) == 0 {
 		return domain.Answer{}, ErrBookNotReady
 	}
+	var history []domain.Message
+	if a.historyLimit > 0 {
+		history, err = a.store.ListMessages(book.ID, a.historyLimit)
+		if err != nil {
+			return domain.Answer{}, fmt.Errorf("load history: %w", err)
+		}
+	}
+	historyText := buildHistory(history)
 	contextText, sources := buildContext(chunks)
-	userPrompt := fmt.Sprintf("书名：%s\n问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, question, contextText)
+	var userPrompt string
+	if historyText != "" {
+		userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, historyText, question, contextText)
+	} else {
+		userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, question, contextText)
+	}
 	systemPrompt := "你是一个可靠的读书助手，必须基于提供的资料回答，并在回答中标注引用编号。"
 	response, err := a.gemini.GenerateText(ctx, a.generationModel, systemPrompt, userPrompt)
 	if err != nil {
@@ -171,6 +191,31 @@ func buildContext(chunks []domain.Chunk) (string, []domain.Source) {
 		})
 	}
 	return sb.String(), sources
+}
+
+func buildHistory(messages []domain.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, msg := range messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		switch role {
+		case "user":
+			role = "用户"
+		case "assistant":
+			role = "助手"
+		default:
+			if role == "" {
+				role = "消息"
+			}
+		}
+		sb.WriteString(role)
+		sb.WriteString(": ")
+		sb.WriteString(msg.Content)
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func chunkLocation(meta map[string]string) string {

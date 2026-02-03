@@ -22,6 +22,7 @@ type Store interface {
 
 	// chats
 	AppendMessage(bookID string, msg domain.Message) error
+	ListMessages(bookID string, limit int) ([]domain.Message, error)
 
 	// chunks
 	ReplaceChunks(bookID string, chunks []domain.Chunk) error
