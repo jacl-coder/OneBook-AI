@@ -1,30 +1,26 @@
 # 开发进度（后端）
 
 ## 已完成
-- 目录重构为微服务式布局：`backend/services/<service>/`，Auth/Book/Ingest/Indexer/Chat/Gateway 服务可独立运行。
-- Gateway 负责对外 API 聚合；Auth/Book/Chat/Ingest/Indexer 通过 HTTP/JSON 协作。
-- Auth：用户注册/登录、管理员用户管理；JWT 登出通过撤销列表生效。
-- Book：书籍上传/列表/查询/删除，对接 MinIO。
-- Ingest/Indexer：解析 PDF/EPUB/文本 → 语义分块 → 生成向量 → 写库并更新书籍状态。
-- Chat：检索向量召回 + 生成回答（Gemini），消息落库并返回引用。
-- Embedding 支持切换 Gemini/Ollama（本地模型），维度可配置；已修复维度不一致问题。
-- Chunk metadata 统一结构：`source_type/source_ref`，同时保留 `page/section/chunk`；旧数据自动回填。
-- Ingest/Indexer 使用 Redis 持久队列，支持重试；Index 支持批量/并发写入。
-- 上传限制与白名单：网关/Book 服务限制大小与扩展名。
-- Chat 已支持历史上下文拼接。
-- 本地基准工具：`backend/cmd/bench_embed` 支持批量/并发/分块测速（支持 EPUB 解析）。
-- 运行说明与结构已更新至仓库 `README.md` 和 `docs/backend_arch.md`。
-- 初步契约与共享包：`api/rest/openapi.yaml`（草稿），`api/grpc/` 说明；共享 `pkg/domain` 与 `pkg/auth`（密码散列）。
+- 微服务拆分：Gateway/Auth/Book/Ingest/Indexer/Chat 可独立运行。
+- Gateway：统一入口、鉴权校验、admin 查询、/healthz。
+- Auth：注册/登录/登出、用户自助、管理员用户管理；JWT 或 Redis 会话；撤销列表生效。
+- Book：上传/列表/查询/删除；MinIO 存储；下载预签名 URL（文件名为原始文件名）。
+- Ingest：PDF/EPUB/TXT 解析；PDF 优先 `pdftotext`，失败回退 Go PDF；语义分块。
+- Chunk metadata 统一：`source_type/source_ref`，并保留 `page/section/chunk`。
+- Indexer：Embedding 可选 Gemini/Ollama；支持批量/并发写入 pgvector；状态更新。
+- Chat：向量检索 + Gemini 生成回答，附出处；消息入库并拼接最近 N 轮历史。
+- 任务队列：Redis Streams 持久队列，支持重试与失败回写。
+- 上传限制：网关/Book 扩展名白名单与大小限制（默认 50MB）。
+- 工具与脚本：`run.sh` 一键启动；`cmd/bench_embed` 基准测试。
+- 文档与规范：OpenAPI（Gateway/Internal）、Swagger UI、通用 Dockerfile、CI（go test）。
 
 ## 待办（按优先级）
-1) **接口契约**：在 `api/` 目录定义 REST/OpenAPI 与 gRPC proto（对外与内网接口）。
-2) **分层落地**：按 handler/service/repo 拆分 gateway 逻辑；抽离 shared 包（domain/config/auth/logger/observability）。
-3) **存储与鉴权强化**：JWT/刷新 token、配额/速率限制。
-4) **异步与索引**：为 ingest/indexer 接入队列（Kafka/NATS/Redis Streams），实现重试、幂等与索引重建流程。
-5) **性能优化**：embedding 批量/并发、chunk 参数调优、重复文本去重与缓存。
-6) **聊天编排**：检索重排、引用过滤与更精细的提示模板。
-7) **可观测性与 CI**: 统一日志/metrics/tracing，健康/就绪探针，Makefile + golangci-lint + CI 流水线。
-8) **部署脚本**：Dockerfile、docker-compose/k8s manifests，配置样例 `.env.example`。
+1) **可观测性**：metrics/tracing、队列与索引进度监控、日志统一。
+2) **检索质量**：重排、去重、上下文裁剪、提示模板优化。
+3) **安全与配额**：刷新令牌、速率限制、配额管理、多租户策略。
+4) **内容处理增强**：OCR/图片 PDF、表格与公式更高保真解析。
+5) **管理与前端**：任务看板、失败重试 UI、书库/对话前端。
+6) **接口与测试**：契约测试、回归测试、gRPC/proto 规划。
 
 ## 备注
-- 当前通过 `run.sh` 可一键启动依赖与全部后端服务；默认使用本地 Ollama 作为 embedding（可切换 Gemini）。
+- 默认使用本地 Ollama 作为 embedding（可切换 Gemini）。

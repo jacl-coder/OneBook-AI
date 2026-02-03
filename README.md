@@ -4,106 +4,96 @@
 
 ## 当前状态
 - 需求与功能规格：见 `docs/requirements.md` 与 `docs/functional_spec.md`
-- 技术框架概览：见 `docs/tech_overview.md`
-- 后端服务已拆分并实现：上传 → 解析/分块 → 向量索引 → 检索问答链路。
-- Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini。
-- Ingest/Indexer 使用 Redis 持久队列，支持重试与失败恢复。
+- 技术框架概览：见 `docs/tech_overview.md` 与 `docs/backend_arch.md`
+- 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
+- Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini
+- Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
 
-## 目标功能（MVP）
-- 上传 PDF/EPUB/TXT，处理状态可视（排队/处理中/可对话/失败）。
-- 书库列表与删除；按书发起对话。
-- 基于书本内容回答，并附章节/页码/段落出处；会话保留最近若干轮上下文。
+## 功能概览（已实现）
+- 上传 PDF/EPUB/TXT，支持扩展名白名单和大小限制（默认 50MB）。
+- 书库列表/查询/删除；下载返回预签名 URL，浏览器下载名为原始文件名。
+- 解析与分块：PDF/EPUB/TXT，语义分块并保留来源元数据（`source_type/source_ref`）。
+- 索引：pgvector 向量写入，Embedding 支持批量/并发。
+- 对话：基于向量检索生成回答并附出处；保存消息并拼接最近 N 轮历史。
+- 管理员：用户/书籍列表与用户角色/状态管理。
 
-## 技术栈（规划）
-- 后端：Go（Gin/Fiber/Echo 皆可）
+## 技术栈（当前）
+- 后端：Go（标准库 `net/http`）
 - 数据库：Postgres + pgvector
-- 前端：React（Vite/Next.js 皆可）
-- 存储：MinIO（S3 兼容对象存储）；JWT/Session 鉴权
+- 存储：MinIO（S3 兼容对象存储）
+- 队列：Redis Streams（Ingest/Indexer），Redis（会话/撤销列表）
+- LLM：Gemini（回答生成）
+- Embedding：Gemini 或 Ollama（本地模型）
+- 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库
 
-## 后端（当前实现）
-- 位置：`backend/services/`（Gateway + 多服务）
-- 路由（均需 Bearer token，除认证与健康检查）：
-  - 认证：`POST /api/auth/signup`，`POST /api/auth/login` 返回 JWT；`GET /api/users/me`
-  - 登出：`POST /api/auth/logout`（需要 Bearer token，立即失效会话）
-  - 用户自助：`PATCH /api/users/me`（更新邮箱），`POST /api/users/me/password`（修改密码）
-  - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE）
+## 后端服务与 API
+- 服务目录：`backend/services/`（Gateway + 多服务）
+- 默认端口：Gateway 8080、Auth 8081、Book 8082、Chat 8083、Ingest 8084、Indexer 8085
+- 公共路由（均需 Bearer token，除认证与健康检查）：
+  - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/logout`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
+  - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
   - 对话：`POST /api/chats`（body: bookId + question）
-  - 管理员：`GET /api/admin/users`，`PATCH /api/admin/users/{id}`（更新角色/状态），`GET /api/admin/books`
+  - 管理员：`GET /api/admin/users`，`PATCH /api/admin/users/{id}`，`GET /api/admin/books`
   - 健康：`/healthz`
-- 状态流转：上传后进入排队→处理中→可对话；失败会写入错误信息。
-- 存储：元数据保存在 Postgres，书籍文件存储在 MinIO。
-- 服务目录：`backend/services/gateway/`（BFF/入口）、`backend/services/auth/`、`backend/services/book/`、`backend/services/ingest/`、`backend/services/indexer/`、`backend/services/chat/`。
 
-### 本地运行
+## 本地运行
 ```bash
-# 启动本地依赖（Postgres + Redis + MinIO）
-docker compose up -d postgres redis minio minio-init
+# 启动依赖（Postgres + Redis + MinIO + Swagger UI）
+docker compose up -d postgres redis minio minio-init swagger-ui
 
 # 可选：统一内部服务令牌
 export ONEBOOK_INTERNAL_TOKEN=onebook-internal
 
-# 运行 Auth 服务（独立端口，默认 8081）
+# 运行 Auth 服务（默认 8081）
 cd backend/services/auth
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/auth
-# 配置：backend/services/auth/config.yaml；Gateway 配置 authServiceURL 指向该地址
-# 如需使用 Redis 会话：保持 redisAddr 为 localhost:6379，并将 jwtSecret 置空
 
-# 运行 Book 服务（独立端口，默认 8082）
+# 运行 Book 服务（默认 8082）
 cd ../book
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/book
-# 配置：backend/services/book/config.yaml；Gateway 配置 bookServiceURL 指向该地址
 
-# 运行 Chat 服务（独立端口，默认 8083）
+# 运行 Chat 服务（默认 8083）
 cd ../chat
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/chat
-# 配置：backend/services/chat/config.yaml；Gateway 配置 chatServiceURL 指向该地址
-# 环境变量：GEMINI_API_KEY（用于生成回答）
-# Embedding 可通过 OLLAMA_* 或 GEMINI_* 配置切换
 
-# 运行 Ingest 服务（独立端口，默认 8084）
+# 运行 Ingest 服务（默认 8084）
 cd ../ingest
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/ingest
-# 配置：backend/services/ingest/config.yaml
 
-# 运行 Indexer 服务（独立端口，默认 8085）
+# 运行 Indexer 服务（默认 8085）
 cd ../indexer
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/indexer
-# 配置：backend/services/indexer/config.yaml
-# 环境变量：GEMINI_API_KEY（仅在使用 Gemini embedding 时必需）
 
-# 另开终端运行 Gateway
+# 运行 Gateway（默认 8080）
 cd ../gateway
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
-# 环境变量：PORT（默认 8080）
-# Gateway 配置：backend/services/gateway/config.yaml
-
-# 示例：注册并调用（需替换 token）
-# curl -X POST http://localhost:8080/api/auth/signup -d '{"email":"user@example.com","password":"secret"}'
-# curl -H "Authorization: Bearer <token>" http://localhost:8080/api/users/me
-# curl -H "Authorization: Bearer <token>" -F "file=@/path/book.pdf" http://localhost:8080/api/books
 ```
 
 一键启动（含依赖 + 本地 Ollama embeddings）：
 ```bash
 ./run.sh
 ```
-会同时启动 Auth 服务、Book 服务、Chat 服务、Ingest 服务、Indexer 服务与 Gateway。
 
 ## Docker 构建（服务镜像）
-项目提供一个通用 `backend/Dockerfile`，通过构建参数指定服务与入口：
+项目提供通用 `backend/Dockerfile`，通过构建参数指定服务与入口：
 ```bash
 # 示例：构建 gateway
-docker build -f backend/Dockerfile -t onebook-gateway \\
-  --build-arg SERVICE=gateway --build-arg CMD=server \\
+docker build -f backend/Dockerfile -t onebook-gateway \
+  --build-arg SERVICE=gateway --build-arg CMD=server \
   backend
 ```
 
 ## 接口文档
 - REST/OpenAPI（Gateway）：`backend/api/rest/openapi.yaml`
 - REST/OpenAPI（Internal）：`backend/api/rest/openapi-internal.yaml`
-- 本地 Swagger UI：`docker compose up -d swagger-ui` 后访问 `http://localhost:8086`（可在下拉中切换 Gateway/Internal）
+- Swagger UI：`docker compose up -d swagger-ui` 后访问 `http://localhost:8086`
+
+## 开发与测试
+- 后端测试：`cd backend && go test ./...`
+- Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
 
 ## 后续步骤（建议）
-1) 接入异步队列（Kafka/NATS/Redis Streams）与任务重试。
-2) 打磨提示模板与检索重排策略，提升回答质量。
-3) 完善鉴权、配额、错误路径与前端对接。
+1) 可观测性：指标/追踪、队列与索引处理监控。
+2) 检索质量：重排、去重与提示模板优化。
+3) 安全与配额：刷新令牌、速率限制、配额管理。
+4) 前端：书库与对话 UI、上传进度与失败重试体验。
