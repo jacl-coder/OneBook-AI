@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"onebookai/internal/util"
@@ -16,26 +17,32 @@ import (
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	Auth *authclient.Client
-	Book *bookclient.Client
-	Chat *chatclient.Client
+	Auth              *authclient.Client
+	Book              *bookclient.Client
+	Chat              *chatclient.Client
+	MaxUploadBytes    int64
+	AllowedExtensions []string
 }
 
 // Server exposes HTTP endpoints for the backend.
 type Server struct {
-	auth  *authclient.Client
-	books *bookclient.Client
-	chat  *chatclient.Client
-	mux   *http.ServeMux
+	auth              *authclient.Client
+	books             *bookclient.Client
+	chat              *chatclient.Client
+	mux               *http.ServeMux
+	maxUploadBytes    int64
+	allowedExtensions map[string]struct{}
 }
 
 // New constructs the server with routes configured.
 func New(cfg Config) *Server {
 	s := &Server{
-		auth:  cfg.Auth,
-		books: cfg.Book,
-		chat:  cfg.Chat,
-		mux:   http.NewServeMux(),
+		auth:              cfg.Auth,
+		books:             cfg.Book,
+		chat:              cfg.Chat,
+		mux:               http.NewServeMux(),
+		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
+		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
 	}
 	s.routes()
 	return s
@@ -284,6 +291,9 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, user
 }
 
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user domain.User) {
+	if s.maxUploadBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, s.maxUploadBytes)
+	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid form data")
 		return
@@ -294,6 +304,10 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 		return
 	}
 	defer file.Close()
+	if !s.isExtensionAllowed(header.Filename) {
+		writeError(w, http.StatusBadRequest, "unsupported file type")
+		return
+	}
 	book, err := s.books.UploadBook(user, header.Filename, file)
 	if err != nil {
 		writeBookError(w, err)
@@ -508,6 +522,40 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func normalizeMaxBytes(value int64) int64 {
+	if value <= 0 {
+		return 50 * 1024 * 1024
+	}
+	return value
+}
+
+func normalizeExtensions(exts []string) map[string]struct{} {
+	if len(exts) == 0 {
+		exts = []string{".pdf", ".epub", ".txt"}
+	}
+	out := make(map[string]struct{}, len(exts))
+	for _, ext := range exts {
+		ext = strings.ToLower(strings.TrimSpace(ext))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		out[ext] = struct{}{}
+	}
+	return out
+}
+
+func (s *Server) isExtensionAllowed(filename string) bool {
+	if len(s.allowedExtensions) == 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	_, ok := s.allowedExtensions[ext]
+	return ok
 }
 
 func writeAuthError(w http.ResponseWriter, err error) {

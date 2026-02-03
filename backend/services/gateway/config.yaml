@@ -3,3 +3,5 @@ logLevel: "info"
 authServiceURL: "http://localhost:8081"
 bookServiceURL: "http://localhost:8082"
 chatServiceURL: "http://localhost:8083"
+maxUploadBytes: 52428800 # 50MB
+allowedExtensions: [".pdf", ".epub", ".txt"]

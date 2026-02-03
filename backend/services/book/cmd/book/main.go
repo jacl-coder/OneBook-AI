@@ -21,22 +21,25 @@ func main() {
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:    cfg.DatabaseURL,
-		MinioEndpoint:  cfg.MinioEndpoint,
-		MinioAccessKey: cfg.MinioAccessKey,
-		MinioSecretKey: cfg.MinioSecretKey,
-		MinioBucket:    cfg.MinioBucket,
-		MinioUseSSL:    cfg.MinioUseSSL,
-		IngestURL:      cfg.IngestURL,
-		InternalToken:  cfg.InternalToken,
+		DatabaseURL:       cfg.DatabaseURL,
+		MinioEndpoint:     cfg.MinioEndpoint,
+		MinioAccessKey:    cfg.MinioAccessKey,
+		MinioSecretKey:    cfg.MinioSecretKey,
+		MinioBucket:       cfg.MinioBucket,
+		MinioUseSSL:       cfg.MinioUseSSL,
+		IngestURL:         cfg.IngestURL,
+		InternalToken:     cfg.InternalToken,
+		MaxUploadBytes:    cfg.MaxUploadBytes,
+		AllowedExtensions: cfg.AllowedExtensions,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)
 	}
 
 	httpServer := server.New(server.Config{
-		App:           appCore,
-		InternalToken: cfg.InternalToken,
+		App:            appCore,
+		InternalToken:  cfg.InternalToken,
+		MaxUploadBytes: cfg.MaxUploadBytes,
 	})
 
 	addr := ":" + cfg.Port
