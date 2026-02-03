@@ -42,10 +42,9 @@
 - 可用 API Gateway 或 Service Mesh 替代。
 
 ## 下一步推进
-1) 接入持久队列（Redis Streams/NATS）与任务重试/幂等。
-2) 增加可观测性（metrics/tracing/统一日志）。
-3) 增强性能（embedding 批量/并发、chunk 参数调优）。
-4) 引入配额/速率限制与多租户治理能力。
+1) 增加可观测性（metrics/tracing/统一日志）。
+2) 增强性能（embedding 批量/并发、chunk 参数调优）。
+3) 引入配额/速率限制与多租户治理能力。
 
 ## 配置演进
 - 现状：各服务拥有独立配置，Gateway 只需下游服务地址与鉴权配置。

@@ -1,7 +1,15 @@
 port: "8085"
 # Secrets loaded from environment variables:
-# DATABASE_URL, ONEBOOK_INTERNAL_TOKEN,
+# DATABASE_URL, ONEBOOK_INTERNAL_TOKEN, REDIS_ADDR, REDIS_PASSWORD
 # GEMINI_API_KEY, GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIM,
 # OLLAMA_HOST, OLLAMA_EMBEDDING_MODEL, OLLAMA_EMBEDDING_DIM
+# EMBEDDING_BATCH_SIZE, EMBEDDING_CONCURRENCY
 logLevel: "info"
 bookServiceURL: "http://localhost:8082"
+queueName: "onebook:indexer"
+queueGroup: "indexer"
+queueConcurrency: 2
+queueMaxRetries: 3
+queueRetryDelaySeconds: 2
+embeddingBatchSize: 4
+embeddingConcurrency: 2

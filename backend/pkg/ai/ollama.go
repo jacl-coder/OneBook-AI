@@ -67,6 +67,50 @@ func (c *OllamaClient) EmbedText(ctx context.Context, model string, text string,
 	return nil, fmt.Errorf("ollama embed response missing embeddings")
 }
 
+// EmbedTexts generates embeddings for multiple inputs.
+func (c *OllamaClient) EmbedTexts(ctx context.Context, model string, texts []string, dimensions int) ([][]float32, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, fmt.Errorf("ollama embedding model required")
+	}
+	if len(texts) == 0 {
+		return nil, fmt.Errorf("embedding texts required")
+	}
+
+	reqBody := ollamaEmbedRequest{
+		Model: model,
+		Input: texts,
+	}
+	if dimensions > 0 {
+		reqBody.Dimensions = dimensions
+	}
+
+	var resp ollamaEmbedResponse
+	status, err := c.doJSON(ctx, "/api/embed", reqBody, &resp)
+	if err != nil {
+		if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+			out := make([][]float32, 0, len(texts))
+			for _, text := range texts {
+				embedding, err := c.EmbedText(ctx, model, text, dimensions)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, embedding)
+			}
+			return out, nil
+		}
+		return nil, err
+	}
+
+	if len(resp.Embeddings) > 0 {
+		return resp.Embeddings, nil
+	}
+	if len(resp.Embedding) > 0 && len(texts) == 1 {
+		return [][]float32{resp.Embedding}, nil
+	}
+	return nil, fmt.Errorf("ollama embed response missing embeddings")
+}
+
 func (c *OllamaClient) embedLegacy(ctx context.Context, model, text string) ([]float32, error) {
 	reqBody := ollamaLegacyEmbedRequest{
 		Model:  model,

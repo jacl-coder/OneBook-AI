@@ -9,6 +9,9 @@
 - Chat：检索向量召回 + 生成回答（Gemini），消息落库并返回引用。
 - Embedding 支持切换 Gemini/Ollama（本地模型），维度可配置；已修复维度不一致问题。
 - Chunk metadata 统一结构：`source_type/source_ref`，同时保留 `page/section/chunk`；旧数据自动回填。
+- Ingest/Indexer 使用 Redis 持久队列，支持重试；Index 支持批量/并发写入。
+- 上传限制与白名单：网关/Book 服务限制大小与扩展名。
+- Chat 已支持历史上下文拼接。
 - 本地基准工具：`backend/cmd/bench_embed` 支持批量/并发/分块测速（支持 EPUB 解析）。
 - 运行说明与结构已更新至仓库 `README.md` 和 `docs/backend_arch.md`。
 - 初步契约与共享包：`api/rest/openapi.yaml`（草稿），`api/grpc/` 说明；共享 `pkg/domain` 与 `pkg/auth`（密码散列）。
@@ -25,4 +28,3 @@
 
 ## 备注
 - 当前通过 `run.sh` 可一键启动依赖与全部后端服务；默认使用本地 Ollama 作为 embedding（可切换 Gemini）。
-- Ingest/Indexer 任务队列为内存实现，重启会丢失任务。

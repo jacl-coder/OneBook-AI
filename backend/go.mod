@@ -8,6 +8,7 @@ require (
 	github.com/pgvector/pgvector-go v0.2.0
 	github.com/redis/go-redis/v9 v9.17.2
 	golang.org/x/net v0.30.0
+	golang.org/x/sync v0.13.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.0
@@ -36,7 +37,6 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
-	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
