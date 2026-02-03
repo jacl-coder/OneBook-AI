@@ -69,8 +69,10 @@ func (a *App) parsePDFWithPdftotext(path string) ([]chunkPayload, error) {
 			chunks = append(chunks, chunkPayload{
 				Content: part,
 				Metadata: map[string]string{
-					"page":  strconv.Itoa(pageIdx + 1),
-					"chunk": strconv.Itoa(idx),
+					"source_type": "pdf",
+					"source_ref":  fmt.Sprintf("page:%d", pageIdx+1),
+					"page":        strconv.Itoa(pageIdx + 1),
+					"chunk":       strconv.Itoa(idx),
 				},
 			})
 		}
@@ -105,8 +107,10 @@ func (a *App) parsePDFWithGoLib(path string) ([]chunkPayload, error) {
 			chunks = append(chunks, chunkPayload{
 				Content: part,
 				Metadata: map[string]string{
-					"page":  strconv.Itoa(i),
-					"chunk": strconv.Itoa(idx),
+					"source_type": "pdf",
+					"source_ref":  fmt.Sprintf("page:%d", i),
+					"page":        strconv.Itoa(i),
+					"chunk":       strconv.Itoa(idx),
 				},
 			})
 		}
@@ -148,8 +152,10 @@ func (a *App) parseEPUB(path string) ([]chunkPayload, error) {
 			chunks = append(chunks, chunkPayload{
 				Content: part,
 				Metadata: map[string]string{
-					"section": baseName,
-					"chunk":   strconv.Itoa(idx),
+					"source_type": "epub",
+					"source_ref":  fmt.Sprintf("section:%s", baseName),
+					"section":     baseName,
+					"chunk":       strconv.Itoa(idx),
 				},
 			})
 		}
@@ -169,7 +175,9 @@ func (a *App) parseText(path string) ([]chunkPayload, error) {
 		chunks = append(chunks, chunkPayload{
 			Content: part,
 			Metadata: map[string]string{
-				"chunk": strconv.Itoa(idx),
+				"source_type": "text",
+				"source_ref":  "text",
+				"chunk":       strconv.Itoa(idx),
 			},
 		})
 	}
