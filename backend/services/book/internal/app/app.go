@@ -143,7 +143,7 @@ func (a *App) GetDownloadURL(id string) (string, string, error) {
 	if strings.TrimSpace(book.StorageKey) == "" {
 		return "", "", fmt.Errorf("storage key missing")
 	}
-	url, err := a.objects.PresignGet(context.Background(), book.StorageKey, a.presignExpiry)
+	url, err := a.objects.PresignGet(context.Background(), book.StorageKey, a.presignExpiry, book.OriginalFilename)
 	if err != nil {
 		return "", "", err
 	}

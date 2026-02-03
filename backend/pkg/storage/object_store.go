@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -13,7 +15,7 @@ import (
 // ObjectStore provides access to object storage.
 type ObjectStore interface {
 	Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error
-	PresignGet(ctx context.Context, key string, expiry time.Duration) (string, error)
+	PresignGet(ctx context.Context, key string, expiry time.Duration, filename string) (string, error)
 	Delete(ctx context.Context, key string) error
 }
 
@@ -56,8 +58,12 @@ func (m *MinioStore) Put(ctx context.Context, key string, r io.Reader, size int6
 }
 
 // PresignGet generates a pre-signed GET URL.
-func (m *MinioStore) PresignGet(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	url, err := m.client.PresignedGetObject(ctx, m.bucket, key, expiry, nil)
+func (m *MinioStore) PresignGet(ctx context.Context, key string, expiry time.Duration, filename string) (string, error) {
+	reqParams := url.Values{}
+	if strings.TrimSpace(filename) != "" {
+		reqParams.Set("response-content-disposition", contentDisposition(filename))
+	}
+	url, err := m.client.PresignedGetObject(ctx, m.bucket, key, expiry, reqParams)
 	if err != nil {
 		return "", fmt.Errorf("presign get: %w", err)
 	}
@@ -70,4 +76,64 @@ func (m *MinioStore) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("delete object: %w", err)
 	}
 	return nil
+}
+
+func contentDisposition(filename string) string {
+	fallback := sanitizeASCII(filename)
+	if fallback == "" {
+		fallback = "download"
+	}
+	encoded := encodeRFC5987(filename)
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", fallback, encoded)
+}
+
+func sanitizeASCII(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	lastUnderscore := false
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' {
+			b.WriteByte(c)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func encodeRFC5987(value string) string {
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if isAttrChar(c) {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteString(fmt.Sprintf("%%%02X", c))
+	}
+	return b.String()
+}
+
+func isAttrChar(c byte) bool {
+	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+		return true
+	}
+	switch c {
+	case '!', '#', '$', '&', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	default:
+		return false
+	}
 }
