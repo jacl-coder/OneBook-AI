@@ -1,16 +1,17 @@
 # Gateway to Microservices Migration Plan
 
-当前 `backend/services/gateway` 同时承载鉴权、书籍、对话等核心逻辑，方便 MVP 快速跑通。未来拆分时建议按以下边界演进。
+当前项目已完成基础服务拆分，Gateway 作为入口/BFF。此文档转为记录已完成拆分与后续演进方向。
 
-## 现状（单体网关）
-- 鉴权：注册/登录/退出，JWT（HMAC）发放与校验，Redis 可选会话存储。
-- 用户管理：`/api/users/me` 基于 JWT 解析用户。
-- 书籍：上传/列表/查询/删除，文件落盘，状态模拟。
-- 对话：占位问答。
-- 管理：用户/书籍列表。
-- 存储：Postgres（元数据）、文件系统（书文件）、Redis（会话 token）。
+## 现状（已服务化）
+- Gateway：统一入口，路由到 Auth/Book/Chat，提供 admin 查询与 healthz。
+- Auth：注册/登录/登出/用户自助/管理员用户管理，JWT 撤销列表生效。
+- Book：书籍上传/列表/查询/删除，文件存储在 MinIO。
+- Ingest：解析 PDF/EPUB/TXT，语义分块写入 Postgres。
+- Indexer：Embedding 可选 Ollama 或 Gemini，写入 pgvector 并更新书籍状态。
+- Chat：向量检索 + Gemini 生成回答，消息入库。
+- 存储：Postgres（元数据/向量/消息）、MinIO（书文件）、Redis（会话或撤销列表）。
 
-## 拆分目标
+## 后续演进目标
 1) **Auth Service**
    - 责任：注册/登录、令牌签发与刷新、登出、第三方登录、密码管理、风控/审计。
    - 对外接口：`/auth/signup|login|logout|refresh|introspect`（REST/gRPC）。
@@ -35,26 +36,23 @@
 5) **Admin/Ops Service（可选）**
    - 责任：用户/书籍/任务监控，配置管理，审计导出。
 
-## 网关定位（拆分后）
+## 网关定位（当前）
 - 只做入口：认证校验、限流、熔断、聚合 BFF。
 - 不再持久化业务数据；日志/追踪统一。
 - 可用 API Gateway 或 Service Mesh 替代。
 
-## 渐进式步骤
-1) 抽象接口：在 Gateway 内为 Auth/Book/Chat 定义 client 接口，先用当前内存/本地实现。
-2) 服务化 Auth：将用户/会话逻辑搬到 `services/auth`，Gateway 通过 RPC/REST 调 Auth 获取用户、校验 token。
-3) 服务化 Book：拆出文件存储与元数据 CRUD，Gateway 调用 Book 服务。
-4) 服务化 Ingest/Index/Chat：将处理/检索/对话逻辑独立，Gateway 仅聚合。
-5) 基础设施：统一配置管理、服务发现、链路追踪、指标与告警。
+## 下一步推进
+1) 接入持久队列（Redis Streams/NATS）与任务重试/幂等。
+2) 增加可观测性（metrics/tracing/统一日志）。
+3) 增强性能（embedding 批量/并发、chunk 参数调优）。
+4) 引入配额/速率限制与多租户治理能力。
 
 ## 配置演进
-- 现状：`gateway/config.yaml` 持有 DB/Redis/JWT 等配置。
-- 目标：各服务拥有独立配置；Gateway 只需上游 Auth 公钥/地址、下游服务地址/超时/重试策略。
+- 现状：各服务拥有独立配置，Gateway 只需下游服务地址与鉴权配置。
+- 目标：统一配置管理、密钥托管与配置热更新。
 
 ## 数据与迁移
-- 用户与会话：从 Gateway 的 Postgres/Redis 迁移到 Auth 专用库。
-- 书籍与文件：迁移到 Book 服务的存储，确保文件路径/权限兼容。
-- 消息/向量：随 Chat/Index 服务迁移，保持 ID/引用一致性。
+- 已完成拆分，数据按服务职责维护；后续关注跨服务一致性与审计。
 
 ## 测试与发布
 - 添加契约测试（Gateway↔Auth/Book/Chat）。
