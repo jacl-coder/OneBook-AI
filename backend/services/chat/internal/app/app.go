@@ -14,22 +14,22 @@ import (
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL     string
-	Store           store.Store
-	GeminiAPIKey    string
-	GenerationModel string
+	DatabaseURL       string
+	Store             store.Store
+	GeminiAPIKey      string
+	GenerationModel   string
 	EmbeddingProvider string
 	EmbeddingBaseURL  string
-	EmbeddingModel  string
-	EmbeddingDim    int
-	TopK            int
+	EmbeddingModel    string
+	EmbeddingDim      int
+	TopK              int
 }
 
 // App is the core application service wiring together storage and chat logic.
 type App struct {
-	store          store.Store
-	gemini         *ai.GeminiClient
-	embedder       ai.Embedder
+	store           store.Store
+	gemini          *ai.GeminiClient
+	embedder        ai.Embedder
 	generationModel string
 	topK            int
 }
@@ -176,6 +176,13 @@ func buildContext(chunks []domain.Chunk) (string, []domain.Source) {
 func chunkLocation(meta map[string]string) string {
 	if meta == nil {
 		return ""
+	}
+	if ref := strings.TrimSpace(meta["source_ref"]); ref != "" {
+		parts := strings.SplitN(ref, ":", 2)
+		if len(parts) == 2 {
+			return strings.TrimSpace(parts[0] + " " + parts[1])
+		}
+		return ref
 	}
 	if page := strings.TrimSpace(meta["page"]); page != "" {
 		return "page " + page

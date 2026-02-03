@@ -48,6 +48,36 @@ func NewGormStore(dsn string) (*GormStore, error) {
 			return fmt.Errorf("alter chunk embedding type: %w", err)
 		}
 		if err := tx.Exec(`
+			UPDATE chunk_models
+			SET metadata = jsonb_set(
+				jsonb_set(
+					COALESCE(metadata, '{}'::jsonb),
+					'{source_type}',
+					to_jsonb(
+						CASE
+							WHEN metadata ? 'page' THEN 'pdf'
+							WHEN metadata ? 'section' THEN 'epub'
+							ELSE 'text'
+						END
+					),
+					true
+				),
+				'{source_ref}',
+				to_jsonb(
+					CASE
+						WHEN metadata ? 'page' THEN 'page:' || (metadata->>'page')
+						WHEN metadata ? 'section' THEN 'section:' || (metadata->>'section')
+						ELSE 'text'
+					END
+				),
+				true
+			)
+			WHERE metadata IS NULL
+			   OR NOT (metadata ? 'source_type' AND metadata ? 'source_ref');
+		`).Error; err != nil {
+			return fmt.Errorf("backfill chunk metadata: %w", err)
+		}
+		if err := tx.Exec(`
 			DO $$
 			BEGIN
 				DELETE FROM chunk_models c
