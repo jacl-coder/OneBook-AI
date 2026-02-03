@@ -5,7 +5,8 @@
 ## 当前状态
 - 需求与功能规格：见 `docs/requirements.md` 与 `docs/functional_spec.md`
 - 技术框架概览：见 `docs/tech_overview.md`
-- 后端服务已拆分并实现：书籍上传 -> 解析/分块 -> 向量索引 -> 检索问答链路。
+- 后端服务已拆分并实现：上传 → 解析/分块 → 向量索引 → 检索问答链路。
+- Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini。
 
 ## 目标功能（MVP）
 - 上传 PDF/EPUB/TXT，处理状态可视（排队/处理中/可对话/失败）。
@@ -18,8 +19,8 @@
 - 前端：React（Vite/Next.js 皆可）
 - 存储：MinIO（S3 兼容对象存储）；JWT/Session 鉴权
 
-## 后端（MVP 骨架）
-- 位置：`backend/services/gateway/`（单体入口；后续可拆到多服务）
+## 后端（当前实现）
+- 位置：`backend/services/`（Gateway + 多服务）
 - 路由（均需 Bearer token，除认证与健康检查）：
   - 认证：`POST /api/auth/signup`，`POST /api/auth/login` 返回 JWT；`GET /api/users/me`
   - 登出：`POST /api/auth/logout`（需要 Bearer token，立即失效会话）
@@ -30,7 +31,7 @@
   - 健康：`/healthz`
 - 状态流转：上传后进入排队→处理中→可对话；失败会写入错误信息。
 - 存储：元数据保存在 Postgres，书籍文件存储在 MinIO。
-- 微服务目录（占位入口，便于后续拆分，按服务分文件夹）：`backend/services/gateway/`（BFF/当前单体实现）、`backend/services/auth/`、`backend/services/book/`、`backend/services/ingest/`、`backend/services/indexer/`、`backend/services/chat/`、`backend/services/admin/`（后续填充）。
+- 服务目录：`backend/services/gateway/`（BFF/入口）、`backend/services/auth/`、`backend/services/book/`、`backend/services/ingest/`、`backend/services/indexer/`、`backend/services/chat/`。
 
 ### 本地运行
 ```bash
@@ -55,7 +56,8 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/book
 cd ../chat
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/chat
 # 配置：backend/services/chat/config.yaml；Gateway 配置 chatServiceURL 指向该地址
-# 环境变量：GEMINI_API_KEY（Google AI Studio）
+# 环境变量：GEMINI_API_KEY（用于生成回答）
+# Embedding 可通过 OLLAMA_* 或 GEMINI_* 配置切换
 
 # 运行 Ingest 服务（独立端口，默认 8084）
 cd ../ingest
@@ -66,7 +68,7 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/ingest
 cd ../indexer
 GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/indexer
 # 配置：backend/services/indexer/config.yaml
-# 环境变量：GEMINI_API_KEY（Google AI Studio）
+# 环境变量：GEMINI_API_KEY（仅在使用 Gemini embedding 时必需）
 
 # 另开终端运行 Gateway
 cd ../gateway
@@ -80,7 +82,7 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 # curl -H "Authorization: Bearer <token>" -F "file=@/path/book.pdf" http://localhost:8080/api/books
 ```
 
-一键启动（含依赖）：
+一键启动（含依赖 + 本地 Ollama embeddings）：
 ```bash
 ./run.sh
 ```
