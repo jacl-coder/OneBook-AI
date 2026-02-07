@@ -31,3 +31,8 @@
 - 性能：已支持 embedding 批量与并发，仍需按机器性能调参。
 - 可观测性：仅基础日志与 `/healthz`，缺少 metrics/tracing。
 - 安全基线：用户 token 使用 RS256 + JWKS，本地验签；Gateway/Auth 限流依赖 Redis（安全优先，Redis 异常时拒绝请求）。
+- 一致性基线：refresh token 轮换采用 Redis 原子 CAS；队列重试采用事务化 `XADD + XACK + XDEL`，降低并发与重试时的数据不一致风险。
+
+## 前端联调入口
+- 联调统一走 Gateway：`http://localhost:8080`
+- 联调约定与错误语义：`docs/backend_handoff.md`
