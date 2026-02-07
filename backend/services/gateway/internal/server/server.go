@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -29,6 +28,7 @@ type Config struct {
 	TokenVerifier              *usertoken.Verifier
 	RedisAddr                  string
 	RedisPassword              string
+	TrustedProxyCIDRs          []string
 	SignupRateLimitPerMinute   int
 	LoginRateLimitPerMinute    int
 	RefreshRateLimitPerMinute  int
@@ -50,6 +50,7 @@ type Server struct {
 	loginLimiter      *ratelimit.FixedWindowLimiter
 	refreshLimiter    *ratelimit.FixedWindowLimiter
 	passwordLimiter   *ratelimit.FixedWindowLimiter
+	trustedProxies    *util.TrustedProxies
 }
 
 // New constructs the server with routes configured.
@@ -95,6 +96,10 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustedProxies, err := util.NewTrustedProxies(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("parse trustedProxyCIDRs: %w", err)
+	}
 	s := &Server{
 		auth:              cfg.Auth,
 		books:             cfg.Book,
@@ -107,6 +112,7 @@ func New(cfg Config) (*Server, error) {
 		loginLimiter:      loginLimiter,
 		refreshLimiter:    refreshLimiter,
 		passwordLimiter:   passwordLimiter,
+		trustedProxies:    trustedProxies,
 	}
 	s.routes()
 	return s, nil
@@ -762,7 +768,7 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		"outcome", outcome,
 		"path", r.URL.Path,
 		"method", r.Method,
-		"ip", clientIP(r),
+		"ip", util.ClientIP(r, s.trustedProxies),
 	}
 	logAttrs = append(logAttrs, attrs...)
 	if outcome == "success" {
@@ -773,33 +779,13 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 }
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
-	key := r.URL.Path + "|" + clientIP(r)
+	key := r.URL.Path + "|" + util.ClientIP(r, s.trustedProxies)
 	if limiter.Allow(key) {
 		return true
 	}
 	w.Header().Set("Retry-After", "60")
 	writeError(w, http.StatusTooManyRequests, msg)
 	return false
-}
-
-func clientIP(r *http.Request) string {
-	if xfwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xfwd != "" {
-		parts := strings.Split(xfwd, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
-	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
-	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
-	}
-	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func (s *Server) isExtensionAllowed(filename string) bool {

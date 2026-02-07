@@ -26,7 +26,7 @@ tmp/
 .env
 .env.local
 !.env.example
-secrets/jwt/*.pem
+secrets/**/*.pem
 
 # Backend build/cache & data
 backend/.cache/
