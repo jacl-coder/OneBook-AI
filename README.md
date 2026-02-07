@@ -5,6 +5,7 @@
 ## 当前状态
 - 需求与功能规格：见 `docs/requirements.md` 与 `docs/functional_spec.md`
 - 技术框架概览：见 `docs/tech_overview.md` 与 `docs/backend_arch.md`
+- 前端联调说明：见 `docs/backend_handoff.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
 - Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini
 - Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
@@ -18,6 +19,8 @@
 - 管理员：用户/书籍列表与用户角色/状态管理。
 - 认证：bcrypt 密码哈希（最小 12 位，且需包含大写/小写/数字/特殊字符）、短时效 access token（默认 15 分钟，RS256 + JWKS）、refresh token 轮换与重放检测（Redis）。
 - 授权与风控：网关统一鉴权，管理员接口基于角色控制；网关与认证服务使用 Redis 分布式限流（安全优先，Redis 异常时拒绝请求）。
+- 一致性改进：refresh token 轮换采用 Redis 原子 CAS；检测到旧 token 重放会撤销整个 token family。
+- 队列可靠性改进：重试路径采用同一事务内 `XADD + XACK + XDEL`，避免“先 ack 再重投”丢任务窗口。
 
 ## 技术栈（当前）
 - 后端：Go（标准库 `net/http`）
@@ -112,6 +115,16 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - REST/OpenAPI（Gateway）：`backend/api/rest/openapi.yaml`
 - REST/OpenAPI（Internal）：`backend/api/rest/openapi-internal.yaml`
 - Swagger UI：`docker compose up -d swagger-ui` 后访问 `http://localhost:8086`
+
+## 前端联调（建议先看）
+- 统一只请求 Gateway：`http://localhost:8080`
+- 令牌使用：
+  - 登录/注册返回 `token` + `refreshToken`
+  - 业务请求带 `Authorization: Bearer <token>`
+  - `401` 时调用 `POST /api/auth/refresh`，成功后覆盖本地 token 对
+- 书籍状态建议轮询：上传后轮询 `GET /api/books/{id}`，直到 `status` 为 `ready` 或 `failed`
+- 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`
+- 详细请求/错误语义与联调清单：`docs/backend_handoff.md`
 
 ## 开发与测试
 - 后端测试：`cd backend && go test ./...`
