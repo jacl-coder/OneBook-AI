@@ -6,6 +6,7 @@
 - 需求与功能规格：见 `docs/requirements.md` 与 `docs/functional_spec.md`
 - 技术框架概览：见 `docs/tech_overview.md` 与 `docs/backend_arch.md`
 - 前端联调说明：见 `docs/backend_handoff.md`
+- 前端开发流程：见 `docs/frontend_development_workflow.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
 - Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini
 - Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
