@@ -76,3 +76,97 @@ func TestGatewayServerRequiresRedisRateLimiter(t *testing.T) {
 		t.Fatalf("expected redis-backed limiter initialization to fail without redis addr")
 	}
 }
+
+func TestLoginRateLimitIgnoresSpoofedForwardedForByDefault(t *testing.T) {
+	authSrv := newLoginAuthStub(t)
+	defer authSrv.Close()
+	redis := miniredis.RunT(t)
+
+	gw, err := New(Config{
+		Auth:                      authclient.NewClient(authSrv.URL),
+		RedisAddr:                 redis.Addr(),
+		LoginRateLimitPerMinute:   1,
+		SignupRateLimitPerMinute:  10,
+		RefreshRateLimitPerMinute: 10,
+	})
+	if err != nil {
+		t.Fatalf("new gateway server: %v", err)
+	}
+	gwSrv := httptest.NewServer(gw.Router())
+	defer gwSrv.Close()
+
+	if code := postLoginWithXFF(t, gwSrv.URL, "203.0.113.10"); code != http.StatusOK {
+		t.Fatalf("first request expected 200, got %d", code)
+	}
+	if code := postLoginWithXFF(t, gwSrv.URL, "203.0.113.11"); code != http.StatusTooManyRequests {
+		t.Fatalf("second request expected 429, got %d", code)
+	}
+}
+
+func TestLoginRateLimitCanUseTrustedProxyHeaders(t *testing.T) {
+	authSrv := newLoginAuthStub(t)
+	defer authSrv.Close()
+	redis := miniredis.RunT(t)
+
+	gw, err := New(Config{
+		Auth:                      authclient.NewClient(authSrv.URL),
+		RedisAddr:                 redis.Addr(),
+		TrustedProxyCIDRs:         []string{"127.0.0.0/8"},
+		LoginRateLimitPerMinute:   1,
+		SignupRateLimitPerMinute:  10,
+		RefreshRateLimitPerMinute: 10,
+	})
+	if err != nil {
+		t.Fatalf("new gateway server: %v", err)
+	}
+	gwSrv := httptest.NewServer(gw.Router())
+	defer gwSrv.Close()
+
+	if code := postLoginWithXFF(t, gwSrv.URL, "203.0.113.10"); code != http.StatusOK {
+		t.Fatalf("first client expected 200, got %d", code)
+	}
+	if code := postLoginWithXFF(t, gwSrv.URL, "203.0.113.11"); code != http.StatusOK {
+		t.Fatalf("second client expected 200, got %d", code)
+	}
+	if code := postLoginWithXFF(t, gwSrv.URL, "203.0.113.10"); code != http.StatusTooManyRequests {
+		t.Fatalf("repeat first client expected 429, got %d", code)
+	}
+}
+
+func newLoginAuthStub(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth/login" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token": "t",
+			"user": domain.User{
+				ID:     "u-1",
+				Email:  "u@example.com",
+				Role:   domain.RoleUser,
+				Status: domain.StatusActive,
+			},
+		})
+	}))
+}
+
+func postLoginWithXFF(t *testing.T, baseURL, xff string) int {
+	t.Helper()
+	body := []byte(`{"email":"u@example.com","password":"pass"}`)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if xff != "" {
+		req.Header.Set("X-Forwarded-For", xff)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}

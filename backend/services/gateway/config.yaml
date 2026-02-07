@@ -5,12 +5,14 @@ port: "8080"
 # REDIS_ADDR, REDIS_PASSWORD
 # GATEWAY_SIGNUP_RATE_LIMIT_PER_MINUTE / GATEWAY_LOGIN_RATE_LIMIT_PER_MINUTE /
 # GATEWAY_REFRESH_RATE_LIMIT_PER_MINUTE / GATEWAY_PASSWORD_RATE_LIMIT_PER_MINUTE
+# GATEWAY_TRUSTED_PROXY_CIDRS (comma-separated CIDRs/IPs; empty = trust no proxy headers)
 logLevel: "info"
 authServiceURL: "http://localhost:8081"
 authJwksURL: "http://localhost:8081/auth/jwks"
 jwtIssuer: "onebook-auth"
 jwtAudience: "onebook-api"
 jwtLeeway: "30s"
+trustedProxyCidrs: []
 signupRateLimitPerMinute: 5
 loginRateLimitPerMinute: 10
 refreshRateLimitPerMinute: 20

@@ -22,6 +22,7 @@ type FileConfig struct {
 	JWTLeeway                  string   `yaml:"jwtLeeway"`
 	RedisAddr                  string   `yaml:"redisAddr"`
 	RedisPassword              string   `yaml:"redisPassword"`
+	TrustedProxyCIDRs          []string `yaml:"trustedProxyCidrs"`
 	SignupRateLimitPerMinute   int      `yaml:"signupRateLimitPerMinute"`
 	LoginRateLimitPerMinute    int      `yaml:"loginRateLimitPerMinute"`
 	RefreshRateLimitPerMinute  int      `yaml:"refreshRateLimitPerMinute"`
@@ -70,6 +71,9 @@ func Load(path string) (FileConfig, error) {
 	}
 	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
 		cfg.RedisPassword = v
+	}
+	if v := os.Getenv("GATEWAY_TRUSTED_PROXY_CIDRS"); v != "" {
+		cfg.TrustedProxyCIDRs = splitCSV(v)
 	}
 	if v := os.Getenv("GATEWAY_SIGNUP_RATE_LIMIT_PER_MINUTE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

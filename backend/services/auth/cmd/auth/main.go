@@ -58,6 +58,7 @@ func main() {
 		App:                        appCore,
 		RedisAddr:                  cfg.RedisAddr,
 		RedisPassword:              cfg.RedisPassword,
+		TrustedProxyCIDRs:          cfg.TrustedProxyCIDRs,
 		SignupRateLimitPerMinute:   cfg.SignupRateLimitPerMinute,
 		LoginRateLimitPerMinute:    cfg.LoginRateLimitPerMinute,
 		RefreshRateLimitPerMinute:  cfg.RefreshRateLimitPerMinute,

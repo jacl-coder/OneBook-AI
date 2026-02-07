@@ -13,24 +13,25 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                       string `yaml:"port"`
-	DatabaseURL                string `yaml:"databaseURL"`
-	RedisAddr                  string `yaml:"redisAddr"`
-	RedisPassword              string `yaml:"redisPassword"`
-	SessionTTL                 string `yaml:"sessionTTL"`
-	RefreshTTL                 string `yaml:"refreshTTL"`
-	LogLevel                   string `yaml:"logLevel"`
-	JWTPrivateKeyPath          string `yaml:"jwtPrivateKeyPath"`
-	JWTPublicKeyPath           string `yaml:"jwtPublicKeyPath"`
-	JWTKeyID                   string `yaml:"jwtKeyId"`
-	JWTVerifyPublicKeys        string `yaml:"jwtVerifyPublicKeys"`
-	JWTIssuer                  string `yaml:"jwtIssuer"`
-	JWTAudience                string `yaml:"jwtAudience"`
-	JWTLeeway                  string `yaml:"jwtLeeway"`
-	SignupRateLimitPerMinute   int    `yaml:"signupRateLimitPerMinute"`
-	LoginRateLimitPerMinute    int    `yaml:"loginRateLimitPerMinute"`
-	RefreshRateLimitPerMinute  int    `yaml:"refreshRateLimitPerMinute"`
-	PasswordRateLimitPerMinute int    `yaml:"passwordRateLimitPerMinute"`
+	Port                       string   `yaml:"port"`
+	DatabaseURL                string   `yaml:"databaseURL"`
+	RedisAddr                  string   `yaml:"redisAddr"`
+	RedisPassword              string   `yaml:"redisPassword"`
+	TrustedProxyCIDRs          []string `yaml:"trustedProxyCidrs"`
+	SessionTTL                 string   `yaml:"sessionTTL"`
+	RefreshTTL                 string   `yaml:"refreshTTL"`
+	LogLevel                   string   `yaml:"logLevel"`
+	JWTPrivateKeyPath          string   `yaml:"jwtPrivateKeyPath"`
+	JWTPublicKeyPath           string   `yaml:"jwtPublicKeyPath"`
+	JWTKeyID                   string   `yaml:"jwtKeyId"`
+	JWTVerifyPublicKeys        string   `yaml:"jwtVerifyPublicKeys"`
+	JWTIssuer                  string   `yaml:"jwtIssuer"`
+	JWTAudience                string   `yaml:"jwtAudience"`
+	JWTLeeway                  string   `yaml:"jwtLeeway"`
+	SignupRateLimitPerMinute   int      `yaml:"signupRateLimitPerMinute"`
+	LoginRateLimitPerMinute    int      `yaml:"loginRateLimitPerMinute"`
+	RefreshRateLimitPerMinute  int      `yaml:"refreshRateLimitPerMinute"`
+	PasswordRateLimitPerMinute int      `yaml:"passwordRateLimitPerMinute"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -99,6 +100,9 @@ func Load(path string) (FileConfig, error) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.PasswordRateLimitPerMinute = n
 		}
+	}
+	if v := os.Getenv("AUTH_TRUSTED_PROXY_CIDRS"); v != "" {
+		cfg.TrustedProxyCIDRs = splitCSV(v)
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
@@ -193,4 +197,17 @@ func ParseVerifyPublicKeys(raw string) (map[string]string, error) {
 		return nil, nil
 	}
 	return out, nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }

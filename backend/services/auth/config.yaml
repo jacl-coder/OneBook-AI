@@ -5,11 +5,13 @@ port: "8081"
 # JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY,
 # AUTH_REFRESH_TTL,
 # AUTH_SIGNUP_RATE_LIMIT_PER_MINUTE/AUTH_LOGIN_RATE_LIMIT_PER_MINUTE/AUTH_REFRESH_RATE_LIMIT_PER_MINUTE/AUTH_PASSWORD_RATE_LIMIT_PER_MINUTE
+# AUTH_TRUSTED_PROXY_CIDRS (comma-separated CIDRs/IPs; empty = trust no proxy headers)
 sessionTTL: "15m"
 refreshTTL: "168h"
 jwtIssuer: "onebook-auth"
 jwtAudience: "onebook-api"
 jwtLeeway: "30s"
+trustedProxyCidrs: []
 signupRateLimitPerMinute: 5
 loginRateLimitPerMinute: 10
 refreshRateLimitPerMinute: 20

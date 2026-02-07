@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ type Config struct {
 	App                        *app.App
 	RedisAddr                  string
 	RedisPassword              string
+	TrustedProxyCIDRs          []string
 	SignupRateLimitPerMinute   int
 	LoginRateLimitPerMinute    int
 	RefreshRateLimitPerMinute  int
@@ -38,6 +38,7 @@ type Server struct {
 	loginLimiter    *ratelimit.FixedWindowLimiter
 	refreshLimiter  *ratelimit.FixedWindowLimiter
 	passwordLimiter *ratelimit.FixedWindowLimiter
+	trustedProxies  *util.TrustedProxies
 	alerter         *security.AuditAlerter
 }
 
@@ -84,6 +85,10 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustedProxies, err := util.NewTrustedProxies(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("parse trustedProxyCIDRs: %w", err)
+	}
 	s := &Server{
 		app:             cfg.App,
 		mux:             http.NewServeMux(),
@@ -91,6 +96,7 @@ func New(cfg Config) (*Server, error) {
 		loginLimiter:    loginLimiter,
 		refreshLimiter:  refreshLimiter,
 		passwordLimiter: passwordLimiter,
+		trustedProxies:  trustedProxies,
 		alerter:         security.NewAuditAlerter(cfg.RedisAddr, cfg.RedisPassword, "onebook:auth:alerts"),
 	}
 	s.routes()
@@ -486,7 +492,7 @@ func parseUserStatus(status string) (domain.UserStatus, bool) {
 }
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
-	key := r.URL.Path + "|" + clientIP(r)
+	key := r.URL.Path + "|" + util.ClientIP(r, s.trustedProxies)
 	if limiter.Allow(key) {
 		return true
 	}
@@ -496,7 +502,7 @@ func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *rate
 }
 
 func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
-	ip := clientIP(r)
+	ip := util.ClientIP(r, s.trustedProxies)
 	logAttrs := []any{
 		"event", event,
 		"outcome", outcome,
@@ -526,26 +532,6 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		return
 	}
 	slog.Warn("security_event", logAttrs...)
-}
-
-func clientIP(r *http.Request) string {
-	if xfwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xfwd != "" {
-		parts := strings.Split(xfwd, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
-	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
-	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
-	}
-	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
