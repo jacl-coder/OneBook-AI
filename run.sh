@@ -2,23 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTH_PORT="${AUTH_PORT:-8081}"
-BOOK_PORT="${BOOK_PORT:-8082}"
-CHAT_PORT="${CHAT_PORT:-8083}"
-INGEST_PORT="${INGEST_PORT:-8084}"
-INDEXER_PORT="${INDEXER_PORT:-8085}"
+BACKEND_SCRIPT="${BACKEND_SCRIPT:-$ROOT_DIR/scripts/start-backend.sh}"
+FRONTEND_SCRIPT="${FRONTEND_SCRIPT:-$ROOT_DIR/scripts/start-frontend.sh}"
+START_FRONTEND="${START_FRONTEND:-auto}" # auto|on|off
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 STARTUP_TIMEOUT_SECONDS="${STARTUP_TIMEOUT_SECONDS:-120}"
 
 PIDS=()
-
-to_abs_path() {
-  local path="$1"
-  if [[ "$path" = /* ]]; then
-    echo "$path"
-    return
-  fi
-  echo "$ROOT_DIR/$path"
-}
 
 cleanup() {
   for pid in "${PIDS[@]:-}"; do
@@ -28,139 +18,69 @@ cleanup() {
   done
 }
 
-wait_for_service() {
+wait_for_url() {
   local name="$1"
   local url="$2"
   local pid="$3"
   local timeout="${4:-120}"
   local elapsed=0
 
-  echo "Waiting for ${name} to be ready..."
+  echo "Waiting for ${name}..."
   until curl -sf "$url" >/dev/null 2>&1; do
     if ! kill -0 "$pid" 2>/dev/null; then
-      echo "${name} exited before becoming ready."
-      exit 1
+      echo "${name} exited before ready."
+      return 1
     fi
     sleep 1
     elapsed=$((elapsed + 1))
     if (( elapsed >= timeout )); then
       echo "Timed out waiting for ${name}: ${url}"
-      exit 1
+      return 1
     fi
   done
   echo "${name} is ready."
 }
 
-# Load environment variables from .env file
-if [ -f "$ROOT_DIR/.env" ]; then
-  echo "Loading environment variables from .env..."
-  set -a
-  source "$ROOT_DIR/.env"
-  set +a
+mode="${START_FRONTEND,,}"
+should_start_frontend=false
+if [[ "$mode" == "on" || "$mode" == "1" || "$mode" == "true" ]]; then
+  should_start_frontend=true
+elif [[ "$mode" == "auto" ]]; then
+  if [[ -f "$FRONTEND_SCRIPT" ]] \
+    && [[ -f "$ROOT_DIR/frontend/package.json" ]] \
+    && command -v npm >/dev/null 2>&1; then
+    should_start_frontend=true
+  fi
 fi
 
-# Local default CORS allowlist for Swagger UI.
-if [[ -z "${CORS_ALLOWED_ORIGINS:-}" ]]; then
-  export CORS_ALLOWED_ORIGINS="http://localhost:8086"
-  echo "CORS_ALLOWED_ORIGINS not set, defaulting to ${CORS_ALLOWED_ORIGINS}"
+if [[ ! -f "$BACKEND_SCRIPT" ]]; then
+  echo "Backend startup script not found: ${BACKEND_SCRIPT}"
+  exit 1
 fi
 
-# Prepare local RS256 signing keys (secure default).
-JWT_PRIVATE_KEY_PATH="$(to_abs_path "${JWT_PRIVATE_KEY_PATH:-secrets/jwt/private.pem}")"
-JWT_PUBLIC_KEY_PATH="$(to_abs_path "${JWT_PUBLIC_KEY_PATH:-secrets/jwt/public.pem}")"
-JWT_KEY_ID="${JWT_KEY_ID:-jwt-active}"
-export JWT_PRIVATE_KEY_PATH JWT_PUBLIC_KEY_PATH JWT_KEY_ID
+trap cleanup EXIT INT TERM
 
-mkdir -p "$(dirname "$JWT_PRIVATE_KEY_PATH")"
-if [ ! -f "$JWT_PRIVATE_KEY_PATH" ] || [ ! -f "$JWT_PUBLIC_KEY_PATH" ]; then
-  if ! command -v openssl >/dev/null 2>&1; then
-    echo "openssl is required to generate RS256 JWT keys"
+if [[ "$should_start_frontend" == "true" ]]; then
+  if [[ ! -f "$FRONTEND_SCRIPT" ]]; then
+    echo "Frontend startup script not found: ${FRONTEND_SCRIPT}"
     exit 1
   fi
-  echo "Generating local RS256 JWT keypair under $(dirname "$JWT_PRIVATE_KEY_PATH")..."
-  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$JWT_PRIVATE_KEY_PATH" >/dev/null 2>&1
-  openssl rsa -in "$JWT_PRIVATE_KEY_PATH" -pubout -out "$JWT_PUBLIC_KEY_PATH" >/dev/null 2>&1
-  chmod 600 "$JWT_PRIVATE_KEY_PATH"
-fi
 
-# Prepare local internal-service RS256 signing keys (secure default).
-ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH="$(to_abs_path "${ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH:-secrets/internal-jwt/private.pem}")"
-ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH="$(to_abs_path "${ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH:-secrets/internal-jwt/public.pem}")"
-ONEBOOK_INTERNAL_JWT_KEY_ID="${ONEBOOK_INTERNAL_JWT_KEY_ID:-internal-active}"
-export ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH ONEBOOK_INTERNAL_JWT_KEY_ID
+  echo "Starting frontend via ${FRONTEND_SCRIPT}..."
+  bash "$FRONTEND_SCRIPT" &
+  FRONTEND_WRAPPER_PID=$!
+  PIDS+=("$FRONTEND_WRAPPER_PID")
 
-mkdir -p "$(dirname "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH")"
-if [ ! -f "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH" ] || [ ! -f "$ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH" ]; then
-  if ! command -v openssl >/dev/null 2>&1; then
-    echo "openssl is required to generate internal RS256 JWT keys"
-    exit 1
+  if [[ "$mode" != "auto" ]]; then
+    wait_for_url \
+      "Frontend (Vite)" \
+      "http://localhost:${FRONTEND_PORT}" \
+      "$FRONTEND_WRAPPER_PID" \
+      "$STARTUP_TIMEOUT_SECONDS"
   fi
-  echo "Generating local internal RS256 JWT keypair under $(dirname "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH")..."
-  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH" >/dev/null 2>&1
-  openssl rsa -in "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH" -pubout -out "$ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH" >/dev/null 2>&1
-  chmod 600 "$ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH"
+else
+  echo "Frontend startup disabled (START_FRONTEND=${START_FRONTEND})."
 fi
 
-mkdir -p "$ROOT_DIR/backend/.cache/go-build"
-
-# Start Ollama (embeddings) if available.
-"$ROOT_DIR/scripts/ollama-embedding.sh"
-
-# Start local dependencies.
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui
-
-# Wait for MinIO to be ready.
-echo "Waiting for MinIO to be ready..."
-until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do
-  sleep 1
-done
-echo "MinIO is ready."
-
-# Wait for Postgres to be ready.
-echo "Waiting for Postgres to be ready..."
-until docker exec onebook-postgres pg_isready -U onebook >/dev/null 2>&1; do
-  sleep 1
-done
-echo "Postgres is ready."
-
-# Run the auth service.
-cd "$ROOT_DIR/backend/services/auth"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/auth &
-AUTH_PID=$!
-PIDS+=("$AUTH_PID")
-
-trap cleanup EXIT
-
-wait_for_service "Auth service" "http://localhost:${AUTH_PORT}/healthz" "$AUTH_PID" "$STARTUP_TIMEOUT_SECONDS"
-
-# Run the book service.
-cd "$ROOT_DIR/backend/services/book"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/book &
-BOOK_PID=$!
-PIDS+=("$BOOK_PID")
-wait_for_service "Book service" "http://localhost:${BOOK_PORT}/healthz" "$BOOK_PID" "$STARTUP_TIMEOUT_SECONDS"
-
-# Run the chat service.
-cd "$ROOT_DIR/backend/services/chat"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/chat &
-CHAT_PID=$!
-PIDS+=("$CHAT_PID")
-wait_for_service "Chat service" "http://localhost:${CHAT_PORT}/healthz" "$CHAT_PID" "$STARTUP_TIMEOUT_SECONDS"
-
-# Run the ingest service.
-cd "$ROOT_DIR/backend/services/ingest"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/ingest &
-INGEST_PID=$!
-PIDS+=("$INGEST_PID")
-wait_for_service "Ingest service" "http://localhost:${INGEST_PORT}/healthz" "$INGEST_PID" "$STARTUP_TIMEOUT_SECONDS"
-
-# Run the indexer service.
-cd "$ROOT_DIR/backend/services/indexer"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/indexer &
-INDEXER_PID=$!
-PIDS+=("$INDEXER_PID")
-wait_for_service "Indexer service" "http://localhost:${INDEXER_PORT}/healthz" "$INDEXER_PID" "$STARTUP_TIMEOUT_SECONDS"
-
-# Run the gateway service.
-cd "$ROOT_DIR/backend/services/gateway"
-GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/server
+echo "Starting backend via ${BACKEND_SCRIPT}..."
+bash "$BACKEND_SCRIPT"
