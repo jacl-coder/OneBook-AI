@@ -27,11 +27,18 @@
 - 内部服务接口通过短时效服务 JWT（Bearer）保护，并校验 `iss/aud/exp`。
 - 用户 Access Token 由业务服务通过 JWKS 本地验签。
 - 管理员角色可查看全量用户/书籍数据。
+- Refresh token 使用轮换与重放检测；检测到旧 token 重放后撤销整个 token family。
+
+## 一致性与可靠性（当前）
+- **Refresh token 并发安全**：轮换使用 Redis 原子 CAS，避免并发请求下同一 refresh token 出现双成功。
+- **队列重试一致性**：失败重试路径在单事务内执行 `XADD + XACK + XDEL`，避免“先 ack 再重投”导致的丢任务窗口。
+- **限流策略**：Gateway/Auth 使用 Redis 分布式固定窗口限流；Redis 异常时默认拒绝请求（fail closed）。
 
 ## 运行与运维
 - 服务均提供 `/healthz` 健康检查。
 - Swagger UI 可查看 REST/OpenAPI 规范。
 - 目前仅基础日志，尚未引入 metrics/tracing。
+- 前端联调入口与错误语义见 `docs/backend_handoff.md`。
 
 ## 仍待完善的方向
 - 统一可观测性（日志、metrics、tracing）。
