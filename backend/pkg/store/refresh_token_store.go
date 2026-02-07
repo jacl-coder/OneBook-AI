@@ -219,53 +219,86 @@ func (s *RedisRefreshTokenStore) RotateToken(token string, ttl time.Duration) (s
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	familyID, err := s.client.Get(ctx, refreshTokenFamilyRedisKey(tokenHash)).Result()
-	if err == redis.Nil {
-		return "", "", ErrInvalidRefreshToken
-	}
-	if err != nil {
-		return "", "", err
-	}
-	familyData, err := s.client.HGetAll(ctx, refreshFamilyRedisKey(familyID)).Result()
-	if err != nil {
-		return "", "", err
-	}
-	if len(familyData) == 0 {
-		_ = s.revokeFamily(ctx, familyID, "")
-		return "", "", ErrInvalidRefreshToken
-	}
-	currentHash := familyData["currentHash"]
-	userID := familyData["userId"]
-	if currentHash == "" || userID == "" {
-		_ = s.revokeFamily(ctx, familyID, userID)
-		return "", "", ErrInvalidRefreshToken
-	}
-	if currentHash != tokenHash {
-		_ = s.revokeFamily(ctx, familyID, userID)
-		return "", "", ErrRefreshTokenReplay
-	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", "", err
+		}
 
-	newToken, err := generateRefreshToken()
-	if err != nil {
-		return "", "", err
-	}
-	newHash := refreshTokenHash(newToken)
+		familyID, err := s.client.Get(ctx, refreshTokenFamilyRedisKey(tokenHash)).Result()
+		if err == redis.Nil {
+			return "", "", ErrInvalidRefreshToken
+		}
+		if err != nil {
+			return "", "", err
+		}
 
-	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, refreshTokenFamilyRedisKey(newHash), familyID, ttl)
-	pipe.HSet(ctx, refreshFamilyRedisKey(familyID), map[string]any{
-		"userId":      userID,
-		"currentHash": newHash,
-	})
-	pipe.Expire(ctx, refreshFamilyRedisKey(familyID), ttl)
-	pipe.SAdd(ctx, refreshFamilyTokensRedisKey(familyID), newHash)
-	pipe.Expire(ctx, refreshFamilyTokensRedisKey(familyID), ttl)
-	pipe.SAdd(ctx, refreshUserFamiliesRedisKey(userID), familyID)
-	pipe.Expire(ctx, refreshUserFamiliesRedisKey(userID), ttl)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return "", "", err
+		familyKey := refreshFamilyRedisKey(familyID)
+		var (
+			userID       string
+			newToken     string
+			shouldRevoke bool
+		)
+
+		err = s.client.Watch(ctx, func(tx *redis.Tx) error {
+			familyData, err := tx.HGetAll(ctx, familyKey).Result()
+			if err != nil {
+				return err
+			}
+			if len(familyData) == 0 {
+				shouldRevoke = true
+				return ErrInvalidRefreshToken
+			}
+
+			currentHash := familyData["currentHash"]
+			userID = familyData["userId"]
+			if currentHash == "" || userID == "" {
+				shouldRevoke = true
+				return ErrInvalidRefreshToken
+			}
+			if currentHash != tokenHash {
+				shouldRevoke = true
+				return ErrRefreshTokenReplay
+			}
+
+			newToken, err = generateRefreshToken()
+			if err != nil {
+				return err
+			}
+			newHash := refreshTokenHash(newToken)
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, refreshTokenFamilyRedisKey(newHash), familyID, ttl)
+				pipe.HSet(ctx, familyKey, map[string]any{
+					"userId":      userID,
+					"currentHash": newHash,
+				})
+				pipe.Expire(ctx, familyKey, ttl)
+				pipe.SAdd(ctx, refreshFamilyTokensRedisKey(familyID), newHash)
+				pipe.Expire(ctx, refreshFamilyTokensRedisKey(familyID), ttl)
+				pipe.SAdd(ctx, refreshUserFamiliesRedisKey(userID), familyID)
+				pipe.Expire(ctx, refreshUserFamiliesRedisKey(userID), ttl)
+				return nil
+			})
+			return err
+		}, familyKey)
+
+		if err == redis.TxFailedErr {
+			continue
+		}
+		if err != nil {
+			if shouldRevoke {
+				_ = s.revokeFamily(ctx, familyID, userID)
+			}
+			if errors.Is(err, ErrRefreshTokenReplay) {
+				return "", "", ErrRefreshTokenReplay
+			}
+			if errors.Is(err, ErrInvalidRefreshToken) {
+				return "", "", ErrInvalidRefreshToken
+			}
+			return "", "", err
+		}
+		return userID, newToken, nil
 	}
-	return userID, newToken, nil
 }
 
 // DeleteToken revokes the entire token family containing this token.

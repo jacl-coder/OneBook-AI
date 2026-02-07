@@ -274,7 +274,6 @@ func (q *RedisJobQueue) handleMessage(ctx context.Context, consumer string, msg 
 		return
 	}
 	_ = q.markQueued(ctx, jobID, err.Error())
-	q.ackAndDel(ctx, msg.ID)
 	if q.retryDelay > 0 {
 		select {
 		case <-ctx.Done():
@@ -282,7 +281,17 @@ func (q *RedisJobQueue) handleMessage(ctx context.Context, consumer string, msg 
 		case <-time.After(q.retryDelay):
 		}
 	}
-	_ = q.client.XAdd(ctx, &redis.XAddArgs{
+	_ = q.requeueAndAck(ctx, msg.ID, jobID, bookID)
+}
+
+func (q *RedisJobQueue) ackAndDel(ctx context.Context, msgID string) {
+	_, _ = q.client.XAck(ctx, q.stream, q.group, msgID).Result()
+	_, _ = q.client.XDel(ctx, q.stream, msgID).Result()
+}
+
+func (q *RedisJobQueue) requeueAndAck(ctx context.Context, msgID, jobID, bookID string) error {
+	pipe := q.client.TxPipeline()
+	pipe.XAdd(ctx, &redis.XAddArgs{
 		Stream: q.stream,
 		MaxLen: q.maxLen,
 		Approx: true,
@@ -290,12 +299,11 @@ func (q *RedisJobQueue) handleMessage(ctx context.Context, consumer string, msg 
 			"job_id":  jobID,
 			"book_id": bookID,
 		},
-	}).Err()
-}
-
-func (q *RedisJobQueue) ackAndDel(ctx context.Context, msgID string) {
-	_, _ = q.client.XAck(ctx, q.stream, q.group, msgID).Result()
-	_, _ = q.client.XDel(ctx, q.stream, msgID).Result()
+	})
+	pipe.XAck(ctx, q.stream, q.group, msgID)
+	pipe.XDel(ctx, q.stream, msgID)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (q *RedisJobQueue) markProcessing(ctx context.Context, jobID, bookID string) (JobStatus, error) {
