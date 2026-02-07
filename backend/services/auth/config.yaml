@@ -1,5 +1,17 @@
 port: "8081"
 # Secrets loaded from environment variables:
-# DATABASE_URL, REDIS_ADDR, REDIS_PASSWORD, JWT_SECRET
-sessionTTL: "24h"
+# DATABASE_URL, REDIS_ADDR, REDIS_PASSWORD (required),
+# JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH/JWT_KEY_ID/JWT_VERIFY_PUBLIC_KEYS (RS256),
+# JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY,
+# AUTH_REFRESH_TTL,
+# AUTH_SIGNUP_RATE_LIMIT_PER_MINUTE/AUTH_LOGIN_RATE_LIMIT_PER_MINUTE/AUTH_REFRESH_RATE_LIMIT_PER_MINUTE/AUTH_PASSWORD_RATE_LIMIT_PER_MINUTE
+sessionTTL: "15m"
+refreshTTL: "168h"
+jwtIssuer: "onebook-auth"
+jwtAudience: "onebook-api"
+jwtLeeway: "30s"
+signupRateLimitPerMinute: 5
+loginRateLimitPerMinute: 10
+refreshRateLimitPerMinute: 20
+passwordRateLimitPerMinute: 10
 logLevel: "info"

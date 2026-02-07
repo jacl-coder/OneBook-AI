@@ -40,10 +40,10 @@ type MessageModel struct {
 }
 
 type ChunkModel struct {
-	ID        string          `gorm:"primaryKey"`
-	BookID    string          `gorm:"not null;index"`
-	Content   string          `gorm:"type:text;not null"`
-	Metadata  datatypes.JSON  `gorm:"type:jsonb"`
+	ID        string           `gorm:"primaryKey"`
+	BookID    string           `gorm:"not null;index"`
+	Content   string           `gorm:"type:text;not null"`
+	Metadata  datatypes.JSON   `gorm:"type:jsonb"`
 	Embedding *pgvector.Vector `gorm:"type:vector(3072)"`
-	CreatedAt time.Time       `gorm:"not null;index"`
+	CreatedAt time.Time        `gorm:"not null;index"`
 }

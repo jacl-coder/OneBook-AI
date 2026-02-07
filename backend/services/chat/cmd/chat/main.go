@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"onebookai/internal/usertoken"
 	"onebookai/internal/util"
 	"onebookai/services/chat/internal/app"
+	"onebookai/services/chat/internal/authclient"
+	"onebookai/services/chat/internal/bookclient"
 	"onebookai/services/chat/internal/config"
 	"onebookai/services/chat/internal/server"
 )
@@ -19,6 +22,22 @@ func main() {
 	}
 
 	logger := util.InitLogger(cfg.LogLevel)
+	jwtLeeway, err := config.ParseJWTLeeway(cfg.JWTLeeway)
+	if err != nil {
+		log.Fatalf("failed to parse jwt leeway: %v", err)
+	}
+	authClient := authclient.NewClient(cfg.AuthServiceURL)
+	tokenVerifier, err := usertoken.NewVerifier(usertoken.Config{
+		JWKSURL:    cfg.AuthJWKSURL,
+		Issuer:     cfg.JWTIssuer,
+		Audience:   cfg.JWTAudience,
+		Leeway:     jwtLeeway,
+		HTTPClient: &http.Client{Timeout: 5 * time.Second},
+	})
+	if err != nil {
+		log.Fatalf("failed to init jwks verifier: %v", err)
+	}
+	bookClient := bookclient.NewClient(cfg.BookServiceURL)
 
 	appCore, err := app.New(app.Config{
 		DatabaseURL:       cfg.DatabaseURL,
@@ -36,7 +55,10 @@ func main() {
 	}
 
 	httpServer := server.New(server.Config{
-		App: appCore,
+		App:           appCore,
+		Auth:          authClient,
+		Books:         bookClient,
+		TokenVerifier: tokenVerifier,
 	})
 
 	addr := ":" + cfg.Port

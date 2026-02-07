@@ -1,6 +1,20 @@
 port: "8080"
+# Secrets loaded from environment variables:
+# GATEWAY_AUTH_JWKS_URL
+# JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY
+# REDIS_ADDR, REDIS_PASSWORD
+# GATEWAY_SIGNUP_RATE_LIMIT_PER_MINUTE / GATEWAY_LOGIN_RATE_LIMIT_PER_MINUTE /
+# GATEWAY_REFRESH_RATE_LIMIT_PER_MINUTE / GATEWAY_PASSWORD_RATE_LIMIT_PER_MINUTE
 logLevel: "info"
 authServiceURL: "http://localhost:8081"
+authJwksURL: "http://localhost:8081/auth/jwks"
+jwtIssuer: "onebook-auth"
+jwtAudience: "onebook-api"
+jwtLeeway: "30s"
+signupRateLimitPerMinute: 5
+loginRateLimitPerMinute: 10
+refreshRateLimitPerMinute: 20
+passwordRateLimitPerMinute: 10
 bookServiceURL: "http://localhost:8082"
 chatServiceURL: "http://localhost:8083"
 maxUploadBytes: 52428800 # 50MB

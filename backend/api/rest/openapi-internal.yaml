@@ -115,9 +115,8 @@ paths:
       description: |
         The chat service may include recent conversation history when
         generating the answer (history length is configurable).
-      parameters:
-        - $ref: "#/components/parameters/UserIdHeader"
-        - $ref: "#/components/parameters/UserRoleHeader"
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -285,23 +284,14 @@ paths:
 components:
   securitySchemes:
     internalToken:
-      type: apiKey
-      in: header
-      name: X-Internal-Token
-  parameters:
-    UserIdHeader:
-      name: X-User-Id
-      in: header
-      required: true
-      schema:
-        type: string
-    UserRoleHeader:
-      name: X-User-Role
-      in: header
-      required: true
-      schema:
-        type: string
-        enum: [user, admin]
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Internal short-lived service JWT (RS256).
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthResponse:
       type: object
@@ -395,11 +385,11 @@ components:
     ChatServiceRequest:
       type: object
       properties:
-        book:
-          $ref: "#/components/schemas/Book"
+        bookId:
+          type: string
         question:
           type: string
-      required: [book, question]
+      required: [bookId, question]
     IngestRequest:
       type: object
       properties:
