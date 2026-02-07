@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
@@ -36,24 +37,25 @@ type Job struct {
 
 // Config holds runtime configuration.
 type Config struct {
-	DatabaseURL            string
-	Store                  store.Store
-	BookServiceURL         string
-	InternalToken          string
-	RedisAddr              string
-	RedisPassword          string
-	QueueName              string
-	QueueGroup             string
-	QueueConcurrency       int
-	QueueMaxRetries        int
-	QueueRetryDelaySeconds int
-	GeminiAPIKey           string
-	EmbeddingProvider      string
-	EmbeddingBaseURL       string
-	EmbeddingModel         string
-	EmbeddingDim           int
-	EmbeddingBatchSize     int
-	EmbeddingConcurrency   int
+	DatabaseURL               string
+	Store                     store.Store
+	BookServiceURL            string
+	InternalJWTPrivateKeyPath string
+	InternalJWTKeyID          string
+	RedisAddr                 string
+	RedisPassword             string
+	QueueName                 string
+	QueueGroup                string
+	QueueConcurrency          int
+	QueueMaxRetries           int
+	QueueRetryDelaySeconds    int
+	GeminiAPIKey              string
+	EmbeddingProvider         string
+	EmbeddingBaseURL          string
+	EmbeddingModel            string
+	EmbeddingDim              int
+	EmbeddingBatchSize        int
+	EmbeddingConcurrency      int
 }
 
 // App processes indexing jobs.
@@ -83,8 +85,14 @@ func New(cfg Config) (*App, error) {
 	if cfg.BookServiceURL == "" {
 		return nil, fmt.Errorf("book service URL required")
 	}
-	if cfg.InternalToken == "" {
-		return nil, fmt.Errorf("internal token required")
+	signer, err := servicetoken.NewSignerWithOptions(servicetoken.SignerOptions{
+		PrivateKeyPath: cfg.InternalJWTPrivateKeyPath,
+		KeyID:          cfg.InternalJWTKeyID,
+		Issuer:         "indexer-service",
+		TTL:            servicetoken.DefaultTokenTTL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init service token signer: %w", err)
 	}
 	if cfg.EmbeddingModel == "" {
 		return nil, fmt.Errorf("embedding model required")
@@ -131,7 +139,7 @@ func New(cfg Config) (*App, error) {
 	}
 	app := &App{
 		store:            dataStore,
-		bookClient:       newBookClient(cfg.BookServiceURL, cfg.InternalToken),
+		bookClient:       newBookClient(cfg.BookServiceURL, signer),
 		embedder:         embedder,
 		embedDim:         dim,
 		queue:            q,

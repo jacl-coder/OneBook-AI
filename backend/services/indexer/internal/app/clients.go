@@ -9,19 +9,20 @@ import (
 	"strings"
 	"time"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/pkg/domain"
 )
 
 type bookClient struct {
 	baseURL    string
-	token      string
+	signer     *servicetoken.Signer
 	httpClient *http.Client
 }
 
-func newBookClient(baseURL, token string) *bookClient {
+func newBookClient(baseURL string, signer *servicetoken.Signer) *bookClient {
 	return &bookClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
+		signer:     signer,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -38,8 +39,12 @@ func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, status dom
 	if err != nil {
 		return err
 	}
+	token, err := c.signer.Sign("book")
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Token", c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
