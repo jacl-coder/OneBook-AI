@@ -1,34 +1,49 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"strings"
+	"errors"
+	"unicode"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-// HashPassword returns a salted hash encoded as "salt$hash".
-func HashPassword(password string) string {
-	salt := randomHex(8)
-	h := sha256.Sum256([]byte(salt + password))
-	return salt + "$" + hex.EncodeToString(h[:])
+// HashPassword returns a bcrypt hash.
+func HashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
 }
 
-// CheckPassword validates a password against a salted hash.
+// ValidatePassword enforces a production-grade password policy.
+func ValidatePassword(password string) error {
+	if len(password) < 12 {
+		return errors.New("password must be at least 12 characters")
+	}
+	if len(password) > 128 {
+		return errors.New("password must be at most 128 characters")
+	}
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case unicode.IsPunct(r) || unicode.IsSymbol(r):
+			hasSpecial = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
+		return errors.New("password must include upper, lower, digit, and special character")
+	}
+	return nil
+}
+
+// CheckPassword validates a password against a stored hash.
 func CheckPassword(password, stored string) bool {
-	parts := strings.Split(stored, "$")
-	if len(parts) != 2 {
-		return false
-	}
-	salt := parts[0]
-	h := sha256.Sum256([]byte(salt + password))
-	return hex.EncodeToString(h[:]) == parts[1]
-}
-
-func randomHex(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "salt"
-	}
-	return hex.EncodeToString(buf)
+	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
 }

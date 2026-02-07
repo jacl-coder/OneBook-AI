@@ -16,12 +16,14 @@
 - 索引：pgvector 向量写入，Embedding 支持批量/并发。
 - 对话：基于向量检索生成回答并附出处；保存消息并拼接最近 N 轮历史。
 - 管理员：用户/书籍列表与用户角色/状态管理。
+- 认证：bcrypt 密码哈希（最小 12 位，且需包含大写/小写/数字/特殊字符）、短时效 access token（默认 15 分钟，RS256 + JWKS）、refresh token 轮换与重放检测（Redis）。
+- 授权与风控：网关统一鉴权，管理员接口基于角色控制；网关与认证服务使用 Redis 分布式限流（安全优先，Redis 异常时拒绝请求）。
 
 ## 技术栈（当前）
 - 后端：Go（标准库 `net/http`）
 - 数据库：Postgres + pgvector
 - 存储：MinIO（S3 兼容对象存储）
-- 队列：Redis Streams（Ingest/Indexer），Redis（会话/撤销列表）
+- 队列：Redis Streams（Ingest/Indexer），Redis（认证撤销状态与 refresh token）
 - LLM：Gemini（回答生成）
 - Embedding：Gemini 或 Ollama（本地模型）
 - 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库
@@ -30,7 +32,7 @@
 - 服务目录：`backend/services/`（Gateway + 多服务）
 - 默认端口：Gateway 8080、Auth 8081、Book 8082、Chat 8083、Ingest 8084、Indexer 8085
 - 公共路由（均需 Bearer token，除认证与健康检查）：
-  - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/logout`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
+  - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/refresh`，`POST /api/auth/logout`，`GET /api/auth/jwks`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
   - 对话：`POST /api/chats`（body: bookId + question）
   - 管理员：`GET /api/admin/users`，`PATCH /api/admin/users/{id}`，`GET /api/admin/books`
@@ -41,8 +43,24 @@
 # 启动依赖（Postgres + Redis + MinIO + Swagger UI）
 docker compose up -d postgres redis minio minio-init swagger-ui
 
-# 可选：统一内部服务令牌
-export ONEBOOK_INTERNAL_TOKEN=onebook-internal
+# 必需环境变量（手动逐服务运行时）
+export REDIS_ADDR=localhost:6379
+export GATEWAY_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
+export BOOK_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
+export CHAT_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
+# 如从 Swagger UI 调试跨域请求：
+export CORS_ALLOWED_ORIGINS=http://localhost:8086
+
+# 推荐：RS256（Auth 会签发 RS256 token，其他服务走 JWKS 验签）
+# run.sh 会自动生成本地密钥；手动运行请先准备：
+# export JWT_PRIVATE_KEY_PATH=/abs/path/to/OneBook-AI/secrets/jwt/private.pem
+# export JWT_PUBLIC_KEY_PATH=/abs/path/to/OneBook-AI/secrets/jwt/public.pem
+# export JWT_KEY_ID=jwt-active
+
+# 推荐：内部服务也使用 RS256 短期 JWT（run.sh 会自动生成）
+# export ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH=/abs/path/to/OneBook-AI/secrets/internal-jwt/private.pem
+# export ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH=/abs/path/to/OneBook-AI/secrets/internal-jwt/public.pem
+# export ONEBOOK_INTERNAL_JWT_KEY_ID=internal-active
 
 # 运行 Auth 服务（默认 8081）
 cd backend/services/auth
@@ -71,6 +89,9 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 
 一键启动（含依赖 + 本地 Ollama embeddings）：
 ```bash
+# 默认会在 secrets/jwt/ 与 secrets/internal-jwt/ 下自动生成 RS256 密钥（若不存在）
+# 会按 Auth -> Book -> Chat -> Ingest -> Indexer -> Gateway 顺序启动，并等待 /healthz 就绪
+# 未设置 CORS_ALLOWED_ORIGINS 时，默认允许 http://localhost:8086（Swagger UI）
 ./run.sh
 ```
 
@@ -95,5 +116,5 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 ## 后续步骤（建议）
 1) 可观测性：指标/追踪、队列与索引处理监控。
 2) 检索质量：重排、去重与提示模板优化。
-3) 安全与配额：刷新令牌、速率限制、配额管理。
+3) 安全与配额：细粒度权限、密钥轮换自动化、配额管理。
 4) 前端：书库与对话 UI、上传进度与失败重试体验。

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/queue"
@@ -38,20 +39,21 @@ type Job struct {
 
 // Config holds runtime configuration.
 type Config struct {
-	DatabaseURL            string
-	Store                  store.Store
-	BookServiceURL         string
-	IndexerURL             string
-	InternalToken          string
-	RedisAddr              string
-	RedisPassword          string
-	QueueName              string
-	QueueGroup             string
-	QueueConcurrency       int
-	QueueMaxRetries        int
-	QueueRetryDelaySeconds int
-	ChunkSize              int
-	ChunkOverlap           int
+	DatabaseURL               string
+	Store                     store.Store
+	BookServiceURL            string
+	IndexerURL                string
+	InternalJWTPrivateKeyPath string
+	InternalJWTKeyID          string
+	RedisAddr                 string
+	RedisPassword             string
+	QueueName                 string
+	QueueGroup                string
+	QueueConcurrency          int
+	QueueMaxRetries           int
+	QueueRetryDelaySeconds    int
+	ChunkSize                 int
+	ChunkOverlap              int
 }
 
 // App processes ingest jobs.
@@ -84,8 +86,14 @@ func New(cfg Config) (*App, error) {
 	if cfg.IndexerURL == "" {
 		return nil, fmt.Errorf("indexer URL required")
 	}
-	if cfg.InternalToken == "" {
-		return nil, fmt.Errorf("internal token required")
+	signer, err := servicetoken.NewSignerWithOptions(servicetoken.SignerOptions{
+		PrivateKeyPath: cfg.InternalJWTPrivateKeyPath,
+		KeyID:          cfg.InternalJWTKeyID,
+		Issuer:         "ingest-service",
+		TTL:            servicetoken.DefaultTokenTTL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init service token signer: %w", err)
 	}
 	chunkSize := cfg.ChunkSize
 	if chunkSize <= 0 {
@@ -109,8 +117,8 @@ func New(cfg Config) (*App, error) {
 	}
 	app := &App{
 		store:        dataStore,
-		bookClient:   newBookClient(cfg.BookServiceURL, cfg.InternalToken),
-		indexClient:  newIndexerClient(cfg.IndexerURL, cfg.InternalToken),
+		bookClient:   newBookClient(cfg.BookServiceURL, signer),
+		indexClient:  newIndexerClient(cfg.IndexerURL, signer),
 		queue:        q,
 		chunkSize:    chunkSize,
 		chunkOverlap: chunkOverlap,

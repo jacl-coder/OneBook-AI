@@ -6,37 +6,51 @@ import (
 	"net/http"
 	"strings"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/services/indexer/internal/app"
 )
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App           *app.App
-	InternalToken string
+	App                         *app.App
+	InternalJWTKeyID            string
+	InternalJWTPublicKeyPath    string
+	InternalJWTVerifyPublicKeys map[string]string
 }
 
 // Server exposes HTTP endpoints for the indexer service.
 type Server struct {
-	app           *app.App
-	internalToken string
-	mux           *http.ServeMux
+	app          *app.App
+	internalAuth *servicetoken.Verifier
+	mux          *http.ServeMux
 }
 
 // New constructs the server with routes configured.
-func New(cfg Config) *Server {
+func New(cfg Config) (*Server, error) {
 	s := &Server{
-		app:           cfg.App,
-		internalToken: strings.TrimSpace(cfg.InternalToken),
-		mux:           http.NewServeMux(),
+		app: cfg.App,
+		mux: http.NewServeMux(),
 	}
+	verifier, err := servicetoken.NewVerifierWithOptions(servicetoken.VerifierOptions{
+		PublicKeyPath:      strings.TrimSpace(cfg.InternalJWTPublicKeyPath),
+		VerifyPublicKeyMap: cfg.InternalJWTVerifyPublicKeys,
+		DefaultKeyID:       cfg.InternalJWTKeyID,
+		Audience:           "indexer",
+		AllowedIssuers:     []string{"ingest-service"},
+		Leeway:             servicetoken.DefaultLeeway,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.internalAuth = verifier
 	s.routes()
-	return s
+	return s, nil
 }
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithCORS(s.mux)
+	return util.WithSecurityHeaders(util.WithCORS(s.mux))
 }
 
 func (s *Server) routes() {
@@ -51,8 +65,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) withInternal(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
-		if token == "" || token != s.internalToken {
+		if s.internalAuth == nil {
+			writeError(w, http.StatusInternalServerError, "internal auth not configured")
+			return
+		}
+		token, ok := servicetoken.BearerToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if _, err := s.internalAuth.Verify(token); err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

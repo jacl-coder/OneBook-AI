@@ -53,6 +53,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/login:
     post:
       tags: [auth]
@@ -76,17 +82,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/logout:
     post:
       tags: [auth]
       summary: Logout
+      description: |
+        Revoke current access token. If `refreshToken` is provided, it will be
+        revoked as well.
       security:
         - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
       responses:
         "204":
           description: No Content
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/jwks:
+    get:
+      tags: [auth]
+      summary: Get JSON Web Key Set
+      description: |
+        Returns public signing keys for JWT verification.
+        This endpoint is available when auth service uses RS256.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKSResponse"
+        "404":
+          description: JWKS not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /.well-known/jwks.json:
+    get:
+      tags: [auth]
+      summary: Get JSON Web Key Set (standard path)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKSResponse"
+        "404":
+          description: JWKS not configured
           content:
             application/json:
               schema:
@@ -163,6 +256,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:
@@ -495,15 +594,54 @@ components:
           format: email
         password:
           type: string
+          description: At least 12 chars and must include upper/lower/digit/special.
+          minLength: 12
       required: [email, password]
     AuthResponse:
       type: object
       properties:
         token:
           type: string
+        refreshToken:
+          type: string
         user:
           $ref: "#/components/schemas/User"
-      required: [token, user]
+      required: [token, refreshToken, user]
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required: [refreshToken]
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    JWK:
+      type: object
+      properties:
+        kty:
+          type: string
+        use:
+          type: string
+        kid:
+          type: string
+        alg:
+          type: string
+        n:
+          type: string
+        e:
+          type: string
+      required: [kty, use, kid, alg, n, e]
+    JWKSResponse:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/JWK"
+      required: [keys]
     UpdateMeRequest:
       type: object
       properties:
@@ -518,6 +656,8 @@ components:
           type: string
         newPassword:
           type: string
+          description: At least 12 chars and must include upper/lower/digit/special.
+          minLength: 12
       required: [currentPassword, newPassword]
     AdminUserUpdateRequest:
       type: object

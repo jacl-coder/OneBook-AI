@@ -1,6 +1,10 @@
 package store
 
-import "onebookai/pkg/domain"
+import (
+	"time"
+
+	"onebookai/pkg/domain"
+)
 
 // Store defines persistence operations for users, books, and messages.
 type Store interface {
@@ -36,4 +40,32 @@ type SessionStore interface {
 	NewSession(userID string) (string, error)
 	GetUserIDByToken(token string) (string, bool, error)
 	DeleteSession(token string) error
+}
+
+// UserSessionRevoker is an optional capability that revokes all sessions
+// issued for a user since a cutoff time.
+type UserSessionRevoker interface {
+	RevokeUserSessions(userID string, since time.Time) error
+}
+
+// UserRefreshTokenRevoker is an optional capability that revokes all refresh
+// tokens for a user.
+type UserRefreshTokenRevoker interface {
+	RevokeUserRefreshTokens(userID string) error
+}
+
+// JWK represents a JSON Web Key entry used by JWKS endpoints.
+type JWK struct {
+	Kty string `json:"kty"`
+	Use string `json:"use"`
+	Kid string `json:"kid"`
+	Alg string `json:"alg"`
+	N   string `json:"n,omitempty"`
+	E   string `json:"e,omitempty"`
+}
+
+// JWKSProvider is an optional capability exposed by session stores that can
+// publish JSON Web Keys.
+type JWKSProvider interface {
+	JWKS() []JWK
 }

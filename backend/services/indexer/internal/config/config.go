@@ -12,25 +12,28 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                   string `yaml:"port"`
-	LogLevel               string `yaml:"logLevel"`
-	DatabaseURL            string `yaml:"databaseURL"`
-	BookServiceURL         string `yaml:"bookServiceURL"`
-	InternalToken          string `yaml:"internalToken"`
-	RedisAddr              string `yaml:"redisAddr"`
-	RedisPassword          string `yaml:"redisPassword"`
-	QueueName              string `yaml:"queueName"`
-	QueueGroup             string `yaml:"queueGroup"`
-	QueueConcurrency       int    `yaml:"queueConcurrency"`
-	QueueMaxRetries        int    `yaml:"queueMaxRetries"`
-	QueueRetryDelaySeconds int    `yaml:"queueRetryDelaySeconds"`
-	GeminiAPIKey           string `yaml:"geminiAPIKey"`
-	EmbeddingProvider      string `yaml:"embeddingProvider"`
-	EmbeddingBaseURL       string `yaml:"embeddingBaseURL"`
-	EmbeddingModel         string `yaml:"embeddingModel"`
-	EmbeddingDim           int    `yaml:"embeddingDim"`
-	EmbeddingBatchSize     int    `yaml:"embeddingBatchSize"`
-	EmbeddingConcurrency   int    `yaml:"embeddingConcurrency"`
+	Port                        string `yaml:"port"`
+	LogLevel                    string `yaml:"logLevel"`
+	DatabaseURL                 string `yaml:"databaseURL"`
+	BookServiceURL              string `yaml:"bookServiceURL"`
+	InternalJWTPrivateKeyPath   string `yaml:"internalJwtPrivateKeyPath"`
+	InternalJWTPublicKeyPath    string `yaml:"internalJwtPublicKeyPath"`
+	InternalJWTVerifyPublicKeys string `yaml:"internalJwtVerifyPublicKeys"`
+	InternalJWTKeyID            string `yaml:"internalJwtKeyId"`
+	RedisAddr                   string `yaml:"redisAddr"`
+	RedisPassword               string `yaml:"redisPassword"`
+	QueueName                   string `yaml:"queueName"`
+	QueueGroup                  string `yaml:"queueGroup"`
+	QueueConcurrency            int    `yaml:"queueConcurrency"`
+	QueueMaxRetries             int    `yaml:"queueMaxRetries"`
+	QueueRetryDelaySeconds      int    `yaml:"queueRetryDelaySeconds"`
+	GeminiAPIKey                string `yaml:"geminiAPIKey"`
+	EmbeddingProvider           string `yaml:"embeddingProvider"`
+	EmbeddingBaseURL            string `yaml:"embeddingBaseURL"`
+	EmbeddingModel              string `yaml:"embeddingModel"`
+	EmbeddingDim                int    `yaml:"embeddingDim"`
+	EmbeddingBatchSize          int    `yaml:"embeddingBatchSize"`
+	EmbeddingConcurrency        int    `yaml:"embeddingConcurrency"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -50,8 +53,17 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
 	}
-	if v := os.Getenv("ONEBOOK_INTERNAL_TOKEN"); v != "" {
-		cfg.InternalToken = v
+	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH"); v != "" {
+		cfg.InternalJWTPrivateKeyPath = v
+	}
+	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH"); v != "" {
+		cfg.InternalJWTPublicKeyPath = v
+	}
+	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_VERIFY_PUBLIC_KEYS"); v != "" {
+		cfg.InternalJWTVerifyPublicKeys = v
+	}
+	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_KEY_ID"); v != "" {
+		cfg.InternalJWTKeyID = v
 	}
 	if v := os.Getenv("REDIS_ADDR"); v != "" {
 		cfg.RedisAddr = v
@@ -134,8 +146,8 @@ func validateConfig(cfg FileConfig) error {
 	if cfg.BookServiceURL == "" {
 		return errors.New("config: bookServiceURL is required (set in config.yaml)")
 	}
-	if cfg.InternalToken == "" {
-		return errors.New("config: internalToken is required (set in config.yaml or ONEBOOK_INTERNAL_TOKEN)")
+	if strings.TrimSpace(cfg.InternalJWTPrivateKeyPath) == "" || strings.TrimSpace(cfg.InternalJWTPublicKeyPath) == "" {
+		return errors.New("config: internal service auth requires ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH + ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH")
 	}
 	if cfg.RedisAddr == "" {
 		return errors.New("config: redisAddr is required (set in config.yaml or REDIS_ADDR)")

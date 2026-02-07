@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,12 @@ type FileConfig struct {
 	Port              string `yaml:"port"`
 	DatabaseURL       string `yaml:"databaseURL"`
 	LogLevel          string `yaml:"logLevel"`
+	AuthServiceURL    string `yaml:"authServiceURL"`
+	AuthJWKSURL       string `yaml:"authJwksURL"`
+	JWTIssuer         string `yaml:"jwtIssuer"`
+	JWTAudience       string `yaml:"jwtAudience"`
+	JWTLeeway         string `yaml:"jwtLeeway"`
+	BookServiceURL    string `yaml:"bookServiceURL"`
 	GeminiAPIKey      string `yaml:"geminiAPIKey"`
 	GenerationModel   string `yaml:"generationModel"`
 	EmbeddingProvider string `yaml:"embeddingProvider"`
@@ -41,6 +48,24 @@ func Load(path string) (FileConfig, error) {
 	// Override with environment variables
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("CHAT_AUTH_SERVICE_URL"); v != "" {
+		cfg.AuthServiceURL = v
+	}
+	if v := os.Getenv("CHAT_AUTH_JWKS_URL"); v != "" {
+		cfg.AuthJWKSURL = v
+	}
+	if v := os.Getenv("JWT_ISSUER"); v != "" {
+		cfg.JWTIssuer = v
+	}
+	if v := os.Getenv("JWT_AUDIENCE"); v != "" {
+		cfg.JWTAudience = v
+	}
+	if v := os.Getenv("JWT_LEEWAY"); v != "" {
+		cfg.JWTLeeway = v
+	}
+	if v := os.Getenv("CHAT_BOOK_SERVICE_URL"); v != "" {
+		cfg.BookServiceURL = v
 	}
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.GeminiAPIKey = v
@@ -91,6 +116,15 @@ func validateConfig(cfg FileConfig) error {
 	if cfg.DatabaseURL == "" {
 		return errors.New("config: databaseURL is required (set in config.yaml)")
 	}
+	if cfg.AuthServiceURL == "" {
+		return errors.New("config: authServiceURL is required (set in config.yaml or CHAT_AUTH_SERVICE_URL)")
+	}
+	if strings.TrimSpace(cfg.AuthJWKSURL) == "" {
+		return errors.New("config: authJwksURL is required (set in config.yaml or CHAT_AUTH_JWKS_URL)")
+	}
+	if cfg.BookServiceURL == "" {
+		return errors.New("config: bookServiceURL is required (set in config.yaml or CHAT_BOOK_SERVICE_URL)")
+	}
 	if cfg.GeminiAPIKey == "" {
 		return errors.New("config: geminiAPIKey is required (set in config.yaml or GEMINI_API_KEY)")
 	}
@@ -114,4 +148,16 @@ func validateConfig(cfg FileConfig) error {
 		return errors.New("config: embeddingProvider must be gemini or ollama")
 	}
 	return nil
+}
+
+// ParseJWTLeeway parses optional JWT leeway duration string.
+func ParseJWTLeeway(leewayStr string) (time.Duration, error) {
+	if leewayStr == "" {
+		return 0, nil
+	}
+	dur, err := time.ParseDuration(leewayStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid jwtLeeway duration: %w", err)
+	}
+	return dur, nil
 }

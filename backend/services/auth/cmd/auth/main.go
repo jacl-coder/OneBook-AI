@@ -21,23 +21,51 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse session TTL: %v", err)
 	}
+	refreshTTL, err := config.ParseRefreshTTL(cfg.RefreshTTL)
+	if err != nil {
+		log.Fatalf("failed to parse refresh TTL: %v", err)
+	}
+	jwtLeeway, err := config.ParseJWTLeeway(cfg.JWTLeeway)
+	if err != nil {
+		log.Fatalf("failed to parse jwt leeway: %v", err)
+	}
+	verifyPublicKeys, err := config.ParseVerifyPublicKeys(cfg.JWTVerifyPublicKeys)
+	if err != nil {
+		log.Fatalf("failed to parse jwt verify public keys: %v", err)
+	}
 
 	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:   cfg.DatabaseURL,
-		RedisAddr:     cfg.RedisAddr,
-		RedisPassword: cfg.RedisPassword,
-		SessionTTL:    sessionTTL,
-		JWTSecret:     cfg.JWTSecret,
+		DatabaseURL:         cfg.DatabaseURL,
+		RedisAddr:           cfg.RedisAddr,
+		RedisPassword:       cfg.RedisPassword,
+		SessionTTL:          sessionTTL,
+		RefreshTTL:          refreshTTL,
+		JWTPrivateKeyPath:   cfg.JWTPrivateKeyPath,
+		JWTPublicKeyPath:    cfg.JWTPublicKeyPath,
+		JWTKeyID:            cfg.JWTKeyID,
+		JWTVerifyPublicKeys: verifyPublicKeys,
+		JWTIssuer:           cfg.JWTIssuer,
+		JWTAudience:         cfg.JWTAudience,
+		JWTLeeway:           jwtLeeway,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)
 	}
 
-	httpServer := server.New(server.Config{
-		App: appCore,
+	httpServer, err := server.New(server.Config{
+		App:                        appCore,
+		RedisAddr:                  cfg.RedisAddr,
+		RedisPassword:              cfg.RedisPassword,
+		SignupRateLimitPerMinute:   cfg.SignupRateLimitPerMinute,
+		LoginRateLimitPerMinute:    cfg.LoginRateLimitPerMinute,
+		RefreshRateLimitPerMinute:  cfg.RefreshRateLimitPerMinute,
+		PasswordRateLimitPerMinute: cfg.PasswordRateLimitPerMinute,
 	})
+	if err != nil {
+		log.Fatalf("failed to init auth server: %v", err)
+	}
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{

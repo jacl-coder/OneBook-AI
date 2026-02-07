@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/pkg/domain"
 )
 
 type bookClient struct {
 	baseURL    string
-	token      string
+	signer     *servicetoken.Signer
 	httpClient *http.Client
 }
 
@@ -23,10 +24,10 @@ type bookFile struct {
 	Filename string `json:"filename"`
 }
 
-func newBookClient(baseURL, token string) *bookClient {
+func newBookClient(baseURL string, signer *servicetoken.Signer) *bookClient {
 	return &bookClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
+		signer:     signer,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -36,7 +37,11 @@ func (c *bookClient) FetchFile(ctx context.Context, bookID string) (bookFile, er
 	if err != nil {
 		return bookFile{}, err
 	}
-	req.Header.Set("X-Internal-Token", c.token)
+	token, err := c.signer.Sign("book")
+	if err != nil {
+		return bookFile{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	var resp bookFile
 	if err := c.do(req, &resp); err != nil {
 		return bookFile{}, err
@@ -59,8 +64,12 @@ func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, status dom
 	if err != nil {
 		return err
 	}
+	token, err := c.signer.Sign("book")
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Token", c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	return c.do(req, nil)
 }
 
@@ -92,14 +101,14 @@ func (c *bookClient) do(req *http.Request, out any) error {
 
 type indexerClient struct {
 	baseURL    string
-	token      string
+	signer     *servicetoken.Signer
 	httpClient *http.Client
 }
 
-func newIndexerClient(baseURL, token string) *indexerClient {
+func newIndexerClient(baseURL string, signer *servicetoken.Signer) *indexerClient {
 	return &indexerClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
+		signer:     signer,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -113,8 +122,12 @@ func (c *indexerClient) Enqueue(ctx context.Context, bookID string) error {
 	if err != nil {
 		return err
 	}
+	token, err := c.signer.Sign("indexer")
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Token", c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err

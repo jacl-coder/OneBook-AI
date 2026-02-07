@@ -6,45 +6,67 @@ import (
 	"net/http"
 	"strings"
 
+	"onebookai/internal/servicetoken"
+	"onebookai/internal/usertoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/domain"
 	"onebookai/services/book/internal/app"
+	"onebookai/services/book/internal/authclient"
 )
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App            *app.App
-	InternalToken  string
-	MaxUploadBytes int64
+	App                         *app.App
+	Auth                        *authclient.Client
+	TokenVerifier               *usertoken.Verifier
+	InternalJWTKeyID            string
+	InternalJWTPublicKeyPath    string
+	InternalJWTVerifyPublicKeys map[string]string
+	MaxUploadBytes              int64
 }
 
 // Server exposes HTTP endpoints for the book service.
 type Server struct {
 	app            *app.App
-	internalToken  string
+	auth           *authclient.Client
+	tokenVerifier  *usertoken.Verifier
+	internalVerify *servicetoken.Verifier
 	mux            *http.ServeMux
 	maxUploadBytes int64
 }
 
 // New constructs the server with routes configured.
-func New(cfg Config) *Server {
+func New(cfg Config) (*Server, error) {
 	maxUploadBytes := cfg.MaxUploadBytes
 	if maxUploadBytes <= 0 {
 		maxUploadBytes = 50 * 1024 * 1024
 	}
 	s := &Server{
 		app:            cfg.App,
-		internalToken:  strings.TrimSpace(cfg.InternalToken),
+		auth:           cfg.Auth,
+		tokenVerifier:  cfg.TokenVerifier,
 		mux:            http.NewServeMux(),
 		maxUploadBytes: maxUploadBytes,
 	}
+	verifier, err := servicetoken.NewVerifierWithOptions(servicetoken.VerifierOptions{
+		PublicKeyPath:      strings.TrimSpace(cfg.InternalJWTPublicKeyPath),
+		VerifyPublicKeyMap: cfg.InternalJWTVerifyPublicKeys,
+		DefaultKeyID:       cfg.InternalJWTKeyID,
+		Audience:           "book",
+		AllowedIssuers:     []string{"ingest-service", "indexer-service"},
+		Leeway:             servicetoken.DefaultLeeway,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.internalVerify = verifier
 	s.routes()
-	return s
+	return s, nil
 }
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithCORS(s.mux)
+	return util.WithSecurityHeaders(util.WithCORS(s.mux))
 }
 
 func (s *Server) routes() {
@@ -64,8 +86,23 @@ type userHandler func(http.ResponseWriter, *http.Request, domain.User)
 
 func (s *Server) withUser(next userHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, ok := userFromHeaders(r)
+		if s.auth == nil {
+			writeError(w, http.StatusInternalServerError, "auth client not configured")
+			return
+		}
+		token, ok := bearerToken(r)
 		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if s.tokenVerifier != nil {
+			if _, err := s.tokenVerifier.VerifySubject(token); err != nil {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+		}
+		user, err := s.auth.Me(token)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -75,8 +112,16 @@ func (s *Server) withUser(next userHandler) http.Handler {
 
 func (s *Server) withInternal(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimSpace(r.Header.Get("X-Internal-Token"))
-		if token == "" || token != s.internalToken {
+		if s.internalVerify == nil {
+			writeError(w, http.StatusInternalServerError, "internal auth not configured")
+			return
+		}
+		token, ok := servicetoken.BearerToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if _, err := s.internalVerify.Verify(token); err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -84,20 +129,6 @@ func (s *Server) withInternal(next http.HandlerFunc) http.Handler {
 	})
 }
 
-func userFromHeaders(r *http.Request) (domain.User, bool) {
-	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
-	role := strings.TrimSpace(r.Header.Get("X-User-Role"))
-	if userID == "" || role == "" {
-		return domain.User{}, false
-	}
-	userRole, ok := parseUserRole(role)
-	if !ok {
-		return domain.User{}, false
-	}
-	return domain.User{ID: userID, Role: userRole}, true
-}
-
-// /books
 func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
 	switch r.Method {
 	case http.MethodPost:
@@ -290,17 +321,6 @@ func notFound(w http.ResponseWriter, msg string) {
 	writeError(w, http.StatusNotFound, msg)
 }
 
-func parseUserRole(role string) (domain.UserRole, bool) {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case string(domain.RoleUser):
-		return domain.RoleUser, true
-	case string(domain.RoleAdmin):
-		return domain.RoleAdmin, true
-	default:
-		return "", false
-	}
-}
-
 func parseBookStatus(status string) (domain.BookStatus, bool) {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case string(domain.StatusQueued):
@@ -329,4 +349,16 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 type statusRequest struct {
 	Status       string `json:"status"`
 	ErrorMessage string `json:"errorMessage"`
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if token == "" {
+		return "", false
+	}
+	return token, true
 }

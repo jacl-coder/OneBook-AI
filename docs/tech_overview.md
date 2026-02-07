@@ -4,7 +4,7 @@
 - 后端：Go（标准库 `net/http`）。
 - 数据库：Postgres + pgvector（元数据与向量）。
 - 存储：MinIO（S3 兼容对象存储）。
-- 队列：Redis Streams（Ingest/Indexer），Redis（会话或撤销列表）。
+- 队列：Redis Streams（Ingest/Indexer），Redis（refresh token、撤销状态、分布式限流）。
 - LLM：Gemini（回答生成）。
 - Embedding：Gemini 或 Ollama（本地模型）。
 - 解析：PDF 优先 `pdftotext`（可选），失败则使用 Go PDF 库；EPUB/HTML 解析；TXT 直接分块。
@@ -30,3 +30,4 @@
 - 可用性：具备任务重试与失败状态，但无统一监控与告警。
 - 性能：已支持 embedding 批量与并发，仍需按机器性能调参。
 - 可观测性：仅基础日志与 `/healthz`，缺少 metrics/tracing。
+- 安全基线：用户 token 使用 RS256 + JWKS，本地验签；Gateway/Auth 限流依赖 Redis（安全优先，Redis 异常时拒绝请求）。

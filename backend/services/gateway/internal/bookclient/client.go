@@ -37,7 +37,7 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) UploadBook(user domain.User, filename string, r io.Reader) (domain.Book, error) {
+func (c *Client) UploadBook(token, filename string, r io.Reader) (domain.Book, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("file", filename)
@@ -55,7 +55,7 @@ func (c *Client) UploadBook(user domain.User, filename string, r io.Reader) (dom
 	if err != nil {
 		return domain.Book{}, err
 	}
-	addUserHeaders(req, user)
+	addAuthHeader(req, token)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	var book domain.Book
@@ -65,12 +65,12 @@ func (c *Client) UploadBook(user domain.User, filename string, r io.Reader) (dom
 	return book, nil
 }
 
-func (c *Client) ListBooks(user domain.User) ([]domain.Book, error) {
+func (c *Client) ListBooks(token string) ([]domain.Book, error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/books", nil)
 	if err != nil {
 		return nil, err
 	}
-	addUserHeaders(req, user)
+	addAuthHeader(req, token)
 
 	var resp listBooksResponse
 	if err := c.do(req, &resp); err != nil {
@@ -79,13 +79,13 @@ func (c *Client) ListBooks(user domain.User) ([]domain.Book, error) {
 	return resp.Items, nil
 }
 
-func (c *Client) GetBook(user domain.User, id string) (domain.Book, error) {
+func (c *Client) GetBook(token, id string) (domain.Book, error) {
 	path := fmt.Sprintf("%s/books/%s", c.baseURL, id)
 	req, err := http.NewRequest(http.MethodGet, path, nil)
 	if err != nil {
 		return domain.Book{}, err
 	}
-	addUserHeaders(req, user)
+	addAuthHeader(req, token)
 
 	var book domain.Book
 	if err := c.do(req, &book); err != nil {
@@ -94,13 +94,13 @@ func (c *Client) GetBook(user domain.User, id string) (domain.Book, error) {
 	return book, nil
 }
 
-func (c *Client) DeleteBook(user domain.User, id string) error {
+func (c *Client) DeleteBook(token, id string) error {
 	path := fmt.Sprintf("%s/books/%s", c.baseURL, id)
 	req, err := http.NewRequest(http.MethodDelete, path, nil)
 	if err != nil {
 		return err
 	}
-	addUserHeaders(req, user)
+	addAuthHeader(req, token)
 	return c.do(req, nil)
 }
 
@@ -111,13 +111,13 @@ type DownloadResponse struct {
 }
 
 // GetDownloadURL returns a pre-signed download URL for the book file.
-func (c *Client) GetDownloadURL(user domain.User, id string) (DownloadResponse, error) {
+func (c *Client) GetDownloadURL(token, id string) (DownloadResponse, error) {
 	path := fmt.Sprintf("%s/books/%s/download", c.baseURL, id)
 	req, err := http.NewRequest(http.MethodGet, path, nil)
 	if err != nil {
 		return DownloadResponse{}, err
 	}
-	addUserHeaders(req, user)
+	addAuthHeader(req, token)
 
 	var resp DownloadResponse
 	if err := c.do(req, &resp); err != nil {
@@ -152,9 +152,11 @@ func (c *Client) do(req *http.Request, out any) error {
 	return nil
 }
 
-func addUserHeaders(req *http.Request, user domain.User) {
-	req.Header.Set("X-User-Id", user.ID)
-	req.Header.Set("X-User-Role", string(user.Role))
+func addAuthHeader(req *http.Request, token string) {
+	if strings.TrimSpace(token) == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 }
 
 type listBooksResponse struct {

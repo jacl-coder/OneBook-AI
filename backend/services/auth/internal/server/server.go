@@ -2,39 +2,104 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
+	"onebookai/internal/ratelimit"
+	"onebookai/internal/util"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/store"
 	"onebookai/services/auth/internal/app"
+	"onebookai/services/auth/internal/security"
 )
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App *app.App
+	App                        *app.App
+	RedisAddr                  string
+	RedisPassword              string
+	SignupRateLimitPerMinute   int
+	LoginRateLimitPerMinute    int
+	RefreshRateLimitPerMinute  int
+	PasswordRateLimitPerMinute int
 }
 
 // Server exposes HTTP endpoints for the auth service.
 type Server struct {
-	app *app.App
-	mux *http.ServeMux
+	app             *app.App
+	mux             *http.ServeMux
+	signupLimiter   *ratelimit.FixedWindowLimiter
+	loginLimiter    *ratelimit.FixedWindowLimiter
+	refreshLimiter  *ratelimit.FixedWindowLimiter
+	passwordLimiter *ratelimit.FixedWindowLimiter
+	alerter         *security.AuditAlerter
 }
 
 // New constructs the server with routes configured.
-func New(cfg Config) *Server {
+func New(cfg Config) (*Server, error) {
+	signupLimit := cfg.SignupRateLimitPerMinute
+	if signupLimit <= 0 {
+		signupLimit = 5
+	}
+	loginLimit := cfg.LoginRateLimitPerMinute
+	if loginLimit <= 0 {
+		loginLimit = 10
+	}
+	refreshLimit := cfg.RefreshRateLimitPerMinute
+	if refreshLimit <= 0 {
+		refreshLimit = 20
+	}
+	passwordLimit := cfg.PasswordRateLimitPerMinute
+	if passwordLimit <= 0 {
+		passwordLimit = 10
+	}
+	rateWindow := time.Minute
+	newLimiter := func(name string, limit int) (*ratelimit.FixedWindowLimiter, error) {
+		prefix := "onebook:auth:ratelimit:" + name
+		limiter, err := ratelimit.NewRedisFixedWindowLimiter(cfg.RedisAddr, cfg.RedisPassword, prefix, limit, rateWindow)
+		if err != nil {
+			return nil, fmt.Errorf("init %s limiter: %w", name, err)
+		}
+		return limiter, nil
+	}
+	signupLimiter, err := newLimiter("signup", signupLimit)
+	if err != nil {
+		return nil, err
+	}
+	loginLimiter, err := newLimiter("login", loginLimit)
+	if err != nil {
+		return nil, err
+	}
+	refreshLimiter, err := newLimiter("refresh", refreshLimit)
+	if err != nil {
+		return nil, err
+	}
+	passwordLimiter, err := newLimiter("password", passwordLimit)
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
-		app: cfg.App,
-		mux: http.NewServeMux(),
+		app:             cfg.App,
+		mux:             http.NewServeMux(),
+		signupLimiter:   signupLimiter,
+		loginLimiter:    loginLimiter,
+		refreshLimiter:  refreshLimiter,
+		passwordLimiter: passwordLimiter,
+		alerter:         security.NewAuditAlerter(cfg.RedisAddr, cfg.RedisPassword, "onebook:auth:alerts"),
 	}
 	s.routes()
-	return s
+	return s, nil
 }
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return s.mux
+	return util.WithSecurityHeaders(s.mux)
 }
 
 func (s *Server) routes() {
@@ -43,7 +108,10 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("/auth/jwks", s.handleJWKS)
+	s.mux.HandleFunc("/.well-known/jwks.json", s.handleJWKS)
 	s.mux.Handle("/auth/me", s.authenticated(s.handleMe))
 	s.mux.Handle("/auth/me/password", s.authenticated(s.handleChangePassword))
 
@@ -63,9 +131,11 @@ func (s *Server) authenticated(next authHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := s.authorize(r)
 		if !ok {
+			s.audit(r, "auth.authorize", "fail")
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		s.audit(r, "auth.authorize", "success", "user_id", user.ID)
 		next(w, r, user)
 	})
 }
@@ -73,9 +143,11 @@ func (s *Server) authenticated(next authHandler) http.Handler {
 func (s *Server) adminOnly(next authHandler) http.Handler {
 	return s.authenticated(func(w http.ResponseWriter, r *http.Request, user domain.User) {
 		if user.Role != domain.RoleAdmin {
+			s.audit(r, "auth.admin.authorize", "fail", "user_id", user.ID)
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
 		}
+		s.audit(r, "auth.admin.authorize", "success", "user_id", user.ID)
 		next(w, r, user)
 	})
 }
@@ -94,17 +166,28 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	if !s.allowRate(w, r, s.signupLimiter, "too many signup attempts") {
+		s.audit(r, "auth.signup", "rate_limited")
+		return
+	}
 	var req authRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.signup", "fail", "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, token, err := s.app.SignUp(req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.app.SignUp(req.Email, req.Password)
 	if err != nil {
+		s.audit(r, "auth.signup", "fail", "reason", err.Error())
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, authResponse{Token: token, User: user})
+	s.audit(r, "auth.signup", "success", "user_id", user.ID)
+	writeJSON(w, http.StatusCreated, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -112,17 +195,57 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	if !s.allowRate(w, r, s.loginLimiter, "too many login attempts") {
+		s.audit(r, "auth.login", "rate_limited")
+		return
+	}
 	var req authRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.login", "fail", "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, token, err := s.app.Login(req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.app.Login(req.Email, req.Password)
 	if err != nil {
+		s.audit(r, "auth.login", "fail", "reason", err.Error())
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, authResponse{Token: token, User: user})
+	s.audit(r, "auth.login", "success", "user_id", user.ID)
+	writeJSON(w, http.StatusOK, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
+}
+
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.allowRate(w, r, s.refreshLimiter, "too many refresh attempts") {
+		s.audit(r, "auth.refresh", "rate_limited")
+		return
+	}
+	var req refreshRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.refresh", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, accessToken, refreshToken, err := s.app.Refresh(req.RefreshToken)
+	if err != nil {
+		s.audit(r, "auth.refresh", "fail", "reason", err.Error())
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	s.audit(r, "auth.refresh", "success", "user_id", user.ID)
+	writeJSON(w, http.StatusOK, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -130,16 +253,43 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	if !s.allowRate(w, r, s.refreshLimiter, "too many logout attempts") {
+		s.audit(r, "auth.logout", "rate_limited")
+		return
+	}
+	var req logoutRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		s.audit(r, "auth.logout", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
 	token, ok := bearerToken(r)
 	if !ok {
+		s.audit(r, "auth.logout", "fail", "reason", "missing_token")
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	if err := s.app.Logout(token); err != nil {
+	if err := s.app.Logout(token, req.RefreshToken); err != nil {
+		s.audit(r, "auth.logout", "fail", "reason", err.Error())
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.audit(r, "auth.logout", "success")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	keys := s.app.JWKS()
+	if len(keys) == 0 {
+		writeError(w, http.StatusNotFound, "jwks not configured")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	writeJSON(w, http.StatusOK, jwksResponse{Keys: keys})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.User) {
@@ -172,19 +322,27 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		methodNotAllowed(w)
 		return
 	}
+	if !s.allowRate(w, r, s.passwordLimiter, "too many password change attempts") {
+		s.audit(r, "auth.password.change", "rate_limited", "user_id", user.ID)
+		return
+	}
 	var req changePasswordRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if req.CurrentPassword == "" || req.NewPassword == "" {
+		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", "missing_fields")
 		writeError(w, http.StatusBadRequest, "currentPassword and newPassword are required")
 		return
 	}
 	if err := s.app.ChangePassword(user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", err.Error())
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.audit(r, "auth.password.change", "success", "user_id", user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -260,8 +418,17 @@ type authRequest struct {
 }
 
 type authResponse struct {
-	Token string      `json:"token"`
-	User  domain.User `json:"user"`
+	Token        string      `json:"token"`
+	RefreshToken string      `json:"refreshToken,omitempty"`
+	User         domain.User `json:"user"`
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+type logoutRequest struct {
+	RefreshToken string `json:"refreshToken,omitempty"`
 }
 
 type updateMeRequest struct {
@@ -276,6 +443,10 @@ type changePasswordRequest struct {
 type adminUserUpdateRequest struct {
 	Role   string `json:"role"`
 	Status string `json:"status"`
+}
+
+type jwksResponse struct {
+	Keys []store.JWK `json:"keys"`
 }
 
 func bearerToken(r *http.Request) (string, bool) {
@@ -312,6 +483,69 @@ func parseUserStatus(status string) (domain.UserStatus, bool) {
 	default:
 		return "", false
 	}
+}
+
+func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
+	key := r.URL.Path + "|" + clientIP(r)
+	if limiter.Allow(key) {
+		return true
+	}
+	w.Header().Set("Retry-After", "60")
+	writeError(w, http.StatusTooManyRequests, msg)
+	return false
+}
+
+func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
+	ip := clientIP(r)
+	logAttrs := []any{
+		"event", event,
+		"outcome", outcome,
+		"path", r.URL.Path,
+		"method", r.Method,
+		"ip", ip,
+	}
+	logAttrs = append(logAttrs, attrs...)
+	if s.alerter != nil && outcome != "success" {
+		alert, err := s.alerter.Observe(event, outcome, ip)
+		if err != nil {
+			slog.Error("security_alert_error", "event", event, "outcome", outcome, "ip", ip, "err", err)
+		} else if alert.Triggered {
+			slog.Error(
+				"security_alert",
+				"event", event,
+				"outcome", outcome,
+				"ip", ip,
+				"count", alert.Count,
+				"threshold", alert.Threshold,
+				"window", alert.Window.String(),
+			)
+		}
+	}
+	if outcome == "success" {
+		slog.Info("security_event", logAttrs...)
+		return
+	}
+	slog.Warn("security_event", logAttrs...)
+}
+
+func clientIP(r *http.Request) string {
+	if xfwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xfwd != "" {
+		parts := strings.Split(xfwd, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if ip != "" {
+				return ip
+			}
+		}
+	}
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+		return realIP
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

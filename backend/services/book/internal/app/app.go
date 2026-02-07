@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/storage"
@@ -19,17 +20,18 @@ import (
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL       string
-	Store             store.Store
-	MinioEndpoint     string
-	MinioAccessKey    string
-	MinioSecretKey    string
-	MinioBucket       string
-	MinioUseSSL       bool
-	IngestURL         string
-	InternalToken     string
-	MaxUploadBytes    int64
-	AllowedExtensions []string
+	DatabaseURL               string
+	Store                     store.Store
+	MinioEndpoint             string
+	MinioAccessKey            string
+	MinioSecretKey            string
+	MinioBucket               string
+	MinioUseSSL               bool
+	IngestURL                 string
+	InternalJWTKeyID          string
+	InternalJWTPrivateKeyPath string
+	MaxUploadBytes            int64
+	AllowedExtensions         []string
 }
 
 // App is the core application service wiring together storage and domain logic.
@@ -62,14 +64,25 @@ func New(cfg Config) (*App, error) {
 	if cfg.IngestURL == "" {
 		return nil, fmt.Errorf("ingest URL required")
 	}
-	if cfg.InternalToken == "" {
-		return nil, fmt.Errorf("internal token required")
+	signer, err := servicetoken.NewSignerWithOptions(servicetoken.SignerOptions{
+		PrivateKeyPath: cfg.InternalJWTPrivateKeyPath,
+		KeyID:          cfg.InternalJWTKeyID,
+		Issuer:         "book-service",
+		TTL:            servicetoken.DefaultTokenTTL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init internal signer: %w", err)
+	}
+
+	ingestClient, err := newIngestClient(cfg.IngestURL, signer)
+	if err != nil {
+		return nil, fmt.Errorf("init ingest client: %w", err)
 	}
 
 	return &App{
 		store:             dataStore,
 		objects:           objStore,
-		ingest:            newIngestClient(cfg.IngestURL, cfg.InternalToken),
+		ingest:            ingestClient,
 		presignExpiry:     15 * time.Minute,
 		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
 		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),

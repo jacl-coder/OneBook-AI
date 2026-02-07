@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/services/ingest/internal/app"
 	"onebookai/services/ingest/internal/config"
@@ -19,30 +20,40 @@ func main() {
 	}
 
 	logger := util.InitLogger(cfg.LogLevel)
+	internalVerifyKeys, err := servicetoken.ParseVerifyPublicKeys(cfg.InternalJWTVerifyPublicKeys)
+	if err != nil {
+		log.Fatalf("failed to parse internal jwt verify public keys: %v", err)
+	}
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:            cfg.DatabaseURL,
-		BookServiceURL:         cfg.BookServiceURL,
-		IndexerURL:             cfg.IndexerURL,
-		InternalToken:          cfg.InternalToken,
-		RedisAddr:              cfg.RedisAddr,
-		RedisPassword:          cfg.RedisPassword,
-		QueueName:              cfg.QueueName,
-		QueueGroup:             cfg.QueueGroup,
-		QueueConcurrency:       cfg.QueueConcurrency,
-		QueueMaxRetries:        cfg.QueueMaxRetries,
-		QueueRetryDelaySeconds: cfg.QueueRetryDelaySeconds,
-		ChunkSize:              cfg.ChunkSize,
-		ChunkOverlap:           cfg.ChunkOverlap,
+		DatabaseURL:               cfg.DatabaseURL,
+		BookServiceURL:            cfg.BookServiceURL,
+		IndexerURL:                cfg.IndexerURL,
+		InternalJWTPrivateKeyPath: cfg.InternalJWTPrivateKeyPath,
+		InternalJWTKeyID:          cfg.InternalJWTKeyID,
+		RedisAddr:                 cfg.RedisAddr,
+		RedisPassword:             cfg.RedisPassword,
+		QueueName:                 cfg.QueueName,
+		QueueGroup:                cfg.QueueGroup,
+		QueueConcurrency:          cfg.QueueConcurrency,
+		QueueMaxRetries:           cfg.QueueMaxRetries,
+		QueueRetryDelaySeconds:    cfg.QueueRetryDelaySeconds,
+		ChunkSize:                 cfg.ChunkSize,
+		ChunkOverlap:              cfg.ChunkOverlap,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)
 	}
 
-	httpServer := server.New(server.Config{
-		App:           appCore,
-		InternalToken: cfg.InternalToken,
+	httpServer, err := server.New(server.Config{
+		App:                         appCore,
+		InternalJWTKeyID:            cfg.InternalJWTKeyID,
+		InternalJWTPublicKeyPath:    cfg.InternalJWTPublicKeyPath,
+		InternalJWTVerifyPublicKeys: internalVerifyKeys,
 	})
+	if err != nil {
+		log.Fatalf("failed to init server: %v", err)
+	}
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{

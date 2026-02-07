@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"onebookai/internal/servicetoken"
 )
 
 type ingestClient interface {
@@ -15,16 +17,19 @@ type ingestClient interface {
 
 type httpIngestClient struct {
 	baseURL    string
-	token      string
+	signer     *servicetoken.Signer
 	httpClient *http.Client
 }
 
-func newIngestClient(baseURL, token string) *httpIngestClient {
+func newIngestClient(baseURL string, signer *servicetoken.Signer) (*httpIngestClient, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("internal signer is required")
+	}
 	return &httpIngestClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
-		token:      token,
+		signer:     signer,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
-	}
+	}, nil
 }
 
 func (c *httpIngestClient) Enqueue(bookID string) error {
@@ -36,8 +41,12 @@ func (c *httpIngestClient) Enqueue(bookID string) error {
 	if err != nil {
 		return err
 	}
+	token, err := c.signer.Sign("ingest")
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Token", c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
