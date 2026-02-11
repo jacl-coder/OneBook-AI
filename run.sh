@@ -41,7 +41,7 @@ wait_for_url() {
   echo "${name} is ready."
 }
 
-mode="${START_FRONTEND,,}"
+mode="$(printf '%s' "$START_FRONTEND" | tr '[:upper:]' '[:lower:]')"
 should_start_frontend=false
 if [[ "$mode" == "on" || "$mode" == "1" || "$mode" == "true" ]]; then
   should_start_frontend=true
