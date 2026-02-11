@@ -1,0 +1,43 @@
+<svg width="892" height="790" viewBox="0 0 892 790" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="890" height="788" rx="12" fill="#F7F7F7" stroke="#D0D0D0"/>
+  <rect x="1" y="1" width="890" height="38" rx="12" fill="url(#paint0_linear)"/>
+  <rect x="1" y="20" width="890" height="19" fill="url(#paint1_linear)"/>
+  <circle cx="29" cy="21" r="9.5" fill="#FF5F57" stroke="#E0443E" stroke-width="1"/>
+  <circle cx="60" cy="21" r="9.5" fill="#FEBB2E" stroke="#DE9F23" stroke-width="1"/>
+  <circle cx="91" cy="21" r="9.5" fill="#28C840" stroke="#1FA637" stroke-width="1"/>
+  <circle cx="29" cy="21" r="3.5" fill="#2A1E1B" opacity="0.8"/>
+  <text fill="#352c2c" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="18" letter-spacing="0">
+    <tspan x="376" y="26.8">Book Query — Cited</tspan>
+  </text>
+  <text fill="#2C3238" xml:space="preserve" style="white-space: pre" font-family="Times New Roman, serif" font-size="62" letter-spacing="0">
+    <tspan x="48" y="180.54">OneBook</tspan>
+  </text>
+  <text fill="#2C3238" xml:space="preserve" style="white-space: pre" font-family="Times New Roman, serif" font-size="51" letter-spacing="0">
+    <tspan x="316" y="180.54">AI</tspan>
+  </text>
+  <text fill="#2F3338" xml:space="preserve" style="white-space: pre" font-family="Times New Roman, serif" font-size="26" letter-spacing="0">
+    <tspan x="48" y="286.24">Hello, meet your personal library Q&amp;A workspace with features of:</tspan>
+  </text>
+  <text fill="#2F3338" font-family="Times New Roman, serif" font-size="26" letter-spacing="0">
+    <tspan x="48" y="361.24">▪</tspan>
+  </text>
+  <text fill="#3B83B6" font-family="Times New Roman, serif" font-size="26" letter-spacing="0">
+    <tspan x="63" y="361.24">Source-cited answers</tspan>
+    <tspan fill="#2F3338"> with exact references.</tspan>
+  </text>
+  <text fill="#2F3338" font-family="Times New Roman, serif" font-size="26" letter-spacing="0">
+    <tspan x="48" y="430.24">▪ Ask across PDF, EPUB, and TXT books.</tspan>
+    <tspan x="48" y="499.24">▪ Continuous follow-up context in one session.</tspan>
+    <tspan x="48" y="568.24">▪ Library management and status tracking.</tspan>
+  </text>
+  <defs>
+    <linearGradient id="paint0_linear" x1="446" y1="1" x2="446" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D8D8D8"/>
+      <stop offset="1" stop-color="#CFCFCF"/>
+    </linearGradient>
+    <linearGradient id="paint1_linear" x1="446" y1="20" x2="446" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D2D2D2"/>
+      <stop offset="1" stop-color="#CECECE"/>
+    </linearGradient>
+  </defs>
+</svg>
