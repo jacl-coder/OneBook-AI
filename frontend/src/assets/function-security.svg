@@ -1,0 +1,132 @@
+<svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
+  <circle cx="18" cy="19" r="6" fill="#E96B5E"/>
+  <circle cx="36" cy="19" r="6" fill="#E6B84B"/>
+  <circle cx="54" cy="19" r="6" fill="#62C554"/>
+  <text fill="#1F2328" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0" text-anchor="middle">
+    <tspan x="254.5" y="23.2">Security</tspan>
+  </text>
+
+  <g transform="translate(3 3) scale(0.836)">
+    <!-- Top: Auth flow diagram -->
+    <rect x="24" y="48" width="552" height="70" rx="10" fill="#F7FAFD" stroke="#DCE6EE"/>
+    <text fill="#32414E" font-family="Arial, sans-serif" font-size="18" font-weight="600"><tspan x="40" y="82">Authentication &amp; Protection</tspan></text>
+    <text fill="#6C7E8A" font-family="Arial, sans-serif" font-size="12"><tspan x="40" y="102">JWT RS256 · Refresh Rotation · Rate Limit · Brute-Force Detection</tspan></text>
+
+    <!-- Left column: Token lifecycle -->
+    <rect x="24" y="134" width="270" height="186" rx="10" fill="#FAFBFC" stroke="#E2E6EA"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="14" font-weight="600"><tspan x="40" y="162">Token Lifecycle</tspan></text>
+
+    <!-- Login step -->
+    <rect x="36" y="176" width="246" height="32" rx="6" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#355847" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="196">POST /api/auth/login</tspan></text>
+    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="196">→ token + refreshToken</tspan></text>
+
+    <!-- Access token -->
+    <rect x="36" y="214" width="246" height="32" rx="6" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="234">Access Token</tspan></text>
+    <text fill="#6D7F8D" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="234">short-lived · Bearer</tspan></text>
+
+    <!-- Refresh flow -->
+    <rect x="36" y="252" width="246" height="32" rx="6" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#66503A" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="272">401 → Refresh → Retry</tspan></text>
+    <text fill="#8A725A" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="272">single-flight queue</tspan></text>
+
+    <!-- Revocation -->
+    <rect x="36" y="290" width="246" height="24" rx="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="48" y="306">Family Revocation on reuse → force re-login</tspan></text>
+
+    <!-- Right column: Rate limiting -->
+    <rect x="306" y="134" width="270" height="186" rx="10" fill="#FAFBFC" stroke="#E2E6EA"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="14" font-weight="600"><tspan x="322" y="162">Rate Limiting</tspan></text>
+
+    <!-- Endpoint limits -->
+    <rect x="318" y="176" width="246" height="28" rx="6" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="10"><tspan x="330" y="194">/api/auth/login</tspan></text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="end"><tspan x="554" y="194">10 req / min</tspan></text>
+
+    <rect x="318" y="210" width="246" height="28" rx="6" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#355847" font-family="Arial, sans-serif" font-size="10"><tspan x="330" y="228">/api/auth/signup</tspan></text>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="end"><tspan x="554" y="228">5 req / min</tspan></text>
+
+    <rect x="318" y="244" width="246" height="28" rx="6" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#66503A" font-family="Arial, sans-serif" font-size="10"><tspan x="330" y="262">/api/auth/refresh</tspan></text>
+    <text fill="#7A6240" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="end"><tspan x="554" y="262">20 req / min</tspan></text>
+
+    <rect x="318" y="278" width="246" height="28" rx="6" fill="#F4F1FC" stroke="#E2DAF2"/>
+    <text fill="#4A4366" font-family="Arial, sans-serif" font-size="10"><tspan x="330" y="296">/api/users/me/password</tspan></text>
+    <text fill="#4A4366" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="end"><tspan x="554" y="296">3 req / min</tspan></text>
+
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="9"><tspan x="322" y="314">Redis fixed-window · per IP · 429 Too Many Requests</tspan></text>
+
+    <!-- Bottom: Brute-force detection -->
+    <rect x="24" y="336" width="552" height="212" rx="10" fill="#FAFBFC" stroke="#E2E6EA"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="14" font-weight="600"><tspan x="40" y="364">Brute-Force Detection (AuditAlerter)</tspan></text>
+
+    <!-- Timeline visualization -->
+    <line x1="60" y1="390" x2="556" y2="390" stroke="#E2E6EA" stroke-width="1.5"/>
+
+    <!-- Normal attempts -->
+    <circle cx="90" cy="390" r="6" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="8" text-anchor="middle"><tspan x="90" y="380">ok</tspan></text>
+
+    <circle cx="140" cy="390" r="6" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="8" text-anchor="middle"><tspan x="140" y="380">ok</tspan></text>
+
+    <!-- Failed attempts (escalating) -->
+    <circle cx="200" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="8" text-anchor="middle"><tspan x="200" y="380">fail</tspan></text>
+
+    <circle cx="240" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="8" text-anchor="middle"><tspan x="240" y="380">fail</tspan></text>
+
+    <circle cx="280" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="8" text-anchor="middle"><tspan x="280" y="380">fail</tspan></text>
+
+    <circle cx="320" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <circle cx="350" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <circle cx="380" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <circle cx="410" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <circle cx="440" cy="390" r="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+
+    <!-- Threshold line -->
+    <line x1="450" y1="382" x2="450" y2="398" stroke="#E96B5E" stroke-width="2"/>
+    <text fill="#E96B5E" font-family="Arial, sans-serif" font-size="9" font-weight="700"><tspan x="458" y="388">ALERT</tspan></text>
+
+    <!-- Alert triggered -->
+    <rect x="460" y="378" width="86" height="24" rx="6" fill="#FDF2F2" stroke="#E96B5E"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="503" y="394">10 fails / 5 min</tspan></text>
+
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10"><tspan x="60" y="418">timeline →</tspan></text>
+
+    <!-- Detail cards -->
+    <rect x="40" y="434" width="166" height="60" rx="6" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="52" y="454">Redis Counter</tspan></text>
+    <text fill="#6D7F8D" font-family="Arial, sans-serif" font-size="9"><tspan x="52" y="470">INCR per IP</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="52" y="484">TTL = 5 min window</tspan></text>
+
+    <rect x="218" y="434" width="166" height="60" rx="6" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#66503A" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="230" y="454">Threshold Check</tspan></text>
+    <text fill="#8A725A" font-family="Arial, sans-serif" font-size="9"><tspan x="230" y="470">login_fail ≥ 10</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="230" y="484">password_fail ≥ 5</tspan></text>
+
+    <rect x="396" y="434" width="164" height="60" rx="6" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="408" y="454">Alert Action</tspan></text>
+    <text fill="#A06060" font-family="Arial, sans-serif" font-size="9"><tspan x="408" y="470">log warning event</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="408" y="484">extensible: block / notify</tspan></text>
+
+    <!-- Arrows between cards -->
+    <path d="M206 464H218" stroke="#A7B5C2" stroke-width="1.5" stroke-linecap="round"/>
+    <polyline points="214,460 218,464 214,468" fill="none" stroke="#A7B5C2" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M384 464H396" stroke="#A7B5C2" stroke-width="1.5" stroke-linecap="round"/>
+    <polyline points="392,460 396,464 392,468" fill="none" stroke="#A7B5C2" stroke-width="1.5" stroke-linecap="round"/>
+
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="9" text-anchor="middle"><tspan x="300" y="536">CORS · Security Headers · bcrypt · JWKS endpoint</tspan></text>
+  </g>
+
+  <defs>
+    <filter id="windowShadow" x="-120" y="-120" width="920" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+</svg>
