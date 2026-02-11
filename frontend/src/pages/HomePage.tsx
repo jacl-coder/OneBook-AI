@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTypewriter } from '@/shared/lib/ui/useTypewriter'
+import onebookFeaturePreview from '@/assets/onebook-feature-preview.svg'
+import onebookFunctionPreview from '@/assets/onebook-function-preview.svg'
 
 const readableBullets = [
   { icon: 'fa-search', label: 'Ask Across Your Books' },
@@ -9,13 +11,15 @@ const readableBullets = [
 ]
 
 const simplePowerful = [
-  'PDF Upload',
-  'EPUB Support',
-  'TXT Support',
+  'Upload',
+  'Parse',
+  'Embed',
+  'Retrieve',
   'Cited Answers',
   'Session History',
   'Library Management',
   'Status Tracking',
+  'etc..',
 ]
 
 const accessibilityCards = [
@@ -53,6 +57,7 @@ const userVoices = [
 
 export function HomePage() {
   const [activeHash, setActiveHash] = useState<string>('')
+  const [activeFunctionDot, setActiveFunctionDot] = useState(0)
 
   useEffect(() => {
     const sections = ['readable', 'accessibility', 'purchase']
@@ -173,15 +178,12 @@ export function HomePage() {
           </div>
           <div className="tpx-readable-media">
             <div className="tpx-feature-wrap">
-              <video
+              <img
                 className="tpx-feature-video"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                poster="https://typora.io/img/beta-thumbnail.png"
-                src="https://typora.io/img/beta.mp4"
+                src={onebookFeaturePreview}
+                alt="OneBook AI feature preview with source-cited answers and continuous context"
+                loading="lazy"
+                decoding="async"
               />
             </div>
           </div>
@@ -189,27 +191,40 @@ export function HomePage() {
 
         <hr className="tpx-divider" />
 
-        <section className="tpx-section tpx-simple">
-          <h2>Simple, yet Powerful</h2>
-          <p>Built for real reading, real asking, and real knowledge reuse.</p>
-          <div className="tpx-keywords">
-            {simplePowerful.map((word) => (
-              <span key={word}>{word}</span>
-            ))}
+        <section className="tpx-section tpx-simple" id="function">
+          <h3>Simple, yet Powerful</h3>
+          <div className="tpx-function-menu">
+            <ul className="tpx-function-dots">
+              {simplePowerful.map((word, index) => (
+                <li className={`tpx-dot ${index === activeFunctionDot ? 'tpx-dot-active' : ''}`} key={word}>
+                  <button
+                    type="button"
+                    className="tpx-dot-btn"
+                    onClick={() => setActiveFunctionDot(index)}
+                  >
+                    {index === simplePowerful.length - 1 ? word : `${word},`}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="tpx-floating-card">
-            <div className="tpx-window-bar">
-              <span />
-              <span />
-              <span />
-              <p className="mono">library-note.md</p>
-            </div>
-            <div className="tpx-floating-body">
-              <h3>Big Idea</h3>
-              <p>把个人电子书库变成可检索、可提问、可追溯的知识系统。</p>
-              <h4>Chapter 1</h4>
-              <p>Upload → Parse → Ready → Ask → Trace → Continue</p>
-            </div>
+          <div className="tpx-function-slider" aria-label="OneBook feature flow">
+            <ul className="tpx-function-slides">
+              <li>
+                <div className="tpx-slider-img-wrapper">
+                  <div className="tpx-function-main">
+                    <img
+                      src={onebookFunctionPreview}
+                      className="tpx-img-rounded"
+                      alt="OneBook processing flow preview"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </div>
+                </div>
+                <div className="tpx-slogon">/* <span>from upload to answers with traceable evidence</span> */</div>
+              </li>
+            </ul>
           </div>
         </section>
 
