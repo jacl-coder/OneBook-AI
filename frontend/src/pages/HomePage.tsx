@@ -1,10 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTypewriter } from '@/shared/lib/ui/useTypewriter'
 
 const readableBullets = [
-  'Distraction-free reading and asking',
-  'Seamless live query preview',
-  'What you ask is what you can verify',
+  { icon: 'fa-search', label: 'Ask Across Your Books' },
+  { icon: 'fa-link', label: 'Source-Cited Answers' },
+  { icon: 'fa-comments-o', label: 'Continuous Follow-up Context' },
 ]
 
 const simplePowerful = [
@@ -51,6 +52,50 @@ const userVoices = [
 ]
 
 export function HomePage() {
+  const [activeHash, setActiveHash] = useState<string>('')
+
+  useEffect(() => {
+    const sections = ['readable', 'accessibility', 'purchase']
+    let rafId = 0
+
+    const syncByScroll = () => {
+      const scrollTop = window.scrollY || document.documentElement.scrollTop
+      const threshold = Math.round(window.innerHeight * 0.5)
+      let current = ''
+
+      for (const id of sections) {
+        const section = document.getElementById(id)
+        if (!section) continue
+        const top = Math.round(section.getBoundingClientRect().top + window.scrollY)
+        if (top - threshold < scrollTop) {
+          current = `#${id}`
+        }
+      }
+
+      setActiveHash((prev) => (prev === current ? prev : current))
+    }
+
+    const onScrollOrResize = () => {
+      if (rafId) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0
+        syncByScroll()
+      })
+    }
+
+    syncByScroll()
+    window.addEventListener('scroll', onScrollOrResize, { passive: true })
+    window.addEventListener('resize', onScrollOrResize)
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      window.removeEventListener('scroll', onScrollOrResize)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
+  }, [])
+
+  const navActiveClass = (hash: string) => (activeHash === hash ? 'tpx-nav-active' : '')
+
   const typedSlogan = useTypewriter({
     strings: [
       'a readable, queryable library.',
@@ -67,15 +112,21 @@ export function HomePage() {
     <div className="tpx-page">
       <header className="tpx-nav">
         <Link to="/" className="tpx-logo">
-          <span className="brand-mark" aria-hidden="true">
+          <span className="tpx-logo-mark" aria-hidden="true">
             OB
           </span>
-          <span>OneBook AI</span>
+          <span className="tpx-logo-title">OneBook AI</span>
         </Link>
         <nav aria-label="main">
-          <a href="#readable">Product</a>
-          <a href="#accessibility">Features</a>
-          <a href="#purchase">Get Started</a>
+          <a href="#readable" className={navActiveClass('#readable')}>
+            Product
+          </a>
+          <a href="#accessibility" className={navActiveClass('#accessibility')}>
+            Features
+          </a>
+          <a href="#purchase" className={navActiveClass('#purchase')}>
+            Get Started
+          </a>
         </nav>
       </header>
 
@@ -95,38 +146,48 @@ export function HomePage() {
               {' */'}
             </p>
           </div>
-          <a className="tpx-scroll-hint" href="#readable" aria-label="scroll">
-            ˅
+          <a className="tpx-scroll-hint" href="#readable" aria-label="scroll to product section">
+            <i className="fa fa-angle-down tpx-scroll-icon" aria-hidden="true" />
           </a>
         </section>
 
         <section id="readable" className="tpx-section tpx-readable">
           <div className="tpx-readable-copy">
-            <h2>Readable & Queryable</h2>
-            <p>
-              OneBook AI 让你在同一界面完成阅读与提问。上传 PDF / EPUB / TXT 后，系统解析内容并支持基于书籍上下文问答，
-              回答附来源线索，便于核验。
-            </p>
-            <ul className="list-reset">
-              {readableBullets.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="tpx-mock-window">
-            <div className="tpx-window-bar">
-              <span />
-              <span />
-              <span />
-              <p className="mono">Typora-like Product Preview</p>
+            <div className="tpx-readable-copy-inner">
+              <h2>Queryable & Verifiable</h2>
+              <p>
+                OneBook AI turns your personal library into a source-grounded Q&A workspace.
+                Upload PDF, EPUB, or TXT, ask questions against your own books, and get answers
+                with traceable citations. Keep follow-up questions in one continuous session
+                without losing context.
+              </p>
+              <div className="tpx-readable-points">
+                {readableBullets.map((item) => (
+                  <h4 className="tpx-readable-point" key={item.label}>
+                    <i className={`fa ${item.icon}`} aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </h4>
+                ))}
+              </div>
             </div>
-            <article>
-              <h3>OneBook AI</h3>
-              <p className="mono">Q: 请总结第三章并给出页码依据。</p>
-              <p className="mono">A: 第三章重点是范式与依赖关系，来源见第 82-91 页。</p>
-            </article>
+          </div>
+          <div className="tpx-readable-media">
+            <div className="tpx-feature-wrap">
+              <video
+                className="tpx-feature-video"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                poster="https://typora.io/img/beta-thumbnail.png"
+                src="https://typora.io/img/beta.mp4"
+              />
+            </div>
           </div>
         </section>
+
+        <hr className="tpx-divider" />
 
         <section className="tpx-section tpx-simple">
           <h2>Simple, yet Powerful</h2>
