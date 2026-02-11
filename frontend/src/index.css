@@ -2250,16 +2250,25 @@ textarea:focus-visible,
 }
 
 .tpx-function-slides {
-  margin: 0 auto;
+  position: relative;
   width: 100vw;
-  text-align: center;
-  list-style-type: none;
-  padding: 0;
+  min-height: 560px;
 }
 
-.tpx-function-slides li {
-  width: 100vw;
-  list-style: none;
+.tpx-slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 350ms ease;
+}
+
+.tpx-slide-active {
+  position: relative;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tpx-slider-img-wrapper {
@@ -2590,6 +2599,10 @@ textarea:focus-visible,
   .tpx-function-slider {
     min-height: auto;
     overflow: hidden;
+  }
+
+  .tpx-function-slides {
+    min-height: auto;
   }
 
   .tpx-slogon {

@@ -1,0 +1,114 @@
+<svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
+  <circle cx="18" cy="19" r="6" fill="#E96B5E"/>
+  <circle cx="36" cy="19" r="6" fill="#E6B84B"/>
+  <circle cx="54" cy="19" r="6" fill="#62C554"/>
+  <text fill="#1F2328" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0" text-anchor="middle">
+    <tspan x="254.5" y="23.2">Session History</tspan>
+  </text>
+
+  <g transform="translate(3 3) scale(0.836)">
+    <!-- Left sidebar: session list -->
+    <rect x="24" y="48" width="200" height="500" rx="8" fill="#F4F6F8" stroke="#E2E6EA"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="13" font-weight="600"><tspan x="40" y="78">Sessions</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="10"><tspan x="160" y="78">12 total</tspan></text>
+
+    <!-- Session item 1 (active) -->
+    <rect x="32" y="92" width="184" height="64" rx="6" fill="#FFFFFF" stroke="#3A8AC2" stroke-width="1.5"/>
+    <rect x="32" y="92" width="4" height="64" rx="2" fill="#3A8AC2"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="112">Feature Engineering</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="9"><tspan x="48" y="128">machine-learning.pdf</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8"><tspan x="48" y="146">14 turns · Feb 12, 21:10</tspan></text>
+
+    <!-- Session item 2 -->
+    <rect x="32" y="164" width="184" height="64" rx="6" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="184">Memory Management</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="9"><tspan x="48" y="200">computer-systems.pdf</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8"><tspan x="48" y="218">9 turns · Feb 11, 19:42</tspan></text>
+
+    <!-- Session item 3 -->
+    <rect x="32" y="236" width="184" height="64" rx="6" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="256">Transaction Isolation</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="9"><tspan x="48" y="272">database-intro.txt</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8"><tspan x="48" y="290">11 turns · Feb 10, 22:16</tspan></text>
+
+    <!-- Session item 4 -->
+    <rect x="32" y="308" width="184" height="64" rx="6" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="328">SVM &amp; Kernel Trick</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="9"><tspan x="48" y="344">machine-learning.pdf</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8"><tspan x="48" y="362">7 turns · Feb 09, 14:30</tspan></text>
+
+    <!-- More indicator -->
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="10" text-anchor="middle"><tspan x="124" y="404">· · ·</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="10" text-anchor="middle"><tspan x="124" y="422">8 more sessions</tspan></text>
+
+    <!-- Filter row at bottom -->
+    <rect x="32" y="448" width="84" height="24" rx="6" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#3A6B8C" font-family="Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle"><tspan x="74" y="464">All Books</tspan></text>
+    <rect x="124" y="448" width="92" height="24" rx="6" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="9" text-anchor="middle"><tspan x="170" y="464">Last 7 Days</tspan></text>
+
+    <!-- Right: conversation detail -->
+    <rect x="240" y="48" width="356" height="500" rx="8" fill="#FAFBFC" stroke="#E2E6EA"/>
+
+    <!-- Session header -->
+    <rect x="252" y="60" width="332" height="52" rx="6" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="13" font-weight="600"><tspan x="268" y="84">Feature Engineering</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="9"><tspan x="268" y="100">machine-learning.pdf · Ch.3 · 14 turns</tspan></text>
+    <rect x="516" y="72" width="56" height="22" rx="6" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle"><tspan x="544" y="87">Resume</tspan></text>
+
+    <!-- Conversation messages -->
+    <!-- User Q1 -->
+    <rect x="320" y="128" width="264" height="36" rx="10" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="10"><tspan x="336" y="148">What are the main feature selection methods?</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8" text-anchor="end"><tspan x="580" y="124">21:10</tspan></text>
+
+    <!-- AI A1 -->
+    <rect x="252" y="176" width="320" height="68" rx="10" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="10">
+      <tspan x="268" y="196">The main methods are filter, wrapper, and</tspan>
+      <tspan x="268" y="212">embedded approaches. Filter methods use</tspan>
+      <tspan x="268" y="228">statistical tests to score features…</tspan>
+    </text>
+    <rect x="268" y="236" width="148" height="6" rx="3" fill="none"/>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="8"><tspan x="268" y="246">📖 Ch.3 §3.1 pp.82-83</tspan></text>
+
+    <!-- User Q2 -->
+    <rect x="348" y="268" width="236" height="36" rx="10" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="10"><tspan x="364" y="288">How does PCA differ from these methods?</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8" text-anchor="end"><tspan x="580" y="264">21:12</tspan></text>
+
+    <!-- AI A2 -->
+    <rect x="252" y="316" width="320" height="68" rx="10" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="10">
+      <tspan x="268" y="336">PCA is an unsupervised dimensionality</tspan>
+      <tspan x="268" y="352">reduction technique, while the previous</tspan>
+      <tspan x="268" y="368">methods are supervised feature selectors…</tspan>
+    </text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="8"><tspan x="268" y="386">📖 Ch.3 §3.2 pp.86-88</tspan></text>
+
+    <!-- User Q3 -->
+    <rect x="312" y="404" width="272" height="36" rx="10" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="10"><tspan x="328" y="424">Which method works best for small datasets?</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="8" text-anchor="end"><tspan x="580" y="400">21:14</tspan></text>
+
+    <!-- AI A3 -->
+    <rect x="252" y="452" width="320" height="56" rx="10" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="10">
+      <tspan x="268" y="472">For small datasets, filter methods are</tspan>
+      <tspan x="268" y="488">preferred due to low computational cost…</tspan>
+    </text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="8"><tspan x="268" y="504">📖 Ch.3 §3.4 pp.92-94</tspan></text>
+
+    <!-- Input area -->
+    <rect x="252" y="520" width="332" height="20" rx="6" fill="#FFFFFF" stroke="#DCE6EE"/>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="9"><tspan x="268" y="534">Continue this conversation…</tspan></text>
+  </g>
+
+  <defs>
+    <filter id="windowShadow" x="-120" y="-120" width="920" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+</svg>

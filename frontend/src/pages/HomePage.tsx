@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTypewriter } from '@/shared/lib/ui/useTypewriter'
-import onebookFeaturePreview from '@/assets/onebook-feature-preview.svg'
-import onebookFunctionPreview from '@/assets/onebook-function-preview.svg'
+import onebookFeaturePreview from '@/assets/feature-preview.svg'
+import uploadPlaceholder from '@/assets/function-upload.svg'
+import parsePlaceholder from '@/assets/function-parse.svg'
+import embedPlaceholder from '@/assets/function-embed.svg'
+import retrievePlaceholder from '@/assets/function-retrieve.svg'
+import citedPlaceholder from '@/assets/function-cited.svg'
+import sessionPlaceholder from '@/assets/function-session.svg'
+import libraryPlaceholder from '@/assets/function-library.svg'
+import securityPlaceholder from '@/assets/function-security.svg'
 
 const readableBullets = [
   { icon: 'fa-search', label: 'Ask Across Your Books' },
@@ -10,16 +17,55 @@ const readableBullets = [
   { icon: 'fa-comments-o', label: 'Continuous Follow-up Context' },
 ]
 
-const simplePowerful = [
-  'Upload',
-  'Parse',
-  'Embed',
-  'Retrieve',
-  'Cited Answers',
-  'Session History',
-  'Library Management',
-  'Status Tracking',
-  'etc..',
+const functionSlides = [
+  {
+    word: 'Upload',
+    image: uploadPlaceholder,
+    slogan: 'drag and drop your pdf, epub or txt to start',
+    alt: 'Upload electronic books to OneBook AI',
+  },
+  {
+    word: 'Parse',
+    image: parsePlaceholder,
+    slogan: 'extract text and structure from your books automatically',
+    alt: 'Automatic text extraction and parsing',
+  },
+  {
+    word: 'Embed',
+    image: embedPlaceholder,
+    slogan: 'turn content into searchable vector representations',
+    alt: 'Vector embedding for semantic search',
+  },
+  {
+    word: 'Retrieve',
+    image: retrievePlaceholder,
+    slogan: 'find the most relevant passages for your question',
+    alt: 'Semantic retrieval of relevant book passages',
+  },
+  {
+    word: 'Cited Answers',
+    image: citedPlaceholder,
+    slogan: 'answers grounded in your books, with page and chapter refs',
+    alt: 'AI answers with source citations',
+  },
+  {
+    word: 'Session History',
+    image: sessionPlaceholder,
+    slogan: 'pick up where you left off, every conversation preserved',
+    alt: 'Conversation history and session management',
+  },
+  {
+    word: 'Library',
+    image: libraryPlaceholder,
+    slogan: 'manage your books with status tracking and object storage',
+    alt: 'Library management with MinIO object storage',
+  },
+  {
+    word: 'Security',
+    image: securityPlaceholder,
+    slogan: 'rate limiting, brute-force detection and token revocation',
+    alt: 'Multi-layer security protection',
+  },
 ]
 
 const accessibilityCards = [
@@ -195,36 +241,42 @@ export function HomePage() {
           <h3>Simple, yet Powerful</h3>
           <div className="tpx-function-menu">
             <ul className="tpx-function-dots">
-              {simplePowerful.map((word, index) => (
-                <li className={`tpx-dot ${index === activeFunctionDot ? 'tpx-dot-active' : ''}`} key={word}>
+              {functionSlides.map((slide, index) => (
+                <li className={`tpx-dot ${index === activeFunctionDot ? 'tpx-dot-active' : ''}`} key={slide.word}>
                   <button
                     type="button"
                     className="tpx-dot-btn"
                     onClick={() => setActiveFunctionDot(index)}
                   >
-                    {index === simplePowerful.length - 1 ? word : `${word},`}
+                    {index === functionSlides.length - 1 ? slide.word : `${slide.word},`}
                   </button>
                 </li>
               ))}
             </ul>
           </div>
           <div className="tpx-function-slider" aria-label="OneBook feature flow">
-            <ul className="tpx-function-slides">
-              <li>
-                <div className="tpx-slider-img-wrapper">
-                  <div className="tpx-function-main">
-                    <img
-                      src={onebookFunctionPreview}
-                      className="tpx-img-rounded"
-                      alt="OneBook processing flow preview"
-                      loading="lazy"
-                      decoding="async"
-                    />
+            <div className="tpx-function-slides">
+              {functionSlides.map((slide, index) => (
+                <div
+                  className={`tpx-slide ${index === activeFunctionDot ? 'tpx-slide-active' : ''}`}
+                  key={slide.word}
+                  aria-hidden={index !== activeFunctionDot}
+                >
+                  <div className="tpx-slider-img-wrapper">
+                    <div className="tpx-function-main">
+                      <img
+                        src={slide.image}
+                        className="tpx-img-rounded"
+                        alt={slide.alt}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    </div>
                   </div>
+                  <div className="tpx-slogon">/* <span>{slide.slogan}</span> */</div>
                 </div>
-                <div className="tpx-slogon">/* <span>from upload to answers with traceable evidence</span> */</div>
-              </li>
-            </ul>
+              ))}
+            </div>
           </div>
         </section>
 

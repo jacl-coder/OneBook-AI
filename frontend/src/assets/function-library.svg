@@ -1,0 +1,109 @@
+<svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
+  <circle cx="18" cy="19" r="6" fill="#E96B5E"/>
+  <circle cx="36" cy="19" r="6" fill="#E6B84B"/>
+  <circle cx="54" cy="19" r="6" fill="#62C554"/>
+  <text fill="#1F2328" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0" text-anchor="middle">
+    <tspan x="254.5" y="23.2">Library</tspan>
+  </text>
+
+  <g transform="translate(3 3) scale(0.836)">
+    <!-- Top toolbar -->
+    <rect x="24" y="48" width="552" height="52" rx="8" fill="#F4F6F8" stroke="#E2E6EA"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="13" font-weight="600"><tspan x="40" y="78">Book Library</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="10"><tspan x="360" y="78">6 books · 3 ready · 1 processing · 2 queued</tspan></text>
+
+    <!-- Status summary cards -->
+    <rect x="24" y="116" width="130" height="56" rx="8" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="22" font-weight="700"><tspan x="40" y="148">3</tspan></text>
+    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="10"><tspan x="64" y="148">ready</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="40" y="164">available for Q&amp;A</tspan></text>
+
+    <rect x="166" y="116" width="130" height="56" rx="8" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#3A6B8C" font-family="Arial, sans-serif" font-size="22" font-weight="700"><tspan x="182" y="148">1</tspan></text>
+    <text fill="#6D7F8D" font-family="Arial, sans-serif" font-size="10"><tspan x="202" y="148">processing</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="182" y="164">ingesting + embedding</tspan></text>
+
+    <rect x="308" y="116" width="130" height="56" rx="8" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#7A6240" font-family="Arial, sans-serif" font-size="22" font-weight="700"><tspan x="324" y="148">2</tspan></text>
+    <text fill="#8A725A" font-family="Arial, sans-serif" font-size="10"><tspan x="344" y="148">queued</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="324" y="164">waiting in pipeline</tspan></text>
+
+    <rect x="450" y="116" width="126" height="56" rx="8" fill="#FDF2F2" stroke="#F0D2D2"/>
+    <text fill="#8C3A3A" font-family="Arial, sans-serif" font-size="22" font-weight="700"><tspan x="466" y="148">0</tspan></text>
+    <text fill="#A06060" font-family="Arial, sans-serif" font-size="10"><tspan x="486" y="148">failed</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="466" y="164">needs retry</tspan></text>
+
+    <!-- Table header -->
+    <rect x="24" y="188" width="552" height="32" rx="6" fill="#F4F6F8" stroke="#E2E6EA"/>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="40" y="208">Title</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="260" y="208">Format</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="330" y="208">Status</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="430" y="208">Updated</tspan></text>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10" font-weight="600"><tspan x="530" y="208">Actions</tspan></text>
+
+    <!-- Table row 1 -->
+    <rect x="24" y="222" width="552" height="42" rx="0" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="500"><tspan x="40" y="246">Machine Learning Fundamentals</tspan></text>
+    <rect x="260" y="236" width="36" height="16" rx="4" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#3A6B8C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="278" y="248">.pdf</tspan></text>
+    <rect x="330" y="236" width="48" height="16" rx="8" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="354" y="248">ready</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="430" y="248">Feb 12</tspan></text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="9" font-weight="600"><tspan x="530" y="248">Chat</tspan></text>
+
+    <!-- Table row 2 -->
+    <rect x="24" y="266" width="552" height="42" rx="0" fill="#FAFBFC" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="500"><tspan x="40" y="290">Computer Systems: A Programmer's…</tspan></text>
+    <rect x="260" y="280" width="42" height="16" rx="4" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="281" y="292">.epub</tspan></text>
+    <rect x="330" y="280" width="48" height="16" rx="8" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="354" y="292">ready</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="430" y="292">Feb 11</tspan></text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="9" font-weight="600"><tspan x="530" y="292">Chat</tspan></text>
+
+    <!-- Table row 3 -->
+    <rect x="24" y="310" width="552" height="42" rx="0" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="500"><tspan x="40" y="334">Database System Concepts</tspan></text>
+    <rect x="260" y="324" width="30" height="16" rx="4" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#7A6240" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="275" y="336">.txt</tspan></text>
+    <rect x="330" y="324" width="48" height="16" rx="8" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="354" y="336">ready</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="430" y="336">Feb 10</tspan></text>
+    <text fill="#3A8AC2" font-family="Arial, sans-serif" font-size="9" font-weight="600"><tspan x="530" y="336">Chat</tspan></text>
+
+    <!-- Table row 4 (processing) -->
+    <rect x="24" y="354" width="552" height="42" rx="0" fill="#FAFBFC" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="500"><tspan x="40" y="378">Deep Learning with Python</tspan></text>
+    <rect x="260" y="368" width="36" height="16" rx="4" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#3A6B8C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="278" y="380">.pdf</tspan></text>
+    <rect x="330" y="368" width="68" height="16" rx="8" fill="#EEF5FB" stroke="#D7E5F2"/>
+    <text fill="#3A6B8C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="364" y="380">processing</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="430" y="380">Feb 12</tspan></text>
+    <rect x="460" y="372" width="92" height="6" rx="3" fill="#E8ECF0"/>
+    <rect x="460" y="372" width="52" height="6" rx="3" fill="#3A8AC2"/>
+
+    <!-- Table row 5 (queued) -->
+    <rect x="24" y="398" width="552" height="42" rx="0" fill="#FFFFFF" stroke="#E8ECF0"/>
+    <text fill="#37424C" font-family="Arial, sans-serif" font-size="11" font-weight="500"><tspan x="40" y="422">Algorithm Design Manual</tspan></text>
+    <rect x="260" y="412" width="42" height="16" rx="4" fill="#EEF8F2" stroke="#D6EBDC"/>
+    <text fill="#3A6B4C" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="281" y="424">.epub</tspan></text>
+    <rect x="330" y="412" width="52" height="16" rx="8" fill="#FFF7EE" stroke="#F0DFCB"/>
+    <text fill="#7A6240" font-family="Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle"><tspan x="356" y="424">queued</tspan></text>
+    <text fill="#8FA4B8" font-family="Arial, sans-serif" font-size="9"><tspan x="430" y="424">Feb 12</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="9"><tspan x="530" y="424">waiting…</tspan></text>
+
+    <!-- Bottom storage info -->
+    <rect x="24" y="460" width="552" height="48" rx="8" fill="#F4F6F8" stroke="#E2E6EA"/>
+    <text fill="#5A6772" font-family="Arial, sans-serif" font-size="10"><tspan x="40" y="480">Storage: MinIO Object Store</tspan></text>
+    <text fill="#A0ABB5" font-family="Arial, sans-serif" font-size="10"><tspan x="40" y="498">bucket: onebook · presigned download URLs · DELETE /api/books/{id}</tspan></text>
+    <circle cx="542" cy="478" r="6" fill="#3A8AC2"/>
+    <circle cx="560" cy="478" r="6" fill="#7CB457"/>
+  </g>
+
+  <defs>
+    <filter id="windowShadow" x="-120" y="-120" width="920" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+</svg>
