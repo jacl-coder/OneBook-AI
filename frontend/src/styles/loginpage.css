@@ -102,8 +102,8 @@
 }
 
 .auth-wordmark-img {
-  width: 130px;
-  height: 50px;
+  height: 2rem;
+  width: auto;
   margin-bottom: var(--padding-SM);
   display: block;
   margin-left: auto;
@@ -166,6 +166,13 @@
 
 .auth-section-fields {
   flex-grow: 1;
+}
+
+.auth-field-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--padding-MD);
 }
 
 .auth-form > .auth-section-ctas:first-child .auth-social-group {
@@ -302,7 +309,7 @@
 }
 
 .auth-input-wrap-with-end {
-  padding-right: 12px;
+  padding-right: var(--spacing-20);
 }
 
 .auth-input-label {
@@ -382,7 +389,8 @@
 }
 
 .auth-input-wrap-readonly .auth-input-target {
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  -webkit-text-fill-color: var(--text-primary);
 }
 
 .auth-input-target {
@@ -390,6 +398,8 @@
   outline: none;
   border: 0;
   font: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   padding: 0;
   color: var(--text-primary);
@@ -413,7 +423,7 @@
 
 .auth-input-end-decoration {
   display: flex;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .auth-input-end-decoration::before {
@@ -422,10 +432,14 @@
   width: var(--padding-SM);
 }
 
+.auth-link-nowrap {
+  white-space: nowrap;
+}
+
 .auth-link-inline {
   color: var(--primary);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
   text-decoration: none;
 }
 
@@ -543,8 +557,8 @@
 
 .auth-signup-hint {
   color: var(--text-primary);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
   font-weight: 400;
 }
 
@@ -556,6 +570,23 @@
 
 .auth-signup-hint a:hover {
   text-decoration: underline;
+}
+
+.auth-button-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--padding-XS);
+}
+
+.auth-passwordless-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--padding-MD);
+}
+
+.auth-inline-passwordless-login {
+  width: 100%;
 }
 
 .auth-outline-btn {
@@ -671,6 +702,10 @@
 
   .auth-footer {
     margin-top: var(--padding-XL);
+  }
+
+  .auth-wordmark-img {
+    height: 3rem;
   }
 }
 
