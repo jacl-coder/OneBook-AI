@@ -10,13 +10,15 @@ import eyeIconSvg from '@/assets/icons/eye.svg'
 import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const MOCK_VERIFY_CODE = '123456'
 
-type Step = 'entry' | 'password' | 'verify' | 'reset'
+type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew'
 
 function getStep(pathname: string): Step {
-  if (pathname === '/login/password') return 'password'
-  if (pathname === '/login/verify' || pathname === '/email-verification') return 'verify'
+  if (pathname === '/log-in/password' || pathname === '/create-account/password') return 'password'
+  if (pathname === '/log-in/verify' || pathname === '/email-verification') return 'verify'
   if (pathname === '/reset-password') return 'reset'
+  if (pathname === '/reset-password/new-password') return 'resetNew'
   return 'entry'
 }
 
@@ -31,8 +33,15 @@ export function LoginPage() {
   const [searchParams] = useSearchParams()
 
   const step = getStep(location.pathname)
+  const logoLinkTarget =
+    location.pathname.startsWith('/log-in') || location.pathname.startsWith('/create-account')
+      ? '/chat'
+      : '/'
   const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
+  const isCreateAccountPassword = step === 'password' && location.pathname === '/create-account/password'
   const stepEmail = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams])
+  const verifyFlow = useMemo(() => searchParams.get('flow')?.trim() ?? '', [searchParams])
+  const isResetVerifyFlow = step === 'verify' && verifyFlow === 'reset'
 
   const emailId = useId()
   const emailLabelId = useId()
@@ -42,6 +51,14 @@ export function LoginPage() {
   const passwordLabelId = useId()
   const passwordErrorId = useId()
   const readonlyEmailLabelId = useId()
+  const newPasswordId = useId()
+  const newPasswordLabelId = useId()
+  const newPasswordErrorId = useId()
+  const confirmPasswordId = useId()
+  const confirmPasswordLabelId = useId()
+  const confirmPasswordErrorId = useId()
+  const verifySubtitleId = useId()
+  const verifyErrorId = useId()
 
   const [email, setEmail] = useState(stepEmail)
   const [isEmailFocused, setIsEmailFocused] = useState(false)
@@ -54,29 +71,62 @@ export function LoginPage() {
   const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false)
   const [passwordErrorText, setPasswordErrorText] = useState('')
   const [isResetSubmitting, setIsResetSubmitting] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isNewPasswordFocused, setIsNewPasswordFocused] = useState(false)
+  const [isConfirmPasswordFocused, setIsConfirmPasswordFocused] = useState(false)
+  const [isNewPasswordVisible, setIsNewPasswordVisible] = useState(false)
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false)
+  const [newPasswordErrorText, setNewPasswordErrorText] = useState('')
+  const [confirmPasswordErrorText, setConfirmPasswordErrorText] = useState('')
+  const [isResetNewSubmitting, setIsResetNewSubmitting] = useState(false)
 
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
   const otpRefs = useRef<Array<HTMLInputElement | null>>([])
+  const lastSubmittedVerifyCodeRef = useRef('')
+  const [verifyErrorText, setVerifyErrorText] = useState('')
+  const [isVerifySubmitting, setIsVerifySubmitting] = useState(false)
 
   const entryInputRef = useRef<HTMLInputElement>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (step === 'entry') {
-      setEmail(stepEmail)
+      setEmail('')
       setEmailErrorText('')
+      setIsEmailFocused(false)
       setIsEntrySubmitting(false)
     }
-  }, [step, stepEmail])
+  }, [step])
 
   useEffect(() => {
     if (step !== 'verify') return
     setOtp(['', '', '', '', '', ''])
-  }, [step, stepEmail])
+    lastSubmittedVerifyCodeRef.current = ''
+    setVerifyErrorText('')
+    setIsVerifySubmitting(false)
+  }, [step, stepEmail, verifyFlow])
+
+  useEffect(() => {
+    if (step !== 'verify') return
+    const frameId = requestAnimationFrame(() => {
+      otpRefs.current[0]?.focus()
+    })
+    return () => cancelAnimationFrame(frameId)
+  }, [step, stepEmail, verifyFlow])
 
   useEffect(() => {
     if (step !== 'reset') return
     setIsResetSubmitting(false)
+  }, [step, stepEmail])
+
+  useEffect(() => {
+    if (step !== 'resetNew') return
+    setIsResetNewSubmitting(false)
+    setNewPassword('')
+    setConfirmPassword('')
+    setNewPasswordErrorText('')
+    setConfirmPasswordErrorText('')
   }, [step, stepEmail])
 
   const hasEmailValue = email.trim().length > 0
@@ -110,6 +160,39 @@ export function LoginPage() {
     .filter(Boolean)
     .join(' ')
 
+  const hasNewPasswordValue = newPassword.trim().length > 0
+  const isNewPasswordInvalid = newPasswordErrorText.length > 0
+  const isNewPasswordActive = isNewPasswordFocused || hasNewPasswordValue
+
+  const hasConfirmPasswordValue = confirmPassword.trim().length > 0
+  const isConfirmPasswordInvalid = confirmPasswordErrorText.length > 0
+  const isConfirmPasswordActive = isConfirmPasswordFocused || hasConfirmPasswordValue
+  const verifyDescribedBy = verifyErrorText ? `${verifySubtitleId} ${verifyErrorId}` : verifySubtitleId
+
+  const newPasswordWrapClassName = [
+    'auth-input-wrap',
+    isNewPasswordActive ? 'is-active' : '',
+    isNewPasswordFocused ? 'is-focused' : '',
+    hasNewPasswordValue ? 'has-value' : '',
+    isNewPasswordInvalid ? 'is-invalid' : '',
+    isResetNewSubmitting ? 'is-submitting' : '',
+    'auth-input-wrap-with-end',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const confirmPasswordWrapClassName = [
+    'auth-input-wrap',
+    isConfirmPasswordActive ? 'is-active' : '',
+    isConfirmPasswordFocused ? 'is-focused' : '',
+    hasConfirmPasswordValue ? 'has-value' : '',
+    isConfirmPasswordInvalid ? 'is-invalid' : '',
+    isResetNewSubmitting ? 'is-submitting' : '',
+    'auth-input-wrap-with-end',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   const validateEmail = (value: string) => {
     const text = value.trim()
     if (!text) return '电子邮件地址为必填项。'
@@ -132,7 +215,7 @@ export function LoginPage() {
     setEmailErrorText('')
     setIsEntrySubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    navigate(`/login/password${encodeEmail(normalizedEmail)}`)
+    navigate(`${isCreateAccountEntry ? '/create-account/password' : '/log-in/password'}${encodeEmail(normalizedEmail)}`)
   }
 
   const handlePasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -152,12 +235,16 @@ export function LoginPage() {
   }
 
   const resendEmail = () => {
+    lastSubmittedVerifyCodeRef.current = ''
     setOtp(['', '', '', '', '', ''])
+    setVerifyErrorText('')
     otpRefs.current[0]?.focus()
   }
 
   const updateOtpAt = (index: number, rawValue: string) => {
+    lastSubmittedVerifyCodeRef.current = ''
     const value = rawValue.replace(/\D/g, '').slice(-1)
+    if (verifyErrorText) setVerifyErrorText('')
     setOtp((prev) => {
       const next = [...prev]
       next[index] = value
@@ -185,6 +272,8 @@ export function LoginPage() {
     const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
     if (!pasted) return
 
+    lastSubmittedVerifyCodeRef.current = ''
+    if (verifyErrorText) setVerifyErrorText('')
     const filled = ['','','','','','']
     for (let i = 0; i < pasted.length; i += 1) filled[i] = pasted[i]
     setOtp(filled)
@@ -199,7 +288,76 @@ export function LoginPage() {
 
     setIsResetSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    navigate(`/login/verify${encodeEmail(stepEmail)}`)
+    const nextParams = new URLSearchParams()
+    if (stepEmail) nextParams.set('email', stepEmail)
+    nextParams.set('flow', 'reset')
+    navigate(`/log-in/verify?${nextParams.toString()}`)
+  }
+
+  const submitVerifyCode = async (code: string) => {
+    if (isVerifySubmitting) return
+    if (code.length !== 6) return
+    if (code === lastSubmittedVerifyCodeRef.current) return
+
+    lastSubmittedVerifyCodeRef.current = code
+    setVerifyErrorText('')
+    setIsVerifySubmitting(true)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    if (code !== MOCK_VERIFY_CODE) {
+      setVerifyErrorText('代码不正确')
+      setIsVerifySubmitting(false)
+      return
+    }
+
+    if (isResetVerifyFlow) {
+      navigate(`/reset-password/new-password${encodeEmail(stepEmail)}`)
+      return
+    }
+
+    navigate('/library')
+  }
+
+  const handleVerifySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await submitVerifyCode(otp.join(''))
+  }
+
+  useEffect(() => {
+    if (step !== 'verify' || isVerifySubmitting) return
+
+    const code = otp.join('')
+    void submitVerifyCode(code)
+  }, [step, otp, isVerifySubmitting, isResetVerifyFlow, stepEmail, navigate])
+
+  const handleResetNewPasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isResetNewSubmitting) return
+
+    let hasError = false
+    let nextPasswordError = ''
+    if (!newPassword.trim()) {
+      nextPasswordError = '新密码为必填项。'
+    } else if (newPassword.length < 8) {
+      nextPasswordError = '密码至少需要 8 个字符。'
+    }
+    if (nextPasswordError) hasError = true
+    setNewPasswordErrorText(nextPasswordError)
+
+    const nextConfirmError = confirmPassword.trim() ? '' : '请重新输入新密码。'
+    if (nextConfirmError) hasError = true
+    setConfirmPasswordErrorText(nextConfirmError)
+
+    if (hasError) return
+
+    if (newPassword !== confirmPassword) {
+      setConfirmPasswordErrorText('两次输入的密码不一致。')
+      return
+    }
+
+    setIsResetNewSubmitting(true)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    navigate(`/log-in${encodeEmail(stepEmail)}`)
   }
 
   const renderSocialButtons = () => (
@@ -238,7 +396,7 @@ export function LoginPage() {
           {step === 'entry' ? (
             <>
               <div className="auth-title-block">
-                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
                   <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
                 </Link>
                 <h1 className="auth-heading">
@@ -312,7 +470,7 @@ export function LoginPage() {
                     {isCreateAccountEntry ? (
                       <span className="auth-signup-hint">
                         已经有帐户？请
-                        <Link to={`/login${encodeEmail(email)}`}>登录</Link>
+                        <Link to={`/log-in${encodeEmail(email)}`}>登录</Link>
                       </span>
                     ) : (
                       <span className="auth-signup-hint">
@@ -329,11 +487,11 @@ export function LoginPage() {
           {step === 'password' ? (
             <>
               <div className="auth-title-block">
-                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
                   <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
                 </Link>
                 <h1 className="auth-heading">
-                  <span className="auth-heading-text">输入密码</span>
+                  <span className="auth-heading-text">{isCreateAccountPassword ? '创建密码' : '输入密码'}</span>
                 </h1>
               </div>
 
@@ -341,7 +499,7 @@ export function LoginPage() {
                 <form
                   className="auth-form auth-form-password"
                   method="post"
-                  action="/log-in/password"
+                  action={isCreateAccountPassword ? '/create-account/password' : '/log-in/password'}
                   autoComplete="on"
                   onSubmit={handlePasswordSubmit}
                   noValidate
@@ -368,7 +526,7 @@ export function LoginPage() {
                           <div className="auth-input-end-decoration">
                             <div className="auth-link-nowrap">
                               <Link
-                                to={`/login${encodeEmail(stepEmail)}`}
+                                to={`/log-in${encodeEmail(stepEmail)}`}
                                 className="auth-link-inline"
                                 aria-label="编辑电子邮件"
                               >
@@ -433,9 +591,11 @@ export function LoginPage() {
                         ) : null}
                       </div>
 
-                      <span className="auth-forgot-password">
-                        <Link to={`/reset-password${encodeEmail(stepEmail)}`}>忘记了密码？</Link>
-                      </span>
+                      {!isCreateAccountPassword ? (
+                        <span className="auth-forgot-password">
+                          <Link to={`/reset-password${encodeEmail(stepEmail)}`}>忘记了密码？</Link>
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
@@ -446,10 +606,12 @@ export function LoginPage() {
                       </button>
                     </div>
 
-                    <span className="auth-signup-hint">
-                      还没有帐户？请
-                      <Link to="/create-account">注册</Link>
-                    </span>
+                    {!isCreateAccountPassword ? (
+                      <span className="auth-signup-hint">
+                        还没有帐户？请
+                        <Link to="/create-account">注册</Link>
+                      </span>
+                    ) : null}
 
                     <div className="auth-divider auth-divider-password">
                       <div className="auth-divider-line" />
@@ -462,12 +624,19 @@ export function LoginPage() {
                         <button
                           type="button"
                           className="auth-outline-btn auth-inline-passwordless-login"
-                          onClick={() => navigate(`/login/verify${encodeEmail(stepEmail)}`)}
+                          onClick={() => navigate(`/log-in/verify${encodeEmail(stepEmail)}`)}
                         >
-                          使用一次性验证码登录
+                          {isCreateAccountPassword ? '使用一次性验证码注册' : '使用一次性验证码登录'}
                         </button>
                       </div>
                     </div>
+
+                    {isCreateAccountPassword ? (
+                      <span className="auth-signup-hint">
+                        已经有帐户了？请
+                        <Link to={`/log-in${encodeEmail(stepEmail)}`}>登录</Link>
+                      </span>
+                    ) : null}
                   </div>
                 </form>
               </fieldset>
@@ -477,25 +646,31 @@ export function LoginPage() {
           {step === 'verify' ? (
             <>
               <div className="auth-title-block">
-                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
                   <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
                 </Link>
                 <h1 className="auth-heading">
                   <span className="auth-heading-text">检查您的收件箱</span>
                 </h1>
                 <div className="auth-subtitle auth-subtitle-verify">
-                  <span className="auth-subtitle-text">
+                  <span className="auth-subtitle-text" id={verifySubtitleId}>
                     输入我们刚刚向 {stepEmail || '你的邮箱'} 发送的验证码
                   </span>
                 </div>
               </div>
 
               <fieldset className="auth-fieldset">
-                <form className="auth-form auth-form-verify" noValidate>
+                <form className="auth-form auth-form-verify" noValidate onSubmit={handleVerifySubmit}>
                   <div className="auth-section auth-section-fields">
                     <div className="auth-otp-wrap">
-                      <label className="auth-otp-label">验证码</label>
-                      <div className="auth-otp-group" role="group" aria-label="验证码">
+                      <div
+                        className="auth-otp-group"
+                        role="group"
+                        aria-label="验证码"
+                        aria-describedby={verifyDescribedBy}
+                        data-variant="outlined"
+                        data-error={verifyErrorText ? 'true' : undefined}
+                      >
                         {otp.map((digit, index) => (
                           <input
                             key={index}
@@ -508,7 +683,9 @@ export function LoginPage() {
                             autoComplete={index === 0 ? 'one-time-code' : 'off'}
                             maxLength={1}
                             aria-label={`数字位 ${index + 1}`}
+                            aria-describedby={verifyDescribedBy}
                             value={digit}
+                            disabled={isVerifySubmitting}
                             onChange={(e) => updateOtpAt(index, e.target.value)}
                             onKeyDown={(e) => handleOtpKeyDown(index, e.key)}
                             onPaste={handleOtpPaste}
@@ -516,16 +693,30 @@ export function LoginPage() {
                         ))}
                       </div>
                       <input type="hidden" readOnly value={otp.join('')} name="code" />
+                      {verifyErrorText ? (
+                        <ul className="auth-field-errors" id={verifyErrorId}>
+                          <li className="auth-field-error">
+                            <span className="auth-field-error-icon">
+                              <img src={errorIconSvg} alt="" aria-hidden="true" />
+                            </span>
+                            <span>{verifyErrorText}</span>
+                          </li>
+                        </ul>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="auth-section auth-section-ctas auth-section-verify-ctas">
-                    <button type="button" className="auth-outline-btn" onClick={resendEmail}>
-                      重新发送电子邮件
-                    </button>
-                    <Link className="auth-link-btn" to={`/login/password${encodeEmail(stepEmail)}`}>
-                      使用密码继续
-                    </Link>
+                    <div className="auth-button-wrapper">
+                      <button type="button" className="auth-outline-btn" onClick={resendEmail}>
+                        重新发送电子邮件
+                      </button>
+                    </div>
+                    <div className="auth-button-wrapper">
+                      <Link className="auth-link-btn" to={`/log-in/password${encodeEmail(stepEmail)}`}>
+                        使用密码继续
+                      </Link>
+                    </div>
                   </div>
                 </form>
               </fieldset>
@@ -535,7 +726,7 @@ export function LoginPage() {
           {step === 'reset' ? (
             <>
               <div className="auth-title-block">
-                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
                   <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
                 </Link>
                 <h1 className="auth-heading">
@@ -566,11 +757,160 @@ export function LoginPage() {
                         <button
                           type="button"
                           className="auth-transparent-btn"
-                          onClick={() => navigate(`/login${encodeEmail(stepEmail)}`)}
+                          onClick={() => navigate(`/log-in${encodeEmail(stepEmail)}`)}
                         >
                           返回登录
                         </button>
                       </div>
+                    </div>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
+
+          {step === 'resetNew' ? (
+            <>
+              <div className="auth-title-block">
+                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+                </Link>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">重置密码</span>
+                </h1>
+                <div className="auth-subtitle">
+                  <span className="auth-subtitle-text">请在下面输入新密码以更改密码</span>
+                </div>
+              </div>
+
+              <fieldset className="auth-fieldset">
+                <form
+                  className="auth-form"
+                  method="post"
+                  action="/reset-password/new-password"
+                  autoComplete="on"
+                  noValidate
+                  onSubmit={handleResetNewPasswordSubmit}
+                >
+                  <div className="auth-section auth-section-fields">
+                    <input type="hidden" name="username" value={stepEmail} autoComplete="username" />
+                    <div className="auth-field-stack">
+                      <div className="auth-textfield-root">
+                        <div className={newPasswordWrapClassName}>
+                          <label className="auth-input-label" htmlFor={newPasswordId} id={newPasswordLabelId}>
+                            <div className="auth-input-label-pos">
+                              <div className="auth-input-label-text">新密码</div>
+                            </div>
+                          </label>
+                          <input
+                            id={newPasswordId}
+                            className="auth-input-target"
+                            type={isNewPasswordVisible ? 'text' : 'password'}
+                            value={newPassword}
+                            name="new-password"
+                            autoComplete="new-password"
+                            spellCheck={false}
+                            placeholder="新密码"
+                            aria-labelledby={newPasswordLabelId}
+                            aria-describedby={isNewPasswordInvalid ? newPasswordErrorId : undefined}
+                            aria-invalid={isNewPasswordInvalid || undefined}
+                            disabled={isResetNewSubmitting}
+                            onFocus={() => setIsNewPasswordFocused(true)}
+                            onBlur={() => setIsNewPasswordFocused(false)}
+                            onChange={(e) => {
+                              setNewPassword(e.target.value)
+                              if (isNewPasswordInvalid) setNewPasswordErrorText('')
+                              if (isConfirmPasswordInvalid) setConfirmPasswordErrorText('')
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="auth-password-toggle"
+                            aria-label={isNewPasswordVisible ? '隐藏密码' : '显示密码'}
+                            aria-controls={newPasswordId}
+                            aria-pressed={isNewPasswordVisible}
+                            onClick={() => setIsNewPasswordVisible((prev) => !prev)}
+                          >
+                            {isNewPasswordVisible ? (
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                            ) : (
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                            )}
+                          </button>
+                        </div>
+                        {isNewPasswordInvalid ? (
+                          <ul className="auth-field-errors" id={newPasswordErrorId}>
+                            <li className="auth-field-error">
+                              <span className="auth-field-error-icon">
+                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                              </span>
+                              <span>{newPasswordErrorText}</span>
+                            </li>
+                          </ul>
+                        ) : null}
+                      </div>
+
+                      <div className="auth-textfield-root">
+                        <div className={confirmPasswordWrapClassName}>
+                          <label className="auth-input-label" htmlFor={confirmPasswordId} id={confirmPasswordLabelId}>
+                            <div className="auth-input-label-pos">
+                              <div className="auth-input-label-text">重新输入新密码</div>
+                            </div>
+                          </label>
+                          <input
+                            id={confirmPasswordId}
+                            className="auth-input-target"
+                            type={isConfirmPasswordVisible ? 'text' : 'password'}
+                            value={confirmPassword}
+                            name="confirm-password"
+                            autoComplete="new-password"
+                            spellCheck={false}
+                            placeholder="重新输入新密码"
+                            aria-labelledby={confirmPasswordLabelId}
+                            aria-describedby={isConfirmPasswordInvalid ? confirmPasswordErrorId : undefined}
+                            aria-invalid={isConfirmPasswordInvalid || undefined}
+                            disabled={isResetNewSubmitting}
+                            onFocus={() => setIsConfirmPasswordFocused(true)}
+                            onBlur={() => setIsConfirmPasswordFocused(false)}
+                            onChange={(e) => {
+                              setConfirmPassword(e.target.value)
+                              if (isConfirmPasswordInvalid) setConfirmPasswordErrorText('')
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="auth-password-toggle"
+                            aria-label={isConfirmPasswordVisible ? '隐藏密码' : '显示密码'}
+                            aria-controls={confirmPasswordId}
+                            aria-pressed={isConfirmPasswordVisible}
+                            onClick={() => setIsConfirmPasswordVisible((prev) => !prev)}
+                          >
+                            {isConfirmPasswordVisible ? (
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                            ) : (
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                            )}
+                          </button>
+                        </div>
+                        {isConfirmPasswordInvalid ? (
+                          <ul className="auth-field-errors" id={confirmPasswordErrorId}>
+                            <li className="auth-field-error">
+                              <span className="auth-field-error-icon">
+                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                              </span>
+                              <span>{confirmPasswordErrorText}</span>
+                            </li>
+                          </ul>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="auth-section auth-section-ctas">
+                    <div className="auth-button-wrapper">
+                      <button type="submit" className="auth-continue-btn" disabled={isResetNewSubmitting}>
+                        继续
+                      </button>
                     </div>
                   </div>
                 </form>

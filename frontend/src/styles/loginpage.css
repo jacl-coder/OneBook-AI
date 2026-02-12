@@ -33,6 +33,7 @@
   --text-primary: var(--gray-950);
   --text-secondary: #5d5d5d;
   --text-tertiary: var(--gray-400);
+  --divider-text-color: var(--text-secondary);
   --border-light: rgb(0 0 0 / 10%);
   --border-medium: rgb(0 0 0 / 15%);
   --border-heavy: rgb(0 0 0 / 20%);
@@ -308,7 +309,7 @@
   text-transform: uppercase;
   font-size: 13px;
   font-weight: 510;
-  color: var(--text-secondary);
+  color: var(--divider-text-color);
 }
 
 .auth-input-wrap {
@@ -622,16 +623,17 @@
   flex-direction: column;
   gap: 0.5rem;
   width: 100%;
+  align-items: flex-start;
 }
 
 .auth-otp-label {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
+  width: 1px;
   height: 1px;
   overflow: hidden;
   position: absolute;
   white-space: nowrap;
-  width: 1px;
 }
 
 .auth-otp-group {
@@ -645,7 +647,7 @@
 .auth-otp-input {
   height: 3.25rem;
   border-radius: 0.75rem;
-  border: 1px solid var(--border-heavy);
+  border: 1px solid var(--gray-300);
   background-color: var(--main-page-background);
   color: var(--text-primary);
   font-size: 1.25rem;
@@ -660,6 +662,24 @@
   border-color: var(--primary);
   background-color: var(--main-page-background);
   box-shadow: 0 0 0 1px var(--primary);
+}
+
+.auth-otp-group[data-error='true'] .auth-otp-input {
+  border-color: var(--platform-error);
+}
+
+.auth-otp-group[data-error='true'] .auth-otp-input:focus,
+.auth-otp-group[data-error='true'] .auth-otp-input:focus-visible {
+  border-color: var(--platform-error);
+  box-shadow: 0 0 0 1px var(--platform-error);
+}
+
+.auth-otp-wrap .auth-field-error:first-of-type {
+  margin-top: 0.5rem;
+}
+
+.auth-otp-wrap .auth-field-error:last-of-type {
+  margin-bottom: 0;
 }
 
 .auth-link-btn {

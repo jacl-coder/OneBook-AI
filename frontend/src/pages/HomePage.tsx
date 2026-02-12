@@ -190,7 +190,7 @@ const footerColumns = [
       { label: 'Library', href: '/library' },
       { label: 'Chat', href: '/chat' },
       { label: 'History', href: '/history' },
-      { label: 'Login', href: '/login' },
+      { label: 'Login', href: '/log-in' },
     ],
   },
   {
@@ -616,7 +616,7 @@ export function HomePage() {
                   </div>
 
                   <div className="tpx-purchase-btn-group">
-                    <Link to="/login" className="tpx-purchase-btn tpx-purchase-btn-dark">
+                    <Link to="/log-in" className="tpx-purchase-btn tpx-purchase-btn-dark">
                       <i className="fa fa-key tpx-purchase-btn-icon" aria-hidden="true" />
                       <span className="tpx-purchase-btn-label">Login</span>
                     </Link>
