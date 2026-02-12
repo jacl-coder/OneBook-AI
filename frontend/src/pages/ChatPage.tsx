@@ -34,6 +34,7 @@ const headingPool = [
 ]
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+type AuthModalMode = 'login' | 'register'
 
 export function ChatPage() {
   const navigate = useNavigate()
@@ -45,6 +46,7 @@ export function ChatPage() {
     () => headingPool[Math.floor(Math.random() * headingPool.length)],
   )
   const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthModalMode>('login')
   const [authEmail, setAuthEmail] = useState('')
   const [isAuthFocused, setIsAuthFocused] = useState(false)
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
@@ -88,12 +90,14 @@ export function ChatPage() {
     setPrompt('')
   }
 
-  const openAuthModal = () => {
+  const openAuthModal = (mode: AuthModalMode = 'login') => {
+    setAuthMode(mode)
     setIsAuthOpen(true)
   }
 
   const closeAuthModal = () => {
     setIsAuthOpen(false)
+    setAuthMode('login')
     setAuthEmail('')
     setIsAuthFocused(false)
     setIsAuthSubmitting(false)
@@ -122,7 +126,8 @@ export function ChatPage() {
     setIsAuthSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 280))
     closeAuthModal()
-    navigate('/login')
+    const targetPath = authMode === 'register' ? '/create-account/password' : '/log-in/password'
+    navigate(`${targetPath}?email=${encodeURIComponent(authEmail.trim())}`)
   }
 
   return (
@@ -143,10 +148,10 @@ export function ChatPage() {
         </div>
 
         <div className="chatgpt-entry-right">
-          <button type="button" className="chatgpt-top-btn chatgpt-top-btn-dark" onClick={openAuthModal}>
+          <button type="button" className="chatgpt-top-btn chatgpt-top-btn-dark" onClick={() => openAuthModal('login')}>
             登录
           </button>
-          <button type="button" className="chatgpt-top-btn chatgpt-top-btn-light" onClick={openAuthModal}>
+          <button type="button" className="chatgpt-top-btn chatgpt-top-btn-light" onClick={() => openAuthModal('register')}>
             免费注册
           </button>
           <button type="button" className="chatgpt-profile-btn" aria-label="打开“个人资料”菜单">
@@ -317,7 +322,7 @@ export function ChatPage() {
 
                   <form className="chatgpt-auth-form" onSubmit={handleAuthSubmit} noValidate>
                     <div className="chatgpt-auth-social-group" role="group" aria-label="选择登录选项">
-                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/login')}>
+                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/log-in')}>
                         <span className="chatgpt-auth-social-btn-inner">
                           <span className="chatgpt-auth-social-icon">
                             <img src={googleLogo} alt="" aria-hidden="true" />
@@ -325,7 +330,7 @@ export function ChatPage() {
                           <span>继续使用 Google 登录</span>
                         </span>
                       </button>
-                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/login')}>
+                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/log-in')}>
                         <span className="chatgpt-auth-social-btn-inner">
                           <span className="chatgpt-auth-social-icon">
                             <img src={appleLogo} alt="" aria-hidden="true" />
@@ -333,7 +338,7 @@ export function ChatPage() {
                           <span>继续使用 Apple 登录</span>
                         </span>
                       </button>
-                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/login')}>
+                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/log-in')}>
                         <span className="chatgpt-auth-social-btn-inner">
                           <span className="chatgpt-auth-social-icon">
                             <img src={microsoftLogo} alt="" aria-hidden="true" />
@@ -341,7 +346,7 @@ export function ChatPage() {
                           <span>继续使用 Microsoft 登录</span>
                         </span>
                       </button>
-                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/login')}>
+                      <button type="button" className="chatgpt-auth-social-btn" onClick={() => navigate('/log-in')}>
                         <span className="chatgpt-auth-social-btn-inner">
                           <span className="chatgpt-auth-social-icon">
                             <img src={phoneIconSvg} alt="" aria-hidden="true" />

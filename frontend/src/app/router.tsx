@@ -14,7 +14,7 @@ export const router = createBrowserRouter([
     element: <HomePage />,
   },
   {
-    path: '/login',
+    path: '/log-in',
     element: <LoginPage />,
   },
   {
@@ -22,11 +22,15 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
-    path: '/login/password',
+    path: '/log-in/password',
     element: <LoginPage />,
   },
   {
-    path: '/login/verify',
+    path: '/create-account/password',
+    element: <LoginPage />,
+  },
+  {
+    path: '/log-in/verify',
     element: <LoginPage />,
   },
   {
@@ -35,6 +39,10 @@ export const router = createBrowserRouter([
   },
   {
     path: '/reset-password',
+    element: <LoginPage />,
+  },
+  {
+    path: '/reset-password/new-password',
     element: <LoginPage />,
   },
   {
@@ -54,10 +62,6 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [{ index: true, element: <HistoryPage /> }],
   },
-  { path: '/app', element: <Navigate to="/library" replace /> },
-  { path: '/app/library', element: <Navigate to="/library" replace /> },
-  { path: '/app/chat', element: <Navigate to="/chat" replace /> },
-  { path: '/app/history', element: <Navigate to="/history" replace /> },
   {
     path: '*',
     element: <NotFoundPage />,
