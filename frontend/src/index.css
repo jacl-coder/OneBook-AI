@@ -1,6 +1,7 @@
 @import './styles/base.css';
 @import './styles/chatpage.css';
 @import './styles/loginpage.css';
+@import './styles/chat-auth-modal.css';
 @import './styles/marketing.css';
 @import './styles/homepage.css';
 @import './styles/responsive.css';
