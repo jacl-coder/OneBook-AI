@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Raleway:wght@500&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css');
+
+@font-face {
+  font-family: 'TeXGyreAdventor';
+  font-style: normal;
+  font-weight: 400;
+  src: url('@/assets/fonts/gothic/texgyreadventor-regular.otf') format('opentype');
+}
+
+@font-face {
+  font-family: 'TeXGyreAdventor';
+  font-style: normal;
+  font-weight: 700;
+  src: url('@/assets/fonts/gothic/texgyreadventor-bold.otf') format('opentype');
+}
+
+@font-face {
+  font-family: 'TeXGyreAdventor';
+  font-style: italic;
+  font-weight: 400;
+  src: url('@/assets/fonts/gothic/texgyreadventor-italic.otf') format('opentype');
+}
+
+@font-face {
+  font-family: 'TeXGyreAdventor';
+  font-style: italic;
+  font-weight: 700;
+  src: url('@/assets/fonts/gothic/texgyreadventor-bolditalic.otf') format('opentype');
+}
+
+:root {
+  --bg: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-soft: #f1f5f9;
+  --line: #d8e1ea;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --primary: #2563eb;
+  --primary-strong: #1d4ed8;
+  --neutral: #475569;
+  --ok: #059669;
+
+  font-family: 'IBM Plex Sans', sans-serif;
+  color: var(--text);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 8% 10%, #dbeafe 0%, transparent 36%),
+    radial-gradient(circle at 96% 4%, #e2e8f0 0%, transparent 32%),
+    var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+code,
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+

@@ -1,12 +1,18 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
 const navItems = [
-  { to: '/app/library', label: '书库' },
-  { to: '/app/chat', label: '对话' },
-  { to: '/app/history', label: '会话历史' },
+  { to: '/library', label: '书库' },
+  { to: '/chat', label: '对话' },
+  { to: '/history', label: '会话历史' },
 ]
 
 export function AppLayout() {
+  const location = useLocation()
+
+  if (location.pathname === '/chat') {
+    return <Outlet />
+  }
+
   const flowSteps = [
     { index: '01', title: '上传电子书', desc: '支持 PDF / EPUB / TXT' },
     { index: '02', title: '内容解析', desc: '状态轮询直到 ready' },
