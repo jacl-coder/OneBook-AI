@@ -241,18 +241,28 @@ export function LoginPage() {
               </button>
             </div>
           </form>
+
+          <div className="auth-footer">
+            <span className="auth-footer-meta">
+              <a
+                href="https://openai.com/policies/terms-of-use"
+                target="_blank"
+                rel="noreferrer"
+              >
+                使用条款
+              </a>
+              <span className="auth-footer-separator" aria-hidden="true" />
+              <a
+                href="https://openai.com/policies/privacy-policy"
+                target="_blank"
+                rel="noreferrer"
+              >
+                隐私政策
+              </a>
+            </span>
+          </div>
         </section>
       </main>
-
-      <footer className="auth-footer">
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          使用条款
-        </a>
-        <span aria-hidden="true">|</span>
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          隐私政策
-        </a>
-      </footer>
     </div>
   )
 }
