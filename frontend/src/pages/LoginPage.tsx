@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useRef, useState } from 'react'
+import { type SubmitEvent, useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import onebookLogoMark from '@/assets/home/onebook-logo-mark.svg'
 
@@ -114,7 +114,7 @@ export function LoginPage() {
     return ''
   }
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (isSubmitting) return
 

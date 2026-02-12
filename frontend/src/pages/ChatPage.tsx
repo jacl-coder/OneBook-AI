@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { SubmitEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import attachIcon from '@/assets/chat/attach.svg'
 import arrowUpIcon from '@/assets/chat/arrow-up.svg'
@@ -158,7 +158,7 @@ export function ChatPage() {
     setPrompt(value.replace(/\u00a0/g, ' '))
   }
 
-  const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleComposerSubmit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!hasPrompt) return
     if (editorRef.current) editorRef.current.textContent = ''
@@ -184,7 +184,7 @@ export function ChatPage() {
     return ''
   }
 
-  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleAuthSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isAuthSubmitting) return
 
