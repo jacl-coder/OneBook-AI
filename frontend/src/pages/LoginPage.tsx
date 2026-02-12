@@ -11,11 +11,12 @@ import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-type Step = 'entry' | 'password' | 'verify'
+type Step = 'entry' | 'password' | 'verify' | 'reset'
 
 function getStep(pathname: string): Step {
   if (pathname === '/login/password') return 'password'
   if (pathname === '/login/verify' || pathname === '/email-verification') return 'verify'
+  if (pathname === '/reset-password') return 'reset'
   return 'entry'
 }
 
@@ -52,6 +53,7 @@ export function LoginPage() {
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false)
   const [passwordErrorText, setPasswordErrorText] = useState('')
+  const [isResetSubmitting, setIsResetSubmitting] = useState(false)
 
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
   const otpRefs = useRef<Array<HTMLInputElement | null>>([])
@@ -70,6 +72,11 @@ export function LoginPage() {
   useEffect(() => {
     if (step !== 'verify') return
     setOtp(['', '', '', '', '', ''])
+  }, [step, stepEmail])
+
+  useEffect(() => {
+    if (step !== 'reset') return
+    setIsResetSubmitting(false)
   }, [step, stepEmail])
 
   const hasEmailValue = email.trim().length > 0
@@ -184,6 +191,15 @@ export function LoginPage() {
 
     const nextIndex = Math.min(pasted.length, 5)
     otpRefs.current[nextIndex]?.focus()
+  }
+
+  const handleResetPasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isResetSubmitting) return
+
+    setIsResetSubmitting(true)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    navigate(`/login/verify${encodeEmail(stepEmail)}`)
   }
 
   const renderSocialButtons = () => (
@@ -418,7 +434,7 @@ export function LoginPage() {
                       </div>
 
                       <span className="auth-forgot-password">
-                        <a href="/reset-password">忘记了密码？</a>
+                        <Link to={`/reset-password${encodeEmail(stepEmail)}`}>忘记了密码？</Link>
                       </span>
                     </div>
                   </div>
@@ -510,6 +526,52 @@ export function LoginPage() {
                     <Link className="auth-link-btn" to={`/login/password${encodeEmail(stepEmail)}`}>
                       使用密码继续
                     </Link>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
+
+          {step === 'reset' ? (
+            <>
+              <div className="auth-title-block">
+                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+                </Link>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">重置密码</span>
+                </h1>
+                <div className="auth-subtitle">
+                  <span className="auth-subtitle-text">
+                    点击“继续”以重置 {stepEmail || '你的邮箱'} 的密码
+                  </span>
+                </div>
+              </div>
+
+              <fieldset className="auth-fieldset">
+                <form
+                  className="auth-form auth-form-reset"
+                  method="post"
+                  action="/reset-password"
+                  onSubmit={handleResetPasswordSubmit}
+                >
+                  <div className="auth-section auth-section-fields">
+                    <div className="auth-reset-actions">
+                      <div className="auth-button-wrapper">
+                        <button type="submit" className="auth-continue-btn" disabled={isResetSubmitting}>
+                          继续
+                        </button>
+                      </div>
+                      <div className="auth-button-wrapper">
+                        <button
+                          type="button"
+                          className="auth-transparent-btn"
+                          onClick={() => navigate(`/login${encodeEmail(stepEmail)}`)}
+                        >
+                          返回登录
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </form>
               </fieldset>
