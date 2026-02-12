@@ -39,6 +39,7 @@ export function LoginPage() {
   const passwordId = useId()
   const passwordLabelId = useId()
   const passwordErrorId = useId()
+  const readonlyEmailLabelId = useId()
 
   const [email, setEmail] = useState(stepEmail)
   const [isEmailFocused, setIsEmailFocused] = useState(false)
@@ -312,93 +313,113 @@ export function LoginPage() {
               </div>
 
               <fieldset className="auth-fieldset">
-                <form className="auth-form auth-form-password" onSubmit={handlePasswordSubmit} noValidate>
+                <form
+                  className="auth-form auth-form-password"
+                  method="post"
+                  action="/log-in/password"
+                  autoComplete="on"
+                  onSubmit={handlePasswordSubmit}
+                  noValidate
+                >
                   <div className="auth-section auth-section-fields">
-                    <div className="auth-textfield-root">
-                      <div className="auth-input-wrap has-value is-active auth-input-wrap-with-end auth-input-wrap-readonly">
-                        <label className="auth-input-label" htmlFor="readonly-email">
-                          <div className="auth-input-label-pos">
-                            <div className="auth-input-label-text">电子邮件地址</div>
+                    <input type="hidden" name="username" value={stepEmail} />
+                    <div className="auth-field-stack">
+                      <div className="auth-textfield-root">
+                        <div className="auth-input-wrap has-value is-active auth-input-wrap-with-end auth-input-wrap-readonly">
+                          <label className="auth-input-label" htmlFor="readonly-email" id={readonlyEmailLabelId}>
+                            <div className="auth-input-label-pos">
+                              <div className="auth-input-label-text">电子邮件地址</div>
+                            </div>
+                          </label>
+                          <input
+                            id="readonly-email"
+                            className="auth-input-target"
+                            type="text"
+                            value={stepEmail}
+                            readOnly
+                            placeholder="电子邮件地址"
+                            aria-labelledby={readonlyEmailLabelId}
+                          />
+                          <div className="auth-input-end-decoration">
+                            <div className="auth-link-nowrap">
+                              <Link
+                                to={`/login${encodeEmail(stepEmail)}`}
+                                className="auth-link-inline"
+                                aria-label="编辑电子邮件"
+                              >
+                                编辑
+                              </Link>
+                            </div>
                           </div>
-                        </label>
-                        <input
-                          id="readonly-email"
-                          className="auth-input-target"
-                          type="text"
-                          value={stepEmail}
-                          readOnly
-                          placeholder="电子邮件地址"
-                          aria-label="电子邮件地址"
-                        />
-                        <div className="auth-input-end-decoration">
-                          <Link to={`/login${encodeEmail(stepEmail)}`} className="auth-link-inline">
-                            编辑
-                          </Link>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="auth-textfield-root">
-                      <div className={passwordWrapClassName}>
-                        <label className="auth-input-label" htmlFor={passwordId} id={passwordLabelId}>
-                          <div className="auth-input-label-pos">
-                            <div className="auth-input-label-text">密码</div>
-                          </div>
-                        </label>
-                        <input
-                          ref={passwordInputRef}
-                          id={passwordId}
-                          className="auth-input-target"
-                          type={passwordVisible ? 'text' : 'password'}
-                          value={password}
-                          name="password"
-                          autoComplete="current-password"
-                          placeholder="密码"
-                          aria-labelledby={passwordLabelId}
-                          aria-describedby={isPasswordInvalid ? passwordErrorId : undefined}
-                          aria-invalid={isPasswordInvalid || undefined}
-                          disabled={isPasswordSubmitting}
-                          onFocus={() => setIsPasswordFocused(true)}
-                          onBlur={() => setIsPasswordFocused(false)}
-                          onChange={(e) => {
-                            setPassword(e.target.value)
-                            if (isPasswordInvalid) setPasswordErrorText('')
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="auth-password-toggle"
-                          aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
-                          onClick={() => setPasswordVisible((prev) => !prev)}
-                        >
-                          {passwordVisible ? (
-                            <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
-                          ) : (
-                            <img src={eyeIconSvg} alt="" aria-hidden="true" />
-                          )}
-                        </button>
+                      <div className="auth-textfield-root">
+                        <div className={passwordWrapClassName}>
+                          <label className="auth-input-label" htmlFor={passwordId} id={passwordLabelId}>
+                            <div className="auth-input-label-pos">
+                              <div className="auth-input-label-text">密码</div>
+                            </div>
+                          </label>
+                          <input
+                            ref={passwordInputRef}
+                            id={passwordId}
+                            className="auth-input-target"
+                            type={passwordVisible ? 'text' : 'password'}
+                            value={password}
+                            name="current-password"
+                            autoComplete="current-password webauthn"
+                            placeholder="密码"
+                            aria-labelledby={passwordLabelId}
+                            aria-describedby={isPasswordInvalid ? passwordErrorId : undefined}
+                            aria-invalid={isPasswordInvalid || undefined}
+                            disabled={isPasswordSubmitting}
+                            onFocus={() => setIsPasswordFocused(true)}
+                            onBlur={() => setIsPasswordFocused(false)}
+                            onChange={(e) => {
+                              setPassword(e.target.value)
+                              if (isPasswordInvalid) setPasswordErrorText('')
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="auth-password-toggle"
+                            aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
+                            aria-controls={passwordId}
+                            aria-pressed={passwordVisible}
+                            onClick={() => setPasswordVisible((prev) => !prev)}
+                          >
+                            {passwordVisible ? (
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                            ) : (
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                            )}
+                          </button>
+                        </div>
+                        {isPasswordInvalid ? (
+                          <ul className="auth-field-errors" id={passwordErrorId}>
+                            <li className="auth-field-error">
+                              <span className="auth-field-error-icon">
+                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                              </span>
+                              <span>{passwordErrorText}</span>
+                            </li>
+                          </ul>
+                        ) : null}
                       </div>
-                      {isPasswordInvalid ? (
-                        <ul className="auth-field-errors" id={passwordErrorId}>
-                          <li className="auth-field-error">
-                            <span className="auth-field-error-icon">
-                              <img src={errorIconSvg} alt="" aria-hidden="true" />
-                            </span>
-                            <span>{passwordErrorText}</span>
-                          </li>
-                        </ul>
-                      ) : null}
-                    </div>
 
-                    <span className="auth-forgot-password">
-                      <a href="/reset-password">忘记了密码？</a>
-                    </span>
+                      <span className="auth-forgot-password">
+                        <a href="/reset-password">忘记了密码？</a>
+                      </span>
+                    </div>
                   </div>
 
                   <div className="auth-section auth-section-ctas auth-section-password-ctas">
-                    <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting}>
-                      继续
-                    </button>
+                    <div className="auth-button-wrapper">
+                      <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting}>
+                        继续
+                      </button>
+                    </div>
 
                     <span className="auth-signup-hint">
                       还没有帐户？请
@@ -411,13 +432,17 @@ export function LoginPage() {
                       <div className="auth-divider-line" />
                     </div>
 
-                    <button
-                      type="button"
-                      className="auth-outline-btn"
-                      onClick={() => navigate(`/login/verify${encodeEmail(stepEmail)}`)}
-                    >
-                      使用一次性验证码登录
-                    </button>
+                    <div className="auth-passwordless-group">
+                      <div className="auth-button-wrapper">
+                        <button
+                          type="button"
+                          className="auth-outline-btn auth-inline-passwordless-login"
+                          onClick={() => navigate(`/login/verify${encodeEmail(stepEmail)}`)}
+                        >
+                          使用一次性验证码登录
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </form>
               </fieldset>
