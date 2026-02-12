@@ -30,6 +30,7 @@ export function LoginPage() {
   const [searchParams] = useSearchParams()
 
   const step = getStep(location.pathname)
+  const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
   const stepEmail = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams])
 
   const emailId = useId()
@@ -225,11 +226,8 @@ export function LoginPage() {
                   <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
                 </Link>
                 <h1 className="auth-heading">
-                  <span className="auth-heading-text">登录或注册</span>
+                  <span className="auth-heading-text">{isCreateAccountEntry ? '创建帐户' : '欢迎回来'}</span>
                 </h1>
-                <div className="auth-subtitle">
-                  <span className="auth-subtitle-text">你将可以基于个人书库提问，并获得可追溯来源的回答。</span>
-                </div>
               </div>
 
               <fieldset className="auth-fieldset">
@@ -295,6 +293,17 @@ export function LoginPage() {
                     <button type="submit" className="auth-continue-btn" disabled={isEntrySubmitting}>
                       继续
                     </button>
+                    {isCreateAccountEntry ? (
+                      <span className="auth-signup-hint">
+                        已经有帐户？请
+                        <Link to={`/login${encodeEmail(email)}`}>登录</Link>
+                      </span>
+                    ) : (
+                      <span className="auth-signup-hint">
+                        还没有帐户？请
+                        <Link to="/create-account">注册</Link>
+                      </span>
+                    )}
                   </div>
                 </form>
               </fieldset>
