@@ -2,19 +2,20 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTypewriter } from '@/shared/lib/ui/useTypewriter'
 import onebookFeaturePreview from '@/assets/home/feature-preview.svg'
-import onebookLogoMark from '@/assets/home/onebook-logo-mark.svg'
+import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import modeReadPreview from '@/assets/home/mode-read.svg'
 import modeAskPreview from '@/assets/home/mode-ask.svg'
 import modeCitePreview from '@/assets/home/mode-cite.svg'
 import twoQuotesMark from '@/assets/home/two-quotes.png'
-import uploadPlaceholder from '@/assets/function/upload.svg'
-import parsePlaceholder from '@/assets/function/parse.svg'
-import embedPlaceholder from '@/assets/function/embed.svg'
-import retrievePlaceholder from '@/assets/function/retrieve.svg'
-import citedPlaceholder from '@/assets/function/cited.svg'
-import sessionPlaceholder from '@/assets/function/session.svg'
-import libraryPlaceholder from '@/assets/function/library.svg'
-import securityPlaceholder from '@/assets/function/security.svg'
+import nextArrowIcon from '@/assets/icons/next-arrow.svg'
+import uploadPlaceholder from '@/assets/features/upload.svg'
+import parsePlaceholder from '@/assets/features/parse.svg'
+import embedPlaceholder from '@/assets/features/embed.svg'
+import retrievePlaceholder from '@/assets/features/retrieve.svg'
+import citedPlaceholder from '@/assets/features/cited.svg'
+import sessionPlaceholder from '@/assets/features/session.svg'
+import libraryPlaceholder from '@/assets/features/library.svg'
+import securityPlaceholder from '@/assets/features/security.svg'
 import organizeLibrarySvg from '@/assets/workflow/organize-library.svg'
 import outlineNavigationSvg from '@/assets/workflow/outline-navigation.svg'
 import importExportSvg from '@/assets/workflow/import-export.svg'
@@ -568,11 +569,7 @@ export function HomePage() {
                       onClick={handleNextVoice}
                       aria-label="next quote"
                     >
-                      <svg viewBox="0 0 112 32" aria-hidden="true" focusable="false">
-                        <path d="M0 12.959h95.207v5.289h-95.207z" />
-                        <path d="M89.917 0v32l22.479-16.132z" />
-                        <path d="M77.752 12.959h4.231v5.289h-4.231z" />
-                      </svg>
+                      <img src={nextArrowIcon} alt="" aria-hidden="true" />
                     </button>
                   </div>
                 </li>

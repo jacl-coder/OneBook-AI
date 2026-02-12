@@ -18,6 +18,22 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
+    path: '/create-account',
+    element: <LoginPage />,
+  },
+  {
+    path: '/login/password',
+    element: <LoginPage />,
+  },
+  {
+    path: '/login/verify',
+    element: <LoginPage />,
+  },
+  {
+    path: '/email-verification',
+    element: <LoginPage />,
+  },
+  {
     path: '/library',
     element: <AppLayout />,
     children: [

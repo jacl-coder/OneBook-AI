@@ -92,60 +92,6 @@
     padding: 8px 4px;
   }
 
-  .auth-wordmark {
-    top: 8px;
-    left: 8px;
-    font-size: 17px;
-  }
-
-  .auth-wordmark img {
-    width: 30px;
-    height: 30px;
-  }
-
-  .auth-main {
-    align-items: flex-start;
-    padding: 84px 16px 0;
-  }
-
-  .auth-card {
-    width: 100%;
-    max-width: 372px;
-  }
-
-  .auth-card h1 {
-    width: 100%;
-    font-size: 30px;
-  }
-
-  .auth-subtitle {
-    width: 100%;
-  }
-
-  .auth-social-btn,
-  .auth-continue-btn {
-    height: 50px;
-  }
-
-  .auth-input-wrap {
-    height: 50px;
-    padding: 0 18px;
-  }
-
-  .auth-input-label-pos {
-    padding: 0 18px;
-  }
-
-  .auth-section-ctas {
-    row-gap: 20px;
-    padding: 20px 0;
-  }
-
-  .auth-footer {
-    font-size: 13px;
-    padding-bottom: 16px;
-  }
-
   .hero h1 {
     width: 100%;
   }

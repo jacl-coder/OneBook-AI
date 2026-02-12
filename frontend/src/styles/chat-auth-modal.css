@@ -154,7 +154,8 @@
   color: #0d0d0d;
 }
 
-.chatgpt-auth-social-icon svg {
+.chatgpt-auth-social-icon svg,
+.chatgpt-auth-social-icon img {
   display: block;
 }
 
@@ -255,6 +256,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.chatgpt-auth-error-icon img {
+  display: block;
 }
 
 .chatgpt-auth-continue-btn {
