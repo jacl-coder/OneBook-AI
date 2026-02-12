@@ -1,0 +1,71 @@
+<svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
+  <circle cx="18" cy="19" r="6" fill="#FF5F57"/>
+  <circle cx="36" cy="19" r="6" fill="#FEBB2E"/>
+  <circle cx="54" cy="19" r="6" fill="#28C840"/>
+  <text fill="#1F2328" font-family="Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">
+    <tspan x="254.5" y="23.2">Read View</tspan>
+  </text>
+
+  <g transform="translate(3 3) scale(0.836)">
+    <rect x="24" y="72" width="150" height="468" rx="10" fill="#D7DCE2" stroke="#C2CBD5"/>
+    <text fill="#37495A" font-family="Arial, sans-serif" font-size="18" font-weight="700">
+      <tspan x="40" y="112.2">Outline</tspan>
+    </text>
+    <rect x="34" y="140" width="130" height="76" rx="17" fill="#C6CED9"/>
+    <text fill="#425567" font-family="Arial, sans-serif" font-size="13.8" font-weight="700">
+      <tspan x="48" y="170.2">Chapter 3</tspan>
+      <tspan x="48" y="190.2">Reader Mode</tspan>
+    </text>
+    <text fill="#6C7E8E" font-family="Arial, sans-serif" font-size="10">
+      <tspan x="40" y="242.2">Chapter 1  Foundations</tspan>
+      <tspan x="40" y="262.2">Chapter 2  Parsing Pipeline</tspan>
+      <tspan x="40" y="282.2">Chapter 4  Citation Practice</tspan>
+      <tspan x="40" y="302.2">Chapter 5  Session Continuity</tspan>
+      <tspan x="40" y="330.2">Appendix A  Data Model</tspan>
+      <tspan x="40" y="350.2">Appendix B  Prompt Notes</tspan>
+    </text>
+
+    <rect x="188" y="72" width="388" height="468" rx="10" fill="#FBFCFD" stroke="#E2E6EA"/>
+    <text fill="#1F2A35" font-family="Arial, sans-serif" font-size="30" font-weight="700">
+      <tspan x="220" y="132.8">CHAPTER 3</tspan>
+    </text>
+    <text fill="#2C3945" font-family="Arial, sans-serif" font-size="17" font-weight="600">
+      <tspan x="220" y="161.2">Reader Mode</tspan>
+    </text>
+
+    <text fill="#2E3B47" font-family="Arial, sans-serif" font-size="12" font-weight="600">
+      <tspan x="220" y="194.2">A readable system should return evidence, not only answers.</tspan>
+    </text>
+
+    <text fill="#465462" font-family="Arial, sans-serif" font-size="10.5">
+      <tspan x="220" y="220.2">When a reader asks a question, the system first</tspan>
+      <tspan x="220" y="236.2">finds semantically similar passages in the book.</tspan>
+      <tspan x="220" y="252.2">Those passages are ranked by chapter relevance</tspan>
+      <tspan x="220" y="268.2">and by distance to section anchors.</tspan>
+      <tspan x="220" y="284.2">Visible context appears before answer generation.</tspan>
+    </text>
+
+    <rect x="220" y="304" width="324" height="122" rx="10" fill="#F2F7FC" stroke="#DFE8F1"/>
+    <rect x="236" y="320" width="2" height="90" rx="1" fill="#95A9BC"/>
+    <text fill="#556575" font-family="Arial, sans-serif" font-size="10.5">
+      <tspan x="248" y="336.2">"A good answer points back to the text,</tspan>
+      <tspan x="248" y="352.2">it does not replace the text itself."</tspan>
+      <tspan x="248" y="376.2">Readers should always see chapter, section,</tspan>
+      <tspan x="248" y="392.2">and page hints next to each claim.</tspan>
+      <tspan x="248" y="408.2">That keeps follow-up reading grounded.</tspan>
+    </text>
+
+    <text fill="#465462" font-family="Arial, sans-serif" font-size="10.5">
+      <tspan x="220" y="454.2">This turns a personal library into a queryable workspace.</tspan>
+      <tspan x="220" y="470.2">You read, ask, verify, then return to the source</tspan>
+      <tspan x="220" y="486.2">without losing context.</tspan>
+    </text>
+  </g>
+
+  <defs>
+    <filter id="windowShadow" x="-120" y="-120" width="920" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+</svg>

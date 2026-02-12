@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100" viewBox="0 0 300 100" role="img" aria-labelledby="t d">
+  <title id="t">Focus Mode</title>
+  <desc id="d">One active reading band with dimmed surrounding lines.</desc>
+  <rect width="300" height="100" fill="transparent"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#aab2bc" stroke-width="1.8">
+      <line x1="20" y1="22" x2="186" y2="22"/>
+      <line x1="20" y1="32" x2="172" y2="32"/>
+      <line x1="20" y1="70" x2="186" y2="70"/>
+      <line x1="20" y1="80" x2="164" y2="80"/>
+    </g>
+
+    <rect x="18" y="42" width="172" height="16" rx="4" fill="rgba(76,143,251,0.10)" stroke="#4c8ffb" stroke-width="2.2"/>
+    <line x1="30" y1="50" x2="120" y2="50" stroke="#6f7782" stroke-width="1.8"/>
+    <line x1="128" y1="50" x2="170" y2="50" stroke="#6f7782" stroke-width="1.8"/>
+
+    <rect x="208" y="38" width="72" height="24" rx="12" stroke="#6f7782" stroke-width="1.8"/>
+    <circle cx="220" cy="50" r="3" fill="#4c8ffb" stroke="none"/>
+  </g>
+</svg>

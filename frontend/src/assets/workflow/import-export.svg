@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100" viewBox="0 0 300 100" role="img" aria-labelledby="t d">
+  <title id="t">Import and Export</title>
+  <desc id="d">Book files flow in and reusable notes flow out.</desc>
+  <rect width="300" height="100" fill="transparent"/>
+  <g fill="none" stroke="#6f7782" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 22h34l8 8v48H22z"/>
+    <path d="M56 22v8h8"/>
+    <line x1="30" y1="44" x2="56" y2="44"/>
+    <line x1="30" y1="56" x2="52" y2="56"/>
+
+    <line x1="76" y1="38" x2="122" y2="38"/>
+    <path d="M114 31l15 7-15 7" fill="#9aa3ad" stroke="none"/>
+    <line x1="122" y1="62" x2="76" y2="62"/>
+    <path d="M84 55L69 62l15 7" fill="#9aa3ad" stroke="none"/>
+
+    <rect x="136" y="24" width="70" height="52" rx="6"/>
+    <line x1="146" y1="38" x2="196" y2="38"/>
+    <line x1="146" y1="50" x2="188" y2="50"/>
+    <line x1="146" y1="62" x2="178" y2="62"/>
+
+    <line x1="216" y1="50" x2="244" y2="50"/>
+    <path d="M238 43l14 7-14 7" fill="#4c8ffb" stroke="none"/>
+
+    <rect x="254" y="34" width="26" height="32" rx="4"/>
+    <line x1="260" y1="46" x2="274" y2="46"/>
+    <line x1="260" y1="54" x2="272" y2="54"/>
+  </g>
+</svg>

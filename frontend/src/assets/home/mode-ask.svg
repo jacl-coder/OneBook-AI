@@ -1,0 +1,55 @@
+<svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
+  <circle cx="18" cy="19" r="6" fill="#FF5F57"/>
+  <circle cx="36" cy="19" r="6" fill="#FEBB2E"/>
+  <circle cx="54" cy="19" r="6" fill="#28C840"/>
+  <text fill="#1F2328" font-family="Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle">
+    <tspan x="254.5" y="23.2">Ask View</tspan>
+  </text>
+
+  <g transform="translate(3 3) scale(0.836)">
+    <rect x="24" y="72" width="552" height="102" rx="10" fill="#F7FAFD" stroke="#DCE6EE"/>
+    <text fill="#2F3D4A" font-family="Arial, sans-serif" font-size="14" font-weight="600">
+      <tspan x="40" y="104.9">Question</tspan>
+    </text>
+    <text fill="#607080" font-family="Arial, sans-serif" font-size="12">
+      <tspan x="40" y="127.2">Summarize chapter three and compare it with chapter four.</tspan>
+      <tspan x="40" y="146.2">Keep key terms and mention where the claim appears.</tspan>
+    </text>
+
+    <rect x="24" y="192" width="552" height="348" rx="10" fill="#FAFBFC" stroke="#E2E6EA"/>
+
+    <rect x="40" y="218" width="430" height="84" rx="10" fill="#EAF3FC" stroke="#D7E5F2"/>
+    <text fill="#385267" font-family="Arial, sans-serif" font-size="12" font-weight="600">
+      <tspan x="56" y="242.2">Assistant</tspan>
+    </text>
+    <text fill="#5C7080" font-family="Arial, sans-serif" font-size="11">
+      <tspan x="56" y="261.2">Chapter three defines the baseline framework and examples.</tspan>
+      <tspan x="56" y="278.2">Chapter four extends it with two applied scenarios.</tspan>
+    </text>
+
+    <rect x="124" y="318" width="430" height="84" rx="10" fill="#F3F7FB" stroke="#DEE6EE"/>
+    <text fill="#3F4F5D" font-family="Arial, sans-serif" font-size="12" font-weight="600">
+      <tspan x="140" y="342.2">Follow-up</tspan>
+    </text>
+    <text fill="#627381" font-family="Arial, sans-serif" font-size="11">
+      <tspan x="140" y="361.2">List only the differences and keep source references concise.</tspan>
+      <tspan x="140" y="378.2">Also include one quote-worthy sentence from each chapter.</tspan>
+    </text>
+
+    <rect x="40" y="418" width="430" height="84" rx="10" fill="#EAF3FC" stroke="#D7E5F2"/>
+    <text fill="#385267" font-family="Arial, sans-serif" font-size="12" font-weight="600">
+      <tspan x="56" y="442.2">Assistant</tspan>
+    </text>
+    <text fill="#5C7080" font-family="Arial, sans-serif" font-size="11">
+      <tspan x="56" y="461.2">Great, I will keep a side-by-side summary with traceable context.</tspan>
+      <tspan x="56" y="478.2">Use Cite View for exact spans before exporting your notes.</tspan>
+    </text>
+  </g>
+
+  <defs>
+    <filter id="windowShadow" x="-120" y="-120" width="920" height="920" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+</svg>

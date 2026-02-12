@@ -1,8 +1,8 @@
 <svg width="600" height="571" viewBox="-45 -25 600 571" fill="none" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
   <rect x="1" y="1" width="507" height="474" rx="6" fill="#FFFFFF" stroke="#D7DBDE" filter="url(#windowShadow)"/>
-  <circle cx="18" cy="19" r="6" fill="#E96B5E"/>
-  <circle cx="36" cy="19" r="6" fill="#E6B84B"/>
-  <circle cx="54" cy="19" r="6" fill="#62C554"/>
+  <circle cx="18" cy="19" r="6" fill="#FF5F57"/>
+  <circle cx="36" cy="19" r="6" fill="#FEBB2E"/>
+  <circle cx="54" cy="19" r="6" fill="#28C840"/>
   <text fill="#1F2328" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0" text-anchor="middle">
     <tspan x="254.5" y="23.2">Embed</tspan>
   </text>

@@ -1,81 +1,217 @@
-const readyBooks = [
-  { id: 'B-001', title: '深入理解计算机系统', status: 'ready' },
-  { id: 'B-002', title: '机器学习实战', status: 'ready' },
+import { useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import attachIcon from '@/assets/chat/attach.svg'
+import arrowUpIcon from '@/assets/chat/arrow-up.svg'
+import chevronDownIcon from '@/assets/chat/chevron-down.svg'
+import micIcon from '@/assets/chat/mic.svg'
+import profileIcon from '@/assets/chat/profile.svg'
+import quoteIcon from '@/assets/chat/quote.svg'
+import searchIcon from '@/assets/chat/search.svg'
+import studyIcon from '@/assets/chat/study.svg'
+import onebookLogoMark from '@/assets/home/onebook-logo-mark.svg'
+
+const quickActions = [
+  { icon: attachIcon, label: '附件' },
+  { icon: searchIcon, label: '检索书库' },
+  { icon: studyIcon, label: '学习模式' },
+  { icon: quoteIcon, label: '引用回答' },
 ]
 
-const recentSessions = [
-  { id: 'S-101', label: '第 12 章内存管理', time: '今天 21:10' },
-  { id: 'S-096', label: 'SVM 与核函数', time: '今天 19:42' },
-  { id: 'S-083', label: '事务隔离级别', time: '昨天 22:16' },
+const headingPool = [
+  '先读你的书，再来提问。',
+  '你的资料里，今天想问什么？',
+  '先看原文，再看答案。',
+  '从书中检索，让回答可追溯。',
+  '围绕你的书库，开始一次对话。',
+  '先定位证据，再生成结论。',
 ]
 
 export function ChatPage() {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [prompt, setPrompt] = useState('')
+  const [heading] = useState(
+    () => headingPool[Math.floor(Math.random() * headingPool.length)],
+  )
+
+  const hasPrompt = prompt.trim().length > 0
+
+  const syncPrompt = () => {
+    const value = editorRef.current?.innerText ?? ''
+    setPrompt(value.replace(/\u00a0/g, ' '))
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!hasPrompt) return
+    if (editorRef.current) editorRef.current.textContent = ''
+    setPrompt('')
+  }
+
   return (
-    <section className="panel">
-      <header className="panel-header">
-        <div>
-          <h2>对话</h2>
-          <p className="muted">仅对 `ready` 书籍开放提问，答案将附带引用线索。</p>
+    <div className="chatgpt-entry-page">
+      <a className="chatgpt-skip-link" href="#onebook-main">
+        跳至内容
+      </a>
+
+      <header className="chatgpt-entry-header" role="banner">
+        <div className="chatgpt-entry-left">
+          <Link to="/chat" className="chatgpt-entry-logo-link" aria-label="OneBook AI">
+            <img src={onebookLogoMark} alt="" aria-hidden="true" />
+          </Link>
+          <button type="button" className="chatgpt-model-btn" aria-label="模型选择器，当前模型为 OneBook AI">
+            <span>OneBook AI</span>
+            <img src={chevronDownIcon} alt="" aria-hidden="true" className="chatgpt-model-icon" />
+          </button>
+        </div>
+
+        <div className="chatgpt-entry-right">
+          <Link to="/login" className="chatgpt-top-btn chatgpt-top-btn-dark">
+            登录
+          </Link>
+          <Link to="/login" className="chatgpt-top-btn chatgpt-top-btn-light">
+            免费注册
+          </Link>
+          <button type="button" className="chatgpt-profile-btn" aria-label="打开“个人资料”菜单">
+            <img src={profileIcon} alt="" aria-hidden="true" className="chatgpt-profile-icon" />
+          </button>
         </div>
       </header>
 
-      <div className="chat-layout">
-        <aside className="panel-sub chat-sidebar">
-          <section>
-            <h3>可问答书籍</h3>
-            <ul className="list-reset">
-              {readyBooks.map((book) => (
-                <li className="book-item" key={book.id}>
-                  <div>
-                    <p>{book.title}</p>
-                    <p className="muted mono">{book.id}</p>
-                  </div>
-                  <span className="badge">{book.status}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h3>最近会话</h3>
-            <ul className="list-reset">
-              {recentSessions.map((session) => (
-                <li className="session-item" key={session.id}>
-                  <p>{session.label}</p>
-                  <p className="muted">
-                    {session.id} · {session.time}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
-
-        <div className="panel-sub conversation-window">
-          <h3>提问区</h3>
-          <div className="message-stream" aria-live="polite">
-            <article className="msg msg-user">
-              “帮我总结这本书第 3 章关于索引的核心观点。”
-            </article>
-            <article className="msg msg-ai">
-              该章节重点强调了 B+ 树在范围查询中的优势，并比较了聚簇索引与二级索引的访问路径。
-              <ul className="citation-list">
-                <li>引用：第 3 章 3.2 节，第 67-69 页</li>
-              </ul>
-            </article>
+      <main id="onebook-main" className="chatgpt-entry-main">
+        <div className="chatgpt-entry-center">
+          <div className="chatgpt-entry-hero">
+            <div className="chatgpt-entry-heading-row">
+              <div className="chatgpt-entry-heading-inline">
+                <h1>
+                  <div className="chatgpt-entry-title">{heading}</div>
+                </h1>
+              </div>
+            </div>
           </div>
 
-          <form className="form-grid" onSubmit={(e) => e.preventDefault()}>
-            <label>
-              问题
-              <textarea rows={5} placeholder="请输入你的问题..." />
-            </label>
-            <button className="btn btn-primary" type="submit">
-              发送（待接入）
-            </button>
-          </form>
+          <div className="chatgpt-thread-bottom" id="thread-bottom">
+            <div className="chatgpt-thread-content">
+              <div className="chatgpt-thread-max">
+                <div className="chatgpt-composer-container">
+                  <form
+                    className="chatgpt-composer-form"
+                    data-expanded=""
+                    data-type="unified-composer"
+                    onSubmit={handleSubmit}
+                  >
+                    <div className="chatgpt-hidden-upload">
+                      <input
+                        accept="image/jpeg,.jpg,.jpeg,image/webp,.webp,image/gif,.gif,image/png,.png"
+                        multiple
+                        type="file"
+                        tabIndex={-1}
+                      />
+                    </div>
+
+                    <div className="chatgpt-composer-surface" data-composer-surface="true">
+                      <div className="chatgpt-composer-primary">
+                        <div className="chatgpt-prosemirror-parent">
+                          <div
+                            ref={editorRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            translate="no"
+                            role="textbox"
+                            id="prompt-textarea"
+                            className="chatgpt-prosemirror"
+                            data-empty={hasPrompt ? 'false' : 'true'}
+                            aria-label="输入你的问题"
+                            onInput={syncPrompt}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                if (hasPrompt) {
+                                  if (editorRef.current) editorRef.current.textContent = ''
+                                  setPrompt('')
+                                }
+                              }
+                            }}
+                          />
+                          {!hasPrompt && (
+                            <div className="chatgpt-prosemirror-placeholder" aria-hidden="true">
+                              有问题，尽管问
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="chatgpt-composer-footer-actions" data-testid="composer-footer-actions">
+                        <div className="chatgpt-composer-footer-row">
+                          {quickActions.map((item, index) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              className={
+                                index === 0
+                                  ? 'chatgpt-action-btn chatgpt-action-btn-attach'
+                                  : 'chatgpt-action-btn'
+                              }
+                            >
+                              <img src={item.icon} alt="" aria-hidden="true" className="chatgpt-action-icon" />
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="chatgpt-composer-trailing">
+                        <button type="button" className="chatgpt-voice-btn" aria-label="启动语音功能">
+                          <img src={micIcon} alt="" aria-hidden="true" className="chatgpt-voice-icon" />
+                          <span>语音</span>
+                        </button>
+                        <button
+                          type="submit"
+                          className="chatgpt-send-btn"
+                          aria-label="发送"
+                          disabled={!hasPrompt}
+                        >
+                          <img src={arrowUpIcon} alt="" aria-hidden="true" className="chatgpt-send-icon" />
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                <input className="chatgpt-sr-only" type="file" tabIndex={-1} aria-hidden="true" id="upload-photos" accept="image/*" multiple />
+                <input
+                  className="chatgpt-sr-only"
+                  type="file"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  id="upload-camera"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="chatgpt-entry-legal-wrap">
+            <p className="chatgpt-entry-legal">
+              向 OneBook AI 发送消息即表示，你同意我们的
+              <a href="#" onClick={(e) => e.preventDefault()}>
+                条款
+              </a>
+              并已阅读我们的
+              <a href="#" onClick={(e) => e.preventDefault()}>
+                隐私政策
+              </a>
+              。查看
+              <a href="#" onClick={(e) => e.preventDefault()}>
+                Cookie 首选项
+              </a>
+              。
+            </p>
+          </div>
         </div>
-      </div>
-    </section>
+      </main>
+    </div>
   )
 }

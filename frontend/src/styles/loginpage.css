@@ -1,0 +1,939 @@
+.chatgpt-entry-page {
+  min-height: 100vh;
+  padding: 0 15px;
+  background: #fff;
+  color: #0d0d0d;
+  font-family: ui-sans-serif, -apple-system, system-ui, 'Segoe UI', Helvetica, 'Apple Color Emoji',
+    Arial, sans-serif, 'Segoe UI Emoji', 'Segoe UI Symbol';
+}
+
+.chatgpt-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.chatgpt-skip-link:focus {
+  left: 10px;
+  top: 10px;
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0d0d0d;
+  color: #fff;
+  z-index: 50;
+}
+
+.chatgpt-entry-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 52px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+}
+
+.chatgpt-entry-left {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.chatgpt-entry-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chatgpt-entry-logo-link {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background-color 150ms ease;
+}
+
+.chatgpt-entry-logo-link:hover {
+  background: #f4f4f4;
+}
+
+.chatgpt-entry-logo-link img {
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+  object-fit: contain;
+}
+
+.chatgpt-model-btn {
+  height: 36px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: #0d0d0d;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.chatgpt-model-btn:hover {
+  background: #f4f4f4;
+}
+
+.chatgpt-model-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.chatgpt-top-btn {
+  height: 36px;
+  border-radius: 99999px;
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms ease;
+}
+
+.chatgpt-top-btn-dark {
+  background: #0d0d0d;
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.chatgpt-top-btn-light {
+  background: #fff;
+  color: #0d0d0d;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.chatgpt-top-btn-light:hover {
+  background: #f8f8f8;
+}
+
+.chatgpt-profile-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 99999px;
+  border: 0;
+  background: #fff;
+  color: #0d0d0d;
+  font-size: 21px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.chatgpt-profile-btn:hover {
+  background: #f4f4f4;
+}
+
+.chatgpt-profile-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.chatgpt-entry-main {
+  min-height: calc(100vh - 52px);
+  display: flex;
+  justify-content: center;
+}
+
+.chatgpt-entry-center {
+  width: 100%;
+  min-height: calc(100vh - 52px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.chatgpt-entry-hero {
+  position: relative;
+  flex-basis: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: calc(42svh - 52px);
+}
+
+.chatgpt-entry-heading-row {
+  display: flex;
+  justify-content: center;
+}
+
+.chatgpt-entry-heading-inline {
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.chatgpt-entry-center h1 {
+  margin: 0;
+  color: #0d0d0d;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 400;
+  letter-spacing: 0.38px;
+  text-align: center;
+  display: inline-flex;
+  min-height: 42px;
+}
+
+.chatgpt-entry-title {
+  display: block;
+  height: 34px;
+  line-height: 34px;
+  padding: 0 4px;
+}
+
+.chatgpt-thread-bottom {
+  width: 100%;
+}
+
+.chatgpt-thread-content {
+  --thread-content-margin: 16px;
+  margin-inline: auto;
+  padding-inline: var(--thread-content-margin);
+}
+
+.chatgpt-thread-max {
+  --thread-content-max-width: 48rem;
+  margin: 0 auto 16px;
+  max-width: var(--thread-content-max-width);
+  width: 100%;
+  flex: 1;
+}
+
+.chatgpt-composer-container {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  max-width: 100%;
+  flex: 1;
+  flex-direction: column;
+}
+
+.chatgpt-composer-form {
+  width: 100%;
+}
+
+.chatgpt-hidden-upload {
+  display: none;
+}
+
+.chatgpt-composer-surface {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    'header header header'
+    'primary primary primary'
+    'leading footer trailing';
+  border-radius: 28px;
+  background: #fff;
+  padding: 10px;
+  overflow: clip;
+  box-shadow:
+    0 4px 4px 0 rgba(0, 0, 0, 0.04),
+    0 0 1px 0 rgba(0, 0, 0, 0.62);
+  transition: box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.chatgpt-composer-primary {
+  grid-area: primary;
+  margin: -10px 0 0;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  overflow-x: hidden;
+  padding: 0 10px;
+}
+
+.chatgpt-prosemirror-parent {
+  position: relative;
+  flex: 1;
+  max-height: max(30svh, 5rem);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.chatgpt-prosemirror {
+  position: relative;
+  z-index: 1;
+  min-height: 40px;
+  max-height: 208px;
+  outline: none;
+  padding: 16px 0;
+  color: #0d0d0d;
+  font-size: 16px;
+  line-height: 24px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chatgpt-prosemirror-placeholder {
+  position: absolute;
+  left: 0;
+  top: 16px;
+  z-index: 0;
+  color: #5d5d5d;
+  pointer-events: none;
+  user-select: none;
+}
+
+.chatgpt-composer-footer-actions {
+  grid-area: footer;
+  margin: -4px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: none;
+}
+
+.chatgpt-composer-footer-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.chatgpt-composer-footer-row {
+  display: flex;
+  min-width: fit-content;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+}
+
+.chatgpt-action-btn {
+  border: 1px solid rgba(13, 13, 13, 0.1);
+  background: transparent;
+  color: #5d5d5d;
+  height: 36px;
+  min-width: 32px;
+  border-radius: 99999px;
+  padding: 8px;
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.chatgpt-action-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  opacity: 0.66;
+}
+
+.chatgpt-action-btn span {
+  padding: 0 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chatgpt-action-btn-attach {
+  min-width: 72px;
+}
+
+.chatgpt-action-btn:hover {
+  background: #f5f5f5;
+}
+
+.chatgpt-composer-trailing {
+  grid-area: trailing;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.chatgpt-voice-btn {
+  border: 0;
+  height: 36px;
+  min-width: 70px;
+  border-radius: 99999px;
+  background: #ececec;
+  color: #0d0d0d;
+  padding: 8px;
+  font-size: 16px;
+  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+
+.chatgpt-voice-btn span {
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chatgpt-voice-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.chatgpt-voice-btn:hover {
+  opacity: 0.82;
+}
+
+.chatgpt-send-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 99999px;
+  background: #0d0d0d;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+
+.chatgpt-send-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  filter: brightness(0) invert(1);
+}
+
+.chatgpt-send-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.chatgpt-entry-legal-wrap {
+  margin-top: auto;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  text-align: center;
+  color: #5d5d5d;
+  font-size: 12px;
+  line-height: 16px;
+  user-select: none;
+  padding-inline: 0;
+}
+
+.chatgpt-entry-legal {
+  margin: 0;
+  min-height: 32px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  text-align: center;
+}
+
+.chatgpt-entry-legal a {
+  margin: 0 3px;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: auto;
+}
+
+.chatgpt-sr-only {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  height: 1px;
+  margin: 0 -1px -1px 0;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .chatgpt-entry-legal-wrap {
+    padding-inline: 60px;
+  }
+}
+
+.center-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.card-narrow {
+  width: min(460px, 100%);
+}
+
+.card-wide {
+  width: min(860px, 100%);
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: #0d0d0d;
+  font-family: 'OpenAI Sans', 'SF Pro', -apple-system, system-ui, Helvetica, sans-serif;
+}
+
+.auth-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  margin: 0;
+  color: #3a3f46;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  width: fit-content;
+  z-index: 10;
+}
+
+.auth-wordmark img {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.auth-main {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 125px 16px 0;
+}
+
+.auth-card {
+  width: min(372px, 100%);
+  max-width: 372px;
+}
+
+.auth-card h1 {
+  width: 340px;
+  margin: 0 auto 10px;
+  text-align: center;
+  color: #0d0d0d;
+  font-size: 32px;
+  line-height: normal;
+  font-weight: 700;
+  letter-spacing: -0.32px;
+}
+
+.auth-subtitle {
+  width: 340px;
+  margin: 12px auto 32px;
+  text-align: center;
+  color: #0d0d0d;
+  font-size: 16px;
+  line-height: normal;
+  font-weight: 400;
+}
+
+.auth-form {
+  width: 340px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-section-ctas {
+  row-gap: 24px;
+  padding: 24px 0;
+}
+
+.auth-section-fields {
+  row-gap: 24px;
+  padding: 0;
+}
+
+.auth-textfield {
+  width: 100%;
+}
+
+.auth-textfield-root {
+  width: 100%;
+}
+
+.auth-social-group {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-social-btn {
+  height: 52px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 99999px;
+  background: transparent;
+  color: #0d0d0d;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 24px;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+  letter-spacing: -0.16px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.auth-social-btn:hover {
+  background: #f5f5f5;
+  border-color: #cfd2db;
+}
+
+.auth-social-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin-right: 12px;
+  color: #0d0d0d;
+}
+
+.auth-social-icon svg {
+  display: block;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+
+.auth-divider-line {
+  flex: 1;
+  height: 1px;
+  background: #ececec;
+}
+
+.auth-divider-name {
+  margin: 0 16px;
+  color: #5d5d5d;
+  font-size: 13px;
+  line-height: normal;
+  font-weight: 510;
+}
+
+.auth-input-wrap {
+  position: relative;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 99999px;
+  height: 52px;
+  padding: 0 20px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  transition: border-color 0.08s ease-in-out;
+}
+
+.auth-input-label {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  overflow: visible;
+  margin: 0;
+  pointer-events: none;
+  display: block;
+  color: #0d0d0d;
+}
+
+.auth-input-label-pos {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 20px;
+  transform: translateY(0);
+  transition: transform 0.08s ease-in-out;
+  color: #0d0d0d;
+}
+
+.auth-input-label-text {
+  display: block;
+  font-size: 16px;
+  line-height: 16px;
+  font-weight: 400;
+  padding: 1px 6px;
+  background: #fff;
+  color: #b4b4b4;
+  transform: scale(1) translateX(-6px);
+  transition: transform 0.08s ease-in-out;
+}
+
+.auth-input-wrap.is-active .auth-input-label-pos {
+  transform: translateY(-25px);
+}
+
+.auth-input-wrap.is-active .auth-input-label-text {
+  transform: translateX(-12px) scale(0.88);
+  color: #3e68ff;
+}
+
+.auth-input-wrap.is-focused {
+  border-color: #3e68ff;
+}
+
+.auth-input-wrap.is-invalid {
+  border-color: #d00e17;
+}
+
+.auth-input-wrap.is-invalid .auth-input-label-text {
+  color: #d00e17;
+}
+
+.auth-input-wrap.is-submitting {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.auth-input-wrap.is-submitting .auth-input-label-text {
+  color: #b4b4b4;
+}
+
+.auth-form input {
+  height: 24px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  font-size: 16px;
+  line-height: 24px;
+  color: #000;
+  background: transparent;
+  letter-spacing: -0.16px;
+}
+
+.auth-input-live {
+  display: inline;
+}
+
+.auth-field-error-slot {
+  display: inline;
+}
+
+.auth-form input::placeholder {
+  color: transparent;
+  opacity: 1;
+}
+
+.auth-form input:disabled {
+  color: #545454;
+}
+
+.auth-form input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.auth-field-errors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.auth-field-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
+  color: #d00e17;
+  font-size: 12px;
+  line-height: 16.8px;
+  font-weight: 400;
+}
+
+.auth-field-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.auth-continue-btn {
+  height: 52px;
+  border: 0;
+  border-radius: 99999px;
+  background: #131313;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+  letter-spacing: -0.16px;
+  padding: 0 24px;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.auth-continue-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.auth-continue-btn:hover {
+  background: #090909;
+}
+
+.auth-continue-btn:disabled:hover {
+  background: #131313;
+}
+
+.auth-footer {
+  width: 340px;
+  margin: 24px auto 16px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #5d5d5d;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.auth-footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: auto;
+}
+
+.form-grid {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.58rem;
+}
+
+label {
+  color: var(--neutral);
+  font-size: 0.88rem;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #cfdced;
+  border-radius: 10px;
+  padding: 0.58rem 0.68rem;
+  font: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 6rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.54rem 0.92rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #f8fafc;
+}
+
+.btn-primary:hover {
+  background: var(--primary-strong);
+}
+
+.btn-secondary {
+  background: #f8fafc;
+  color: var(--neutral);
+  border-color: #d5dfed;
+}
+
+.btn-secondary:hover {
+  background: #f1f5f9;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--primary);
+  border-color: #c3d6f6;
+}
+
+.btn-ghost:hover {
+  background: #eff6ff;
+}
+
+.btn:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.auth-page button:focus-visible,
+.auth-page a:focus-visible {
+  outline: 2px solid #1f2329;
+  outline-offset: 2px;
+}
+
+.auth-page input:focus-visible {
+  outline: none;
+}
+
+.muted {
+  color: var(--text-muted);
+}
