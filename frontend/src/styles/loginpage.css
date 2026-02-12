@@ -196,7 +196,8 @@
 
 .auth-social-btn,
 .auth-continue-btn,
-.auth-outline-btn {
+.auth-outline-btn,
+.auth-transparent-btn {
   appearance: none;
   display: flex;
   justify-content: center;
@@ -219,6 +220,7 @@
 .auth-social-btn:focus-visible,
 .auth-continue-btn:focus-visible,
 .auth-outline-btn:focus-visible,
+.auth-transparent-btn:focus-visible,
 .auth-link-btn:focus-visible {
   outline: 0;
   box-shadow: #fff 0 0 0 2px, var(--button-focus-ring-color) 0 0 0 4px, #0000 0 0;
@@ -227,13 +229,15 @@
 .auth-social-btn:active,
 .auth-continue-btn:active,
 .auth-outline-btn:active,
+.auth-transparent-btn:active,
 .auth-link-btn:active {
   opacity: 0.8;
 }
 
 .auth-social-btn:disabled,
 .auth-continue-btn:disabled,
-.auth-outline-btn:disabled {
+.auth-outline-btn:disabled,
+.auth-transparent-btn:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -243,6 +247,20 @@
   background-color: transparent;
   color: var(--button-text-on-base);
   border: 1px solid var(--border-medium);
+}
+
+.auth-transparent-btn {
+  background-color: transparent;
+  color: var(--button-text-on-base);
+  border: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: var(--padding-SM);
+  margin-bottom: var(--padding-SM);
 }
 
 .auth-social-btn {
@@ -578,6 +596,12 @@
   gap: var(--padding-XS);
 }
 
+.auth-reset-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--padding-MD);
+}
+
 .auth-passwordless-group {
   display: flex;
   flex-direction: column;
@@ -672,6 +696,9 @@
 
 .auth-footer-separator {
   padding: 0 var(--padding-SM);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 400;
 }
 
 .auth-footer-separator::before {
@@ -680,7 +707,10 @@
 
 .auth-footer a {
   color: inherit;
-  text-decoration: none;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
 }
 
 .auth-footer a:hover {
