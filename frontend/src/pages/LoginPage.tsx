@@ -1,108 +1,102 @@
-import { type SubmitEvent, useId, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import onebookLogoMark from '@/assets/home/onebook-logo-mark.svg'
-
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-    <path
-      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      fill="#4285F4"
-    />
-    <path
-      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      fill="#34A853"
-    />
-    <path
-      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-      fill="#FBBC05"
-    />
-    <path
-      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-      fill="#EA4335"
-    />
-  </svg>
-)
-
-const AppleIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <path
-      d="M48.644 32.4099C48.5739 24.6929 54.9525 20.9851 55.2399 20.8028C51.6511 15.553 46.0715 14.8381 44.0808 14.754C39.3354 14.2704 34.8143 17.5506 32.4031 17.5506C29.9918 17.5506 26.2768 14.8241 22.3375 14.9012C17.1575 14.9783 12.384 17.9081 9.7134 22.5481C4.33714 31.8702 8.33954 45.6991 13.5826 53.2759C16.1481 56.9767 19.1972 61.1471 23.2136 60.9929C27.0829 60.8387 28.5408 58.4906 33.2092 58.4906C37.8775 58.4906 39.1952 60.9929 43.2748 60.9158C47.4314 60.8317 50.0669 57.1309 52.6114 53.4161C55.5483 49.1195 56.761 44.9561 56.8311 44.7388C56.7399 44.7038 48.7281 41.6338 48.644 32.4099"
-      fill="currentColor"
-    />
-    <path
-      d="M40.9686 9.74262C43.0995 7.16328 44.5364 3.57463 44.1439 0C41.0737 0.126163 37.3587 2.04665 35.1577 4.62599C33.1881 6.90394 31.4567 10.5557 31.9264 14.0602C35.34 14.3266 38.8377 12.3149 40.9686 9.74262Z"
-      fill="currentColor"
-    />
-  </svg>
-)
-
-const MicrosoftIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M3.25 3.25H11.25V11.25H3.25V3.25Z" fill="#F35325" />
-    <path d="M12.75 3.25H20.75V11.25H12.75V3.25Z" fill="#81BC06" />
-    <path d="M3.25 12.75H11.25V20.75H3.25V12.75Z" fill="#05A6F0" />
-    <path d="M12.75 12.75H20.75V20.75H12.75V12.75Z" fill="#FFBA08" />
-  </svg>
-)
-
-const PhoneIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M2 5.57143C2 3.59898 3.59898 2 5.57143 2H8.625C9.0287 2 9.39281 2.24274 9.54808 2.61538L11.4231 7.11538C11.5744 7.47863 11.4987 7.89686 11.2295 8.18394L9.82741 9.67954C10.9044 11.7563 12.2732 13.2047 14.3016 14.2842L15.7929 12.7929C16.0794 12.5064 16.5106 12.4211 16.8846 12.5769L21.3846 14.4519C21.7573 14.6072 22 14.9713 22 15.375V18.4286C22 20.401 20.401 22 18.4286 22C9.35532 22 2 14.6447 2 5.57143ZM5.57143 4C4.70355 4 4 4.70355 4 5.57143C4 13.5401 10.4599 20 18.4286 20C19.2964 20 20 19.2964 20 18.4286V16.0417L16.7336 14.6807L15.2071 16.2071C14.9098 16.5044 14.4582 16.584 14.0771 16.4062C11.0315 14.9849 9.12076 12.9271 7.71882 9.92289C7.54598 9.55251 7.61592 9.11423 7.89546 8.81606L9.32824 7.28777L7.95833 4H5.57143Z"
-      fill="currentColor"
-    />
-  </svg>
-)
-
-const ErrorIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M8 14.667A6.667 6.667 0 1 0 8 1.333a6.667 6.667 0 0 0 0 13.334z"
-      fill="#D00E17"
-      stroke="#D00E17"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M8 4.583a.75.75 0 0 1 .75.75V8a.75.75 0 0 1-1.5 0V5.333a.75.75 0 0 1 .75-.75z"
-      fill="#fff"
-    />
-    <path d="M8.667 10.667a.667.667 0 1 1-1.334 0 .667.667 0 0 1 1.334 0z" fill="#fff" />
-  </svg>
-)
+import { useEffect, type ClipboardEvent, type SubmitEvent, useId, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import onebookWordmark from '@/assets/brand/onebook-wordmark.svg'
+import googleIconSvg from '@/assets/brand/provider/google-logo.svg'
+import appleIconSvg from '@/assets/brand/provider/apple-logo.svg'
+import microsoftIconSvg from '@/assets/brand/provider/microsoft-logo.svg'
+import phoneIconSvg from '@/assets/icons/phone.svg'
+import errorIconSvg from '@/assets/icons/error-circle.svg'
+import eyeIconSvg from '@/assets/icons/eye.svg'
+import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
+type Step = 'entry' | 'password' | 'verify'
+
+function getStep(pathname: string): Step {
+  if (pathname === '/login/password') return 'password'
+  if (pathname === '/login/verify' || pathname === '/email-verification') return 'verify'
+  return 'entry'
+}
+
+function encodeEmail(email: string) {
+  const text = email.trim()
+  return text ? `?email=${encodeURIComponent(text)}` : ''
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
-  const inputRef = useRef<HTMLInputElement>(null)
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+
+  const step = getStep(location.pathname)
+  const stepEmail = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams])
+
   const emailId = useId()
-  const labelId = useId()
-  const errorId = useId()
+  const emailLabelId = useId()
+  const emailErrorId = useId()
 
-  const [email, setEmail] = useState('')
-  const [isFocused, setIsFocused] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [errorText, setErrorText] = useState('')
+  const passwordId = useId()
+  const passwordLabelId = useId()
+  const passwordErrorId = useId()
 
-  const hasValue = email.trim().length > 0
-  const isInvalid = errorText.length > 0
-  const isActive = isFocused || hasValue
+  const [email, setEmail] = useState(stepEmail)
+  const [isEmailFocused, setIsEmailFocused] = useState(false)
+  const [isEntrySubmitting, setIsEntrySubmitting] = useState(false)
+  const [emailErrorText, setEmailErrorText] = useState('')
+
+  const [password, setPassword] = useState('')
+  const [isPasswordFocused, setIsPasswordFocused] = useState(false)
+  const [passwordVisible, setPasswordVisible] = useState(false)
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false)
+  const [passwordErrorText, setPasswordErrorText] = useState('')
+
+  const [otp, setOtp] = useState(['', '', '', '', '', ''])
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([])
+
+  const entryInputRef = useRef<HTMLInputElement>(null)
+  const passwordInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (step === 'entry') {
+      setEmail(stepEmail)
+      setEmailErrorText('')
+      setIsEntrySubmitting(false)
+    }
+  }, [step, stepEmail])
+
+  useEffect(() => {
+    if (step !== 'verify') return
+    setOtp(['', '', '', '', '', ''])
+  }, [step, stepEmail])
+
+  const hasEmailValue = email.trim().length > 0
+  const isEmailInvalid = emailErrorText.length > 0
+  const isEmailActive = isEmailFocused || hasEmailValue
+
+  const hasPasswordValue = password.trim().length > 0
+  const isPasswordInvalid = passwordErrorText.length > 0
+  const isPasswordActive = isPasswordFocused || hasPasswordValue
 
   const emailWrapClassName = [
     'auth-input-wrap',
-    isActive ? 'is-active' : '',
-    isFocused ? 'is-focused' : '',
-    hasValue ? 'has-value' : '',
-    isInvalid ? 'is-invalid' : '',
-    isSubmitting ? 'is-submitting' : '',
+    isEmailActive ? 'is-active' : '',
+    isEmailFocused ? 'is-focused' : '',
+    hasEmailValue ? 'has-value' : '',
+    isEmailInvalid ? 'is-invalid' : '',
+    isEntrySubmitting ? 'is-submitting' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const passwordWrapClassName = [
+    'auth-input-wrap',
+    isPasswordActive ? 'is-active' : '',
+    isPasswordFocused ? 'is-focused' : '',
+    hasPasswordValue ? 'has-value' : '',
+    isPasswordInvalid ? 'is-invalid' : '',
+    isPasswordSubmitting ? 'is-submitting' : '',
+    'auth-input-wrap-with-end',
   ]
     .filter(Boolean)
     .join(' ')
@@ -114,149 +108,387 @@ export function LoginPage() {
     return ''
   }
 
-  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (isSubmitting) return
+  const handleEntrySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isEntrySubmitting) return
 
     const error = validateEmail(email)
     if (error) {
-      setErrorText(error)
-      setIsSubmitting(false)
-      inputRef.current?.focus()
+      setEmailErrorText(error)
+      entryInputRef.current?.focus()
       return
     }
 
-    setErrorText('')
-    setIsSubmitting(true)
+    const normalizedEmail = email.trim()
+    setEmailErrorText('')
+    setIsEntrySubmitting(true)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    navigate(`/login/password${encodeEmail(normalizedEmail)}`)
+  }
 
-    await new Promise((resolve) => setTimeout(resolve, 550))
+  const handlePasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isPasswordSubmitting) return
+
+    if (!password.trim()) {
+      setPasswordErrorText('密码为必填项。')
+      passwordInputRef.current?.focus()
+      return
+    }
+
+    setPasswordErrorText('')
+    setIsPasswordSubmitting(true)
+    await new Promise((resolve) => setTimeout(resolve, 250))
     navigate('/library')
   }
 
+  const resendEmail = () => {
+    setOtp(['', '', '', '', '', ''])
+    otpRefs.current[0]?.focus()
+  }
+
+  const updateOtpAt = (index: number, rawValue: string) => {
+    const value = rawValue.replace(/\D/g, '').slice(-1)
+    setOtp((prev) => {
+      const next = [...prev]
+      next[index] = value
+      return next
+    })
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus()
+    }
+  }
+
+  const handleOtpKeyDown = (index: number, key: string) => {
+    if (key === 'Backspace' && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus()
+    }
+    if (key === 'ArrowLeft' && index > 0) {
+      otpRefs.current[index - 1]?.focus()
+    }
+    if (key === 'ArrowRight' && index < 5) {
+      otpRefs.current[index + 1]?.focus()
+    }
+  }
+
+  const handleOtpPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault()
+    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+    if (!pasted) return
+
+    const filled = ['','','','','','']
+    for (let i = 0; i < pasted.length; i += 1) filled[i] = pasted[i]
+    setOtp(filled)
+
+    const nextIndex = Math.min(pasted.length, 5)
+    otpRefs.current[nextIndex]?.focus()
+  }
+
+  const renderSocialButtons = () => (
+    <div className="auth-social-group" role="group" aria-label="选择登录选项">
+      <button type="button" className="auth-social-btn">
+        <span className="auth-social-icon">
+          <img src={googleIconSvg} alt="" aria-hidden="true" />
+        </span>
+        <span>继续使用 Google 登录</span>
+      </button>
+      <button type="button" className="auth-social-btn">
+        <span className="auth-social-icon">
+          <img src={appleIconSvg} alt="" aria-hidden="true" />
+        </span>
+        <span>继续使用 Apple 登录</span>
+      </button>
+      <button type="button" className="auth-social-btn">
+        <span className="auth-social-icon">
+          <img src={microsoftIconSvg} alt="" aria-hidden="true" />
+        </span>
+        <span>继续使用 Microsoft 登录</span>
+      </button>
+      <button type="button" className="auth-social-btn">
+        <span className="auth-social-icon">
+          <img src={phoneIconSvg} alt="" aria-hidden="true" />
+        </span>
+        <span>继续使用手机登录</span>
+      </button>
+    </div>
+  )
+
   return (
     <div className="auth-page">
-      <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
-        <img src={onebookLogoMark} alt="" aria-hidden="true" />
-        <span>OneBook AI</span>
-      </Link>
-
       <main className="auth-main">
         <section className="auth-card" aria-label="登录卡片">
-          <h1>登录或注册</h1>
-          <p className="auth-subtitle">你将可以基于个人书库提问，并获得可追溯来源的回答。</p>
-
-          <form
-            className="auth-form"
-            onSubmit={handleSubmit}
-            noValidate
-          >
-            <div className="auth-section auth-section-ctas">
-              <div className="auth-social-group" role="group" aria-label="选择登录选项">
-                <button type="button" className="auth-social-btn">
-                  <span className="auth-social-icon">
-                    <GoogleIcon />
-                  </span>
-                  <span>继续使用 Google 登录</span>
-                </button>
-                <button type="button" className="auth-social-btn">
-                  <span className="auth-social-icon">
-                    <AppleIcon />
-                  </span>
-                  <span>继续使用 Apple 登录</span>
-                </button>
-                <button type="button" className="auth-social-btn">
-                  <span className="auth-social-icon">
-                    <MicrosoftIcon />
-                  </span>
-                  <span>继续使用 Microsoft 登录</span>
-                </button>
-                <button type="button" className="auth-social-btn">
-                  <span className="auth-social-icon">
-                    <PhoneIcon />
-                  </span>
-                  <span>继续使用手机登录</span>
-                </button>
+          {step === 'entry' ? (
+            <>
+              <div className="auth-title-block">
+                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+                </Link>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">登录或注册</span>
+                </h1>
+                <div className="auth-subtitle">
+                  <span className="auth-subtitle-text">你将可以基于个人书库提问，并获得可追溯来源的回答。</span>
+                </div>
               </div>
 
-              <div className="auth-divider">
-                <div className="auth-divider-line" />
-                <div className="auth-divider-name">或</div>
-                <div className="auth-divider-line" />
-              </div>
-            </div>
-
-            <div className="auth-section auth-section-fields">
-              <div className="auth-textfield" data-rac="" data-invalid={isInvalid || undefined}>
-                <div className="auth-textfield-root">
-                  <div className={emailWrapClassName}>
-                    <label className="auth-input-label" htmlFor={emailId} id={labelId}>
-                      <div className="auth-input-label-pos">
-                        <div className="auth-input-label-text">电子邮件地址</div>
-                      </div>
-                    </label>
-                    <input
-                      ref={inputRef}
-                      className="auth-input-target"
-                      id={emailId}
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="电子邮件地址"
-                      value={email}
-                      aria-labelledby={labelId}
-                      aria-describedby={isInvalid ? errorId : undefined}
-                      aria-invalid={isInvalid || undefined}
-                      data-focused={isFocused || undefined}
-                      data-invalid={isInvalid || undefined}
-                      disabled={isSubmitting}
-                      onFocus={() => setIsFocused(true)}
-                      onBlur={() => setIsFocused(false)}
-                      onChange={(e) => {
-                        setEmail(e.target.value)
-                        if (isInvalid) setErrorText('')
-                      }}
-                    />
+              <fieldset className="auth-fieldset">
+                <form className="auth-form" onSubmit={handleEntrySubmit} noValidate>
+                  <div className="auth-section auth-section-ctas">
+                    {renderSocialButtons()}
+                    <div className="auth-divider">
+                      <div className="auth-divider-line" />
+                      <div className="auth-divider-name">或</div>
+                      <div className="auth-divider-line" />
+                    </div>
                   </div>
-                  <span className="auth-input-live" aria-live="polite" aria-atomic="true">
-                    {isInvalid ? (
-                      <span className="auth-field-error-slot" id={errorId}>
-                        <ul className="auth-field-errors">
+
+                  <div className="auth-section auth-section-fields">
+                    <div className="auth-textfield" data-rac="" data-invalid={isEmailInvalid || undefined}>
+                      <div className="auth-textfield-root">
+                        <div className={emailWrapClassName}>
+                          <label className="auth-input-label" htmlFor={emailId} id={emailLabelId}>
+                            <div className="auth-input-label-pos">
+                              <div className="auth-input-label-text">电子邮件地址</div>
+                            </div>
+                          </label>
+                          <input
+                            ref={entryInputRef}
+                            className="auth-input-target"
+                            id={emailId}
+                            name="email"
+                            type="email"
+                            autoComplete="email"
+                            placeholder="电子邮件地址"
+                            value={email}
+                            aria-labelledby={emailLabelId}
+                            aria-describedby={isEmailInvalid ? emailErrorId : undefined}
+                            aria-invalid={isEmailInvalid || undefined}
+                            disabled={isEntrySubmitting}
+                            onFocus={() => setIsEmailFocused(true)}
+                            onBlur={() => setIsEmailFocused(false)}
+                            onChange={(e) => {
+                              setEmail(e.target.value)
+                              if (isEmailInvalid) setEmailErrorText('')
+                            }}
+                          />
+                        </div>
+                        <span className="auth-input-live" aria-live="polite" aria-atomic="true">
+                          {isEmailInvalid ? (
+                            <span className="auth-field-error-slot" id={emailErrorId}>
+                              <ul className="auth-field-errors">
+                                <li className="auth-field-error">
+                                  <span className="auth-field-error-icon">
+                                    <img src={errorIconSvg} alt="" aria-hidden="true" />
+                                  </span>
+                                  <span>{emailErrorText}</span>
+                                </li>
+                              </ul>
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="auth-section auth-section-ctas">
+                    <button type="submit" className="auth-continue-btn" disabled={isEntrySubmitting}>
+                      继续
+                    </button>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
+
+          {step === 'password' ? (
+            <>
+              <div className="auth-title-block">
+                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+                </Link>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">输入密码</span>
+                </h1>
+              </div>
+
+              <fieldset className="auth-fieldset">
+                <form className="auth-form auth-form-password" onSubmit={handlePasswordSubmit} noValidate>
+                  <div className="auth-section auth-section-fields">
+                    <div className="auth-textfield-root">
+                      <div className="auth-input-wrap has-value is-active auth-input-wrap-with-end auth-input-wrap-readonly">
+                        <label className="auth-input-label" htmlFor="readonly-email">
+                          <div className="auth-input-label-pos">
+                            <div className="auth-input-label-text">电子邮件地址</div>
+                          </div>
+                        </label>
+                        <input
+                          id="readonly-email"
+                          className="auth-input-target"
+                          type="text"
+                          value={stepEmail}
+                          readOnly
+                          placeholder="电子邮件地址"
+                          aria-label="电子邮件地址"
+                        />
+                        <div className="auth-input-end-decoration">
+                          <Link to={`/login${encodeEmail(stepEmail)}`} className="auth-link-inline">
+                            编辑
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="auth-textfield-root">
+                      <div className={passwordWrapClassName}>
+                        <label className="auth-input-label" htmlFor={passwordId} id={passwordLabelId}>
+                          <div className="auth-input-label-pos">
+                            <div className="auth-input-label-text">密码</div>
+                          </div>
+                        </label>
+                        <input
+                          ref={passwordInputRef}
+                          id={passwordId}
+                          className="auth-input-target"
+                          type={passwordVisible ? 'text' : 'password'}
+                          value={password}
+                          name="password"
+                          autoComplete="current-password"
+                          placeholder="密码"
+                          aria-labelledby={passwordLabelId}
+                          aria-describedby={isPasswordInvalid ? passwordErrorId : undefined}
+                          aria-invalid={isPasswordInvalid || undefined}
+                          disabled={isPasswordSubmitting}
+                          onFocus={() => setIsPasswordFocused(true)}
+                          onBlur={() => setIsPasswordFocused(false)}
+                          onChange={(e) => {
+                            setPassword(e.target.value)
+                            if (isPasswordInvalid) setPasswordErrorText('')
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="auth-password-toggle"
+                          aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
+                          onClick={() => setPasswordVisible((prev) => !prev)}
+                        >
+                          {passwordVisible ? (
+                            <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                          ) : (
+                            <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
+                      {isPasswordInvalid ? (
+                        <ul className="auth-field-errors" id={passwordErrorId}>
                           <li className="auth-field-error">
                             <span className="auth-field-error-icon">
-                              <ErrorIcon />
+                              <img src={errorIconSvg} alt="" aria-hidden="true" />
                             </span>
-                            <span>{errorText}</span>
+                            <span>{passwordErrorText}</span>
                           </li>
                         </ul>
-                      </span>
-                    ) : null}
+                      ) : null}
+                    </div>
+
+                    <span className="auth-forgot-password">
+                      <a href="/reset-password">忘记了密码？</a>
+                    </span>
+                  </div>
+
+                  <div className="auth-section auth-section-ctas auth-section-password-ctas">
+                    <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting}>
+                      继续
+                    </button>
+
+                    <span className="auth-signup-hint">
+                      还没有帐户？请
+                      <Link to="/create-account">注册</Link>
+                    </span>
+
+                    <div className="auth-divider auth-divider-password">
+                      <div className="auth-divider-line" />
+                      <div className="auth-divider-name">或</div>
+                      <div className="auth-divider-line" />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="auth-outline-btn"
+                      onClick={() => navigate(`/login/verify${encodeEmail(stepEmail)}`)}
+                    >
+                      使用一次性验证码登录
+                    </button>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
+
+          {step === 'verify' ? (
+            <>
+              <div className="auth-title-block">
+                <Link to="/" className="auth-wordmark" aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+                </Link>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">检查您的收件箱</span>
+                </h1>
+                <div className="auth-subtitle auth-subtitle-verify">
+                  <span className="auth-subtitle-text">
+                    输入我们刚刚向 {stepEmail || '你的邮箱'} 发送的验证码
                   </span>
                 </div>
               </div>
-            </div>
 
-            <div className="auth-section auth-section-ctas">
-              <button type="submit" className="auth-continue-btn" disabled={isSubmitting}>
-                继续
-              </button>
-            </div>
-          </form>
+              <fieldset className="auth-fieldset">
+                <form className="auth-form auth-form-verify" noValidate>
+                  <div className="auth-section auth-section-fields">
+                    <div className="auth-otp-wrap">
+                      <label className="auth-otp-label">验证码</label>
+                      <div className="auth-otp-group" role="group" aria-label="验证码">
+                        {otp.map((digit, index) => (
+                          <input
+                            key={index}
+                            ref={(node) => {
+                              otpRefs.current[index] = node
+                            }}
+                            className="auth-otp-input"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                            maxLength={1}
+                            aria-label={`数字位 ${index + 1}`}
+                            value={digit}
+                            onChange={(e) => updateOtpAt(index, e.target.value)}
+                            onKeyDown={(e) => handleOtpKeyDown(index, e.key)}
+                            onPaste={handleOtpPaste}
+                          />
+                        ))}
+                      </div>
+                      <input type="hidden" readOnly value={otp.join('')} name="code" />
+                    </div>
+                  </div>
+
+                  <div className="auth-section auth-section-ctas auth-section-verify-ctas">
+                    <button type="button" className="auth-outline-btn" onClick={resendEmail}>
+                      重新发送电子邮件
+                    </button>
+                    <Link className="auth-link-btn" to={`/login/password${encodeEmail(stepEmail)}`}>
+                      使用密码继续
+                    </Link>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
 
           <div className="auth-footer">
             <span className="auth-footer-meta">
-              <a
-                href="https://openai.com/policies/terms-of-use"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://openai.com/policies/terms-of-use">
                 使用条款
               </a>
               <span className="auth-footer-separator" aria-hidden="true" />
-              <a
-                href="https://openai.com/policies/privacy-policy"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://openai.com/policies/privacy-policy">
                 隐私政策
               </a>
             </span>

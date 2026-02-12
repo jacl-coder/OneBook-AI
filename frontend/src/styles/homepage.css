@@ -748,10 +748,12 @@
   cursor: pointer;
 }
 
+.tpx-like-next-left img,
 .tpx-like-next-left svg {
   transform: rotate(180deg);
 }
 
+.tpx-like-next img,
 .tpx-like-next svg {
   width: 42px;
   height: 18px;

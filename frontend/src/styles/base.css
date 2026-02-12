@@ -64,10 +64,7 @@ body,
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    radial-gradient(circle at 8% 10%, #dbeafe 0%, transparent 36%),
-    radial-gradient(circle at 96% 4%, #e2e8f0 0%, transparent 32%),
-    var(--bg);
+  background: #fff;
 }
 
 a {
@@ -86,4 +83,3 @@ code,
 .mono {
   font-family: 'IBM Plex Mono', monospace;
 }
-
