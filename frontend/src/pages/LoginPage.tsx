@@ -33,10 +33,7 @@ export function LoginPage() {
   const [searchParams] = useSearchParams()
 
   const step = getStep(location.pathname)
-  const logoLinkTarget =
-    location.pathname.startsWith('/log-in') || location.pathname.startsWith('/create-account')
-      ? '/chat'
-      : '/'
+  const logoLinkTarget = '/chat'
   const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
   const isCreateAccountPassword = step === 'password' && location.pathname === '/create-account/password'
   const stepEmail = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams])
