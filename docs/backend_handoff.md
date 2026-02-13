@@ -59,8 +59,20 @@
 ## 5. 错误响应约定
 - 统一错误结构：
 ```json
-{ "error": "..." }
+{
+  "error": "...",
+  "code": "AUTH_INVALID_TOKEN",
+  "requestId": "req_xxx",
+  "details": [
+    { "field": "email", "reason": "invalid_format" }
+  ]
+}
 ```
+- 字段说明：
+  - `error`：面向用户的错误说明。
+  - `code`：稳定机器码，供前端分支处理与埋点。
+  - `requestId`：请求追踪 ID（与响应头 `X-Request-Id` 对应）。
+  - `details`：可选字段级错误详情。
 - 常见状态码：
   - `400`：参数/请求体错误
   - `401`：未登录或 token 无效

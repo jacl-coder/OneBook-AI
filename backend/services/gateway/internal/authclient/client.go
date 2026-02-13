@@ -38,83 +38,83 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) SignUp(email, password string) (domain.User, string, string, error) {
+func (c *Client) SignUp(requestID, email, password string) (domain.User, string, string, error) {
 	payload := map[string]string{"email": email, "password": password}
 	var resp authResponse
-	if err := c.doJSON(http.MethodPost, "/auth/signup", "", payload, &resp); err != nil {
+	if err := c.doJSON(http.MethodPost, "/auth/signup", requestID, "", payload, &resp); err != nil {
 		return domain.User{}, "", "", err
 	}
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
-func (c *Client) Login(email, password string) (domain.User, string, string, error) {
+func (c *Client) Login(requestID, email, password string) (domain.User, string, string, error) {
 	payload := map[string]string{"email": email, "password": password}
 	var resp authResponse
-	if err := c.doJSON(http.MethodPost, "/auth/login", "", payload, &resp); err != nil {
+	if err := c.doJSON(http.MethodPost, "/auth/login", requestID, "", payload, &resp); err != nil {
 		return domain.User{}, "", "", err
 	}
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
-func (c *Client) Refresh(refreshToken string) (domain.User, string, string, error) {
+func (c *Client) Refresh(requestID, refreshToken string) (domain.User, string, string, error) {
 	payload := map[string]string{"refreshToken": refreshToken}
 	var resp authResponse
-	if err := c.doJSON(http.MethodPost, "/auth/refresh", "", payload, &resp); err != nil {
+	if err := c.doJSON(http.MethodPost, "/auth/refresh", requestID, "", payload, &resp); err != nil {
 		return domain.User{}, "", "", err
 	}
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
-func (c *Client) Logout(token, refreshToken string) error {
+func (c *Client) Logout(requestID, token, refreshToken string) error {
 	var payload any
 	if strings.TrimSpace(refreshToken) != "" {
 		payload = map[string]string{"refreshToken": refreshToken}
 	}
-	return c.doJSON(http.MethodPost, "/auth/logout", token, payload, nil)
+	return c.doJSON(http.MethodPost, "/auth/logout", requestID, token, payload, nil)
 }
 
-func (c *Client) Me(token string) (domain.User, error) {
+func (c *Client) Me(requestID, token string) (domain.User, error) {
 	var user domain.User
-	if err := c.doJSON(http.MethodGet, "/auth/me", token, nil, &user); err != nil {
+	if err := c.doJSON(http.MethodGet, "/auth/me", requestID, token, nil, &user); err != nil {
 		return domain.User{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) UpdateMe(token, email string) (domain.User, error) {
+func (c *Client) UpdateMe(requestID, token, email string) (domain.User, error) {
 	payload := map[string]string{"email": email}
 	var user domain.User
-	if err := c.doJSON(http.MethodPatch, "/auth/me", token, payload, &user); err != nil {
+	if err := c.doJSON(http.MethodPatch, "/auth/me", requestID, token, payload, &user); err != nil {
 		return domain.User{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) ChangePassword(token, currentPassword, newPassword string) error {
+func (c *Client) ChangePassword(requestID, token, currentPassword, newPassword string) error {
 	payload := map[string]string{
 		"currentPassword": currentPassword,
 		"newPassword":     newPassword,
 	}
-	return c.doJSON(http.MethodPost, "/auth/me/password", token, payload, nil)
+	return c.doJSON(http.MethodPost, "/auth/me/password", requestID, token, payload, nil)
 }
 
-func (c *Client) JWKS() ([]store.JWK, error) {
+func (c *Client) JWKS(requestID string) ([]store.JWK, error) {
 	var resp jwksResponse
-	if err := c.doJSON(http.MethodGet, "/auth/jwks", "", nil, &resp); err != nil {
+	if err := c.doJSON(http.MethodGet, "/auth/jwks", requestID, "", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Keys, nil
 }
 
-func (c *Client) AdminListUsers(token string) ([]domain.User, error) {
+func (c *Client) AdminListUsers(requestID, token string) ([]domain.User, error) {
 	var resp listUsersResponse
-	if err := c.doJSON(http.MethodGet, "/auth/admin/users", token, nil, &resp); err != nil {
+	if err := c.doJSON(http.MethodGet, "/auth/admin/users", requestID, token, nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
 }
 
-func (c *Client) AdminUpdateUser(token, userID string, role *domain.UserRole, status *domain.UserStatus) (domain.User, error) {
+func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus) (domain.User, error) {
 	payload := map[string]string{}
 	if role != nil {
 		payload["role"] = string(*role)
@@ -124,13 +124,13 @@ func (c *Client) AdminUpdateUser(token, userID string, role *domain.UserRole, st
 	}
 	var user domain.User
 	path := fmt.Sprintf("/auth/admin/users/%s", userID)
-	if err := c.doJSON(http.MethodPatch, path, token, payload, &user); err != nil {
+	if err := c.doJSON(http.MethodPatch, path, requestID, token, payload, &user); err != nil {
 		return domain.User{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) doJSON(method, path, token string, payload any, out any) error {
+func (c *Client) doJSON(method, path, requestID, token string, payload any, out any) error {
 	var body io.Reader
 	if payload != nil {
 		data, err := json.Marshal(payload)
@@ -149,6 +149,9 @@ func (c *Client) doJSON(method, path, token string, payload any, out any) error 
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if strings.TrimSpace(requestID) != "" {
+		req.Header.Set("X-Request-Id", requestID)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

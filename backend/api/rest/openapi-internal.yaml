@@ -304,7 +304,27 @@ components:
       properties:
         error:
           type: string
-      required: [error]
+          description: Human-readable error message.
+        code:
+          type: string
+          description: Stable machine-readable error code.
+        requestId:
+          type: string
+          description: Request correlation id, when provided by caller/gateway.
+        details:
+          type: array
+          description: Optional field-level validation details.
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+      required: [error, code]
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+      required: [reason]
     Book:
       type: object
       properties:
