@@ -102,6 +102,12 @@
   color: inherit;
 }
 
+.auth-logo-link,
+.auth-logo-link:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
 .auth-wordmark-img {
   height: 2rem;
   width: auto;
@@ -109,6 +115,13 @@
   display: block;
   margin-left: auto;
   margin-right: auto;
+}
+
+.auth-logo-mark {
+  display: block;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--padding-XL);
 }
 
 .auth-heading {
@@ -138,6 +151,19 @@
 
 .auth-subtitle-verify {
   margin-top: var(--padding-MD);
+}
+
+.auth-subtitle-error-card {
+  text-align: left;
+  white-space: pre-wrap;
+  background-color: var(--main-surface-tertiary);
+  padding: var(--padding-LG);
+  border-radius: var(--radius-small);
+  margin-top: var(--padding-LG);
+}
+
+.auth-success-mark {
+  margin-bottom: 24px;
 }
 
 .auth-form {
@@ -748,6 +774,10 @@
     --max-inner-width: 21.25rem;
     max-width: calc(var(--max-inner-width) + 2 * var(--padding-LG));
     margin-inline: auto;
+  }
+
+  .auth-card.auth-card-wide {
+    --max-inner-width: 28.125rem;
   }
 
   .auth-footer {

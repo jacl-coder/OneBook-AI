@@ -1,6 +1,7 @@
-import { useEffect, type ClipboardEvent, type SubmitEvent, useId, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, type ClipboardEvent, type SubmitEvent, useId, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import onebookWordmark from '@/assets/brand/onebook-wordmark.svg'
+import onebookLogoMarkSvg from '@/assets/brand/onebook-logo-mark.svg'
 import googleIconSvg from '@/assets/brand/provider/google-logo.svg'
 import appleIconSvg from '@/assets/brand/provider/apple-logo.svg'
 import microsoftIconSvg from '@/assets/brand/provider/microsoft-logo.svg'
@@ -8,36 +9,73 @@ import phoneIconSvg from '@/assets/icons/phone.svg'
 import errorIconSvg from '@/assets/icons/error-circle.svg'
 import eyeIconSvg from '@/assets/icons/eye.svg'
 import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
+import successCheckmarkCircleSvg from '@/assets/icons/success-checkmark-circle.svg'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const MOCK_VERIFY_CODE = '123456'
+const AUTH_EMAIL_STORAGE_KEY = 'auth:email'
+const AUTH_FLOW_STORAGE_KEY = 'auth:flow'
+const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
+const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
 
-type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew'
+type AuthFlow = '' | 'reset'
+type AuthNavigationState = {
+  email?: string
+  flow?: AuthFlow
+  errorMessage?: string
+}
+
+type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew' | 'resetSuccess' | 'error'
 
 function getStep(pathname: string): Step {
   if (pathname === '/log-in/password' || pathname === '/create-account/password') return 'password'
   if (pathname === '/log-in/verify' || pathname === '/email-verification') return 'verify'
   if (pathname === '/reset-password') return 'reset'
   if (pathname === '/reset-password/new-password') return 'resetNew'
+  if (pathname === '/reset-password/success') return 'resetSuccess'
+  if (pathname === '/log-in/error') return 'error'
   return 'entry'
 }
 
-function encodeEmail(email: string) {
-  const text = email.trim()
-  return text ? `?email=${encodeURIComponent(text)}` : ''
+function normalizeText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readSessionValue(key: string) {
+  if (typeof window === 'undefined') return ''
+  return normalizeText(window.sessionStorage.getItem(key))
+}
+
+function writeSessionValue(key: string, value: string) {
+  if (typeof window === 'undefined') return
+  if (value) {
+    window.sessionStorage.setItem(key, value)
+    return
+  }
+  window.sessionStorage.removeItem(key)
 }
 
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
 
   const step = getStep(location.pathname)
   const logoLinkTarget = '/chat'
   const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
   const isCreateAccountPassword = step === 'password' && location.pathname === '/create-account/password'
-  const stepEmail = useMemo(() => searchParams.get('email')?.trim() ?? '', [searchParams])
-  const verifyFlow = useMemo(() => searchParams.get('flow')?.trim() ?? '', [searchParams])
+  const locationState = (location.state as AuthNavigationState | null) ?? null
+  const locationStateEmail = normalizeText(locationState?.email)
+  const locationStateErrorMessage = normalizeText(locationState?.errorMessage)
+  const locationStateFlow: AuthFlow = locationState?.flow === 'reset' ? 'reset' : ''
+  const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
+  const [verifyFlow, setVerifyFlow] = useState<AuthFlow>(() => {
+    const initialFlow = locationStateFlow || readSessionValue(AUTH_FLOW_STORAGE_KEY)
+    return initialFlow === 'reset' ? 'reset' : ''
+  })
+  const [authErrorMessage, setAuthErrorMessage] = useState(() => {
+    const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
+    return initialError || DEFAULT_AUTH_ERROR_MESSAGE
+  })
   const isResetVerifyFlow = step === 'verify' && verifyFlow === 'reset'
 
   const emailId = useId()
@@ -89,12 +127,12 @@ export function LoginPage() {
 
   useEffect(() => {
     if (step === 'entry') {
-      setEmail('')
+      setEmail(stepEmail)
       setEmailErrorText('')
       setIsEmailFocused(false)
       setIsEntrySubmitting(false)
     }
-  }, [step])
+  }, [step, stepEmail])
 
   useEffect(() => {
     if (step !== 'verify') return
@@ -190,6 +228,61 @@ export function LoginPage() {
     .filter(Boolean)
     .join(' ')
 
+  const getAuthState = (emailValue: string, flowValue: AuthFlow = ''): AuthNavigationState => {
+    const normalizedEmail = normalizeText(emailValue)
+    const state: AuthNavigationState = {}
+    if (normalizedEmail) state.email = normalizedEmail
+    if (flowValue) state.flow = flowValue
+    return state
+  }
+
+  const syncAuthContext = (emailValue: string, flowValue: AuthFlow) => {
+    const normalizedEmail = normalizeText(emailValue)
+    setStepEmail(normalizedEmail)
+    setVerifyFlow(flowValue)
+    writeSessionValue(AUTH_EMAIL_STORAGE_KEY, normalizedEmail)
+    writeSessionValue(AUTH_FLOW_STORAGE_KEY, flowValue)
+    return normalizedEmail
+  }
+
+  useEffect(() => {
+    const nextEmail = locationStateEmail || stepEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY)
+    if (nextEmail !== stepEmail) setStepEmail(nextEmail)
+    writeSessionValue(AUTH_EMAIL_STORAGE_KEY, nextEmail)
+  }, [location.key, locationStateEmail, stepEmail])
+
+  useEffect(() => {
+    if (locationStateFlow) {
+      if (verifyFlow !== locationStateFlow) setVerifyFlow(locationStateFlow)
+      writeSessionValue(AUTH_FLOW_STORAGE_KEY, locationStateFlow)
+      return
+    }
+
+    if (step === 'verify') {
+      const storedFlow = readSessionValue(AUTH_FLOW_STORAGE_KEY)
+      const nextFlow: AuthFlow = storedFlow === 'reset' ? 'reset' : verifyFlow
+      if (nextFlow !== verifyFlow) setVerifyFlow(nextFlow)
+      writeSessionValue(AUTH_FLOW_STORAGE_KEY, nextFlow)
+      return
+    }
+
+    if (verifyFlow) setVerifyFlow('')
+    writeSessionValue(AUTH_FLOW_STORAGE_KEY, '')
+  }, [location.key, locationStateFlow, step, verifyFlow])
+
+  useEffect(() => {
+    if (step !== 'error') return
+    const nextMessage =
+      locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY) || DEFAULT_AUTH_ERROR_MESSAGE
+    if (nextMessage !== authErrorMessage) setAuthErrorMessage(nextMessage)
+    writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, nextMessage)
+  }, [step, location.key, locationStateErrorMessage, authErrorMessage])
+
+  useEffect(() => {
+    if (step === 'error') return
+    writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, '')
+  }, [step])
+
   const validateEmail = (value: string) => {
     const text = value.trim()
     if (!text) return '电子邮件地址为必填项。'
@@ -212,7 +305,10 @@ export function LoginPage() {
     setEmailErrorText('')
     setIsEntrySubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    navigate(`${isCreateAccountEntry ? '/create-account/password' : '/log-in/password'}${encodeEmail(normalizedEmail)}`)
+    const nextEmail = syncAuthContext(normalizedEmail, '')
+    navigate(isCreateAccountEntry ? '/create-account/password' : '/log-in/password', {
+      state: getAuthState(nextEmail),
+    })
   }
 
   const handlePasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -285,10 +381,8 @@ export function LoginPage() {
 
     setIsResetSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    const nextParams = new URLSearchParams()
-    if (stepEmail) nextParams.set('email', stepEmail)
-    nextParams.set('flow', 'reset')
-    navigate(`/log-in/verify?${nextParams.toString()}`)
+    const nextEmail = syncAuthContext(stepEmail, 'reset')
+    navigate('/log-in/verify', { state: getAuthState(nextEmail, 'reset') })
   }
 
   const submitVerifyCode = async (code: string) => {
@@ -308,7 +402,8 @@ export function LoginPage() {
     }
 
     if (isResetVerifyFlow) {
-      navigate(`/reset-password/new-password${encodeEmail(stepEmail)}`)
+      const nextEmail = syncAuthContext(stepEmail, '')
+      navigate('/reset-password/new-password', { state: getAuthState(nextEmail) })
       return
     }
 
@@ -333,10 +428,15 @@ export function LoginPage() {
 
     let hasError = false
     let nextPasswordError = ''
-    if (!newPassword.trim()) {
+    const nextPassword = newPassword.trim()
+    const previousPassword = password.trim()
+
+    if (!nextPassword) {
       nextPasswordError = '新密码为必填项。'
-    } else if (newPassword.length < 8) {
+    } else if (nextPassword.length < 8) {
       nextPasswordError = '密码至少需要 8 个字符。'
+    } else if (previousPassword && nextPassword === previousPassword) {
+      nextPasswordError = '密码不得重复使用。'
     }
     if (nextPasswordError) hasError = true
     setNewPasswordErrorText(nextPasswordError)
@@ -354,7 +454,8 @@ export function LoginPage() {
 
     setIsResetNewSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    navigate(`/log-in${encodeEmail(stepEmail)}`)
+    const nextEmail = syncAuthContext(stepEmail, '')
+    navigate('/reset-password/success', { state: getAuthState(nextEmail) })
   }
 
   const renderSocialButtons = () => (
@@ -389,7 +490,7 @@ export function LoginPage() {
   return (
     <div className="auth-page">
       <main className="auth-main">
-        <section className="auth-card" aria-label="登录卡片">
+        <section className={`auth-card${step === 'error' ? ' auth-card-wide' : ''}`} aria-label="登录卡片">
           {step === 'entry' ? (
             <>
               <div className="auth-title-block">
@@ -467,7 +568,9 @@ export function LoginPage() {
                     {isCreateAccountEntry ? (
                       <span className="auth-signup-hint">
                         已经有帐户？请
-                        <Link to={`/log-in${encodeEmail(email)}`}>登录</Link>
+                        <Link to="/log-in" state={getAuthState(email)}>
+                          登录
+                        </Link>
                       </span>
                     ) : (
                       <span className="auth-signup-hint">
@@ -523,7 +626,8 @@ export function LoginPage() {
                           <div className="auth-input-end-decoration">
                             <div className="auth-link-nowrap">
                               <Link
-                                to={`/log-in${encodeEmail(stepEmail)}`}
+                                to="/log-in"
+                                state={getAuthState(stepEmail)}
                                 className="auth-link-inline"
                                 aria-label="编辑电子邮件"
                               >
@@ -590,7 +694,9 @@ export function LoginPage() {
 
                       {!isCreateAccountPassword ? (
                         <span className="auth-forgot-password">
-                          <Link to={`/reset-password${encodeEmail(stepEmail)}`}>忘记了密码？</Link>
+                          <Link to="/reset-password" state={getAuthState(stepEmail)}>
+                            忘记了密码？
+                          </Link>
                         </span>
                       ) : null}
                     </div>
@@ -621,7 +727,10 @@ export function LoginPage() {
                         <button
                           type="button"
                           className="auth-outline-btn auth-inline-passwordless-login"
-                          onClick={() => navigate(`/log-in/verify${encodeEmail(stepEmail)}`)}
+                          onClick={() => {
+                            const nextEmail = syncAuthContext(stepEmail, '')
+                            navigate('/log-in/verify', { state: getAuthState(nextEmail) })
+                          }}
                         >
                           {isCreateAccountPassword ? '使用一次性验证码注册' : '使用一次性验证码登录'}
                         </button>
@@ -631,7 +740,9 @@ export function LoginPage() {
                     {isCreateAccountPassword ? (
                       <span className="auth-signup-hint">
                         已经有帐户了？请
-                        <Link to={`/log-in${encodeEmail(stepEmail)}`}>登录</Link>
+                        <Link to="/log-in" state={getAuthState(stepEmail)}>
+                          登录
+                        </Link>
                       </span>
                     ) : null}
                   </div>
@@ -710,7 +821,7 @@ export function LoginPage() {
                       </button>
                     </div>
                     <div className="auth-button-wrapper">
-                      <Link className="auth-link-btn" to={`/log-in/password${encodeEmail(stepEmail)}`}>
+                      <Link className="auth-link-btn" to="/log-in/password" state={getAuthState(stepEmail)}>
                         使用密码继续
                       </Link>
                     </div>
@@ -754,7 +865,7 @@ export function LoginPage() {
                         <button
                           type="button"
                           className="auth-transparent-btn"
-                          onClick={() => navigate(`/log-in${encodeEmail(stepEmail)}`)}
+                          onClick={() => navigate('/log-in', { state: getAuthState(stepEmail) })}
                         >
                           返回登录
                         </button>
@@ -912,6 +1023,75 @@ export function LoginPage() {
                   </div>
                 </form>
               </fieldset>
+            </>
+          ) : null}
+
+          {step === 'resetSuccess' ? (
+            <>
+              <div className="auth-title-block">
+                <img
+                  src={successCheckmarkCircleSvg}
+                  alt=""
+                  aria-hidden="true"
+                  width={60}
+                  height={60}
+                  className="auth-success-mark"
+                />
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">密码已更改</span>
+                </h1>
+                <div className="auth-subtitle">
+                  <span className="auth-subtitle-text">你的密码已成功更改</span>
+                </div>
+              </div>
+
+              <fieldset className="auth-fieldset">
+                <form method="get" action="/reset-password/success" className="auth-form">
+                  <div className="auth-section auth-section-fields" />
+                  <div className="auth-section auth-section-ctas">
+                    <div className="auth-button-wrapper">
+                      <Link to="/log-in/password" className="auth-continue-btn">
+                        登录
+                      </Link>
+                    </div>
+                  </div>
+                </form>
+              </fieldset>
+            </>
+          ) : null}
+
+          {step === 'error' ? (
+            <>
+              <div className="auth-title-block">
+                <a href="https://chatgpt.com" aria-label="OpenAI 主页面" className="auth-logo-link">
+                  <img
+                    src={onebookLogoMarkSvg}
+                    alt="OneBook 徽标"
+                    width={48}
+                    height={48}
+                    className="auth-logo-mark"
+                  />
+                </a>
+                <h1 className="auth-heading">
+                  <span className="auth-heading-text">糟糕，出错了！</span>
+                </h1>
+                <div className="auth-subtitle">
+                  <div className="auth-subtitle-error-card">{authErrorMessage}</div>
+                </div>
+              </div>
+              <div className="auth-button-wrapper">
+                <button
+                  type="button"
+                  className="auth-outline-btn"
+                  data-dd-action-name="Try again"
+                  onClick={() => {
+                    writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, '')
+                    navigate('/log-in', { replace: true })
+                  }}
+                >
+                  重试
+                </button>
+              </div>
             </>
           ) : null}
 

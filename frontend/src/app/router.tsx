@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
 
 import { AppLayout } from '@/app/ui/AppLayout'
 import { ChatPage } from '@/pages/ChatPage'
@@ -34,6 +34,10 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
+    path: '/log-in/error',
+    element: <LoginPage />,
+  },
+  {
     path: '/email-verification',
     element: <LoginPage />,
   },
@@ -43,6 +47,10 @@ export const router = createBrowserRouter([
   },
   {
     path: '/reset-password/new-password',
+    element: <LoginPage />,
+  },
+  {
+    path: '/reset-password/success',
     element: <LoginPage />,
   },
   {
