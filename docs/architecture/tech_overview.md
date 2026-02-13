@@ -35,4 +35,4 @@
 
 ## 前端联调入口
 - 联调统一走 Gateway：`http://localhost:8080`
-- 联调约定与错误语义：`docs/backend_handoff.md`
+- 联调约定与错误语义：`docs/backend/backend_handoff.md`

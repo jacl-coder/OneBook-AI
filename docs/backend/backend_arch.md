@@ -38,7 +38,7 @@
 - 服务均提供 `/healthz` 健康检查。
 - Swagger UI 可查看 REST/OpenAPI 规范。
 - 目前仅基础日志，尚未引入 metrics/tracing。
-- 前端联调入口与错误语义见 `docs/backend_handoff.md`。
+- 前端联调入口与错误语义见 `docs/backend/backend_handoff.md`。
 
 ## 仍待完善的方向
 - 统一可观测性（日志、metrics、tracing）。

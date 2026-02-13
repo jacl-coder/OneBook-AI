@@ -3,10 +3,10 @@
 面向个人/小团队的“书本对话”应用：用户上传电子书，系统解析并基于书本内容进行对话式问答（附出处），支持书库管理和会话历史。
 
 ## 当前状态
-- 需求与功能规格：见 `docs/requirements.md` 与 `docs/functional_spec.md`
-- 技术框架概览：见 `docs/tech_overview.md` 与 `docs/backend_arch.md`
-- 前端联调说明：见 `docs/backend_handoff.md`
-- 前端开发流程：见 `docs/frontend_development_workflow.md`
+- 需求与功能规格：见 `docs/product/requirements.md` 与 `docs/product/functional_spec.md`
+- 技术框架概览：见 `docs/architecture/tech_overview.md` 与 `docs/backend/backend_arch.md`
+- 前端联调说明：见 `docs/backend/backend_handoff.md`
+- 前端开发流程：见 `docs/frontend/frontend_development_workflow.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
 - Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini
 - Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
@@ -127,7 +127,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
   - `401` 时调用 `POST /api/auth/refresh`，成功后覆盖本地 token 对
 - 书籍状态建议轮询：上传后轮询 `GET /api/books/{id}`，直到 `status` 为 `ready` 或 `failed`
 - 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`
-- 详细请求/错误语义与联调清单：`docs/backend_handoff.md`
+- 详细请求/错误语义与联调清单：`docs/backend/backend_handoff.md`
 
 ## 开发与测试
 - 后端测试：`cd backend && go test ./...`
