@@ -28,6 +28,7 @@ const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
 const AUTH_OTP_CHALLENGE_STORAGE_KEY = 'auth:otp:challenge-id'
 const AUTH_OTP_PURPOSE_STORAGE_KEY = 'auth:otp:purpose'
 const AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY = 'auth:otp:pending-password'
+const AUTH_OTP_EMAIL_STORAGE_KEY = 'auth:otp:email'
 const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
 
 type AuthNavigationState = {
@@ -36,6 +37,7 @@ type AuthNavigationState = {
   challengeId?: string
   purpose?: OtpPurpose
   pendingPassword?: string
+  otpEmail?: string
 }
 
 type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew' | 'resetSuccess' | 'error'
@@ -99,6 +101,7 @@ export function LoginPage() {
   const locationStateChallengeId = normalizeText(locationState?.challengeId)
   const locationStatePurpose = normalizeOtpPurpose(locationState?.purpose)
   const locationStatePendingPassword = normalizeText(locationState?.pendingPassword)
+  const locationStateOtpEmail = normalizeText(locationState?.otpEmail)
   const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
   const [authErrorMessage, setAuthErrorMessage] = useState(() => {
     const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
@@ -112,6 +115,9 @@ export function LoginPage() {
   )
   const [otpPendingPassword, setOtpPendingPassword] = useState(
     () => locationStatePendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY),
+  )
+  const [otpEmail, setOtpEmail] = useState(
+    () => locationStateOtpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY),
   )
 
   const emailId = useId()
@@ -275,7 +281,7 @@ export function LoginPage() {
 
   const getAuthState = (
     emailValue: string,
-    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword'>>,
+    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword' | 'otpEmail'>>,
   ): AuthNavigationState => {
     const normalizedEmail = normalizeText(emailValue)
     const state: AuthNavigationState = {}
@@ -283,13 +289,15 @@ export function LoginPage() {
     if (extras?.challengeId) state.challengeId = normalizeText(extras.challengeId)
     if (extras?.purpose) state.purpose = normalizeOtpPurpose(extras.purpose) || undefined
     if (extras?.pendingPassword) state.pendingPassword = normalizeText(extras.pendingPassword)
+    if (extras?.otpEmail) state.otpEmail = normalizeText(extras.otpEmail)
     return state
   }
 
-  const syncOtpContext = (payload: { challengeId: string; purpose: OtpPurpose; pendingPassword?: string }) => {
+  const syncOtpContext = (payload: { challengeId: string; purpose: OtpPurpose; pendingPassword?: string; otpEmail?: string }) => {
     const challengeId = normalizeText(payload.challengeId)
     const purpose = payload.purpose
     const pendingPassword = normalizeText(payload.pendingPassword)
+    const normalizedOtpEmail = normalizeText(payload.otpEmail || stepEmail)
 
     setOtpChallengeId(challengeId)
     writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, challengeId)
@@ -297,23 +305,28 @@ export function LoginPage() {
     setOtpPurpose(purpose)
     writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, purpose)
 
+    setOtpEmail(normalizedOtpEmail)
+    writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, normalizedOtpEmail)
+
     if (purpose === 'signup_password' && pendingPassword) {
       setOtpPendingPassword(pendingPassword)
       writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, pendingPassword)
-      return { challengeId, purpose, pendingPassword }
+      return { challengeId, purpose, pendingPassword, otpEmail: normalizedOtpEmail }
     }
     setOtpPendingPassword('')
     writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
-    return { challengeId, purpose, pendingPassword: '' }
+    return { challengeId, purpose, pendingPassword: '', otpEmail: normalizedOtpEmail }
   }
 
   const clearOtpContext = () => {
     setOtpChallengeId('')
     setOtpPurpose('')
     setOtpPendingPassword('')
+    setOtpEmail('')
     writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, '')
     writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, '')
     writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
+    writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, '')
   }
 
   const syncEmail = (emailValue: string) => {
@@ -343,14 +356,20 @@ export function LoginPage() {
       locationStatePendingPassword || otpPendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY)
     if (nextPendingPassword !== otpPendingPassword) schedule(() => setOtpPendingPassword(nextPendingPassword))
     writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, nextPendingPassword)
+
+    const nextOtpEmail = locationStateOtpEmail || otpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY)
+    if (nextOtpEmail !== otpEmail) schedule(() => setOtpEmail(nextOtpEmail))
+    writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, nextOtpEmail)
   }, [
     location.key,
     locationStateChallengeId,
     locationStatePurpose,
     locationStatePendingPassword,
+    locationStateOtpEmail,
     otpChallengeId,
     otpPurpose,
     otpPendingPassword,
+    otpEmail,
   ])
 
   useEffect(() => {
@@ -388,6 +407,47 @@ export function LoginPage() {
     return ''
   }
 
+  const requestOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
+    const normalizedEmail = sourceEmail.trim()
+    const otpChallenge = await sendOtp({ email: normalizedEmail, purpose })
+    const otpContext = syncOtpContext({
+      challengeId: otpChallenge.challengeId,
+      purpose,
+      pendingPassword,
+      otpEmail: normalizedEmail,
+    })
+    return { normalizedEmail, otpContext }
+  }
+
+  const getReusableOtpContext = (purpose: OtpPurpose, sourceEmail = stepEmail, pendingPassword = '') => {
+    const normalizedEmail = normalizeText(sourceEmail).toLowerCase()
+    if (!normalizedEmail) return null
+
+    const challengeId = normalizeText(otpChallengeId || readSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY))
+    const existingPurpose = normalizeOtpPurpose(otpPurpose || readSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY))
+    const existingEmail = normalizeText(otpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY)).toLowerCase()
+
+    if (!challengeId || existingPurpose !== purpose || existingEmail !== normalizedEmail) {
+      return null
+    }
+
+    const existingPendingPassword =
+      normalizeText(otpPendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY)) || pendingPassword.trim()
+    const otpContext = syncOtpContext({
+      challengeId,
+      purpose,
+      pendingPassword: purpose === 'signup_password' ? existingPendingPassword : '',
+      otpEmail: normalizedEmail,
+    })
+    return { normalizedEmail, otpContext }
+  }
+
+  const ensureOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
+    const reused = getReusableOtpContext(purpose, sourceEmail, pendingPassword)
+    if (reused) return reused
+    return requestOtpChallenge(purpose, pendingPassword, sourceEmail)
+  }
+
   const handleEntrySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isEntrySubmitting) return
@@ -405,9 +465,9 @@ export function LoginPage() {
     try {
       await new Promise((resolve) => setTimeout(resolve, 250))
       const nextEmail = syncEmail(normalizedEmail)
-      clearOtpContext()
 
       if (isCreateAccountEntry) {
+        clearOtpContext()
         navigate('/create-account/password', {
           state: getAuthState(nextEmail),
         })
@@ -426,6 +486,7 @@ export function LoginPage() {
       }
 
       if (passwordLogin) {
+        clearOtpContext()
         navigate('/log-in/password', {
           state: getAuthState(nextEmail),
         })
@@ -433,7 +494,7 @@ export function LoginPage() {
       }
 
       try {
-        const { otpContext } = await requestOtpChallenge('login_otp', '', nextEmail)
+        const { otpContext } = await ensureOtpChallenge('login_otp', '', nextEmail)
         navigate('/email-verification', {
           state: getAuthState(nextEmail, otpContext),
         })
@@ -444,17 +505,6 @@ export function LoginPage() {
     } finally {
       setIsEntrySubmitting(false)
     }
-  }
-
-  const requestOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
-    const normalizedEmail = sourceEmail.trim()
-    const otpChallenge = await sendOtp({ email: normalizedEmail, purpose })
-    const otpContext = syncOtpContext({
-      challengeId: otpChallenge.challengeId,
-      purpose,
-      pendingPassword,
-    })
-    return { normalizedEmail, otpContext }
   }
 
   const handlePasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -484,7 +534,7 @@ export function LoginPage() {
     setIsPasswordSubmitting(true)
     try {
       if (isCreateAccountPassword) {
-        const { normalizedEmail, otpContext } = await requestOtpChallenge('signup_password', password.trim())
+        const { normalizedEmail, otpContext } = await ensureOtpChallenge('signup_password', password.trim())
         setPassword('')
         navigate('/email-verification', {
           state: getAuthState(normalizedEmail, otpContext),
@@ -509,7 +559,7 @@ export function LoginPage() {
       const code = getApiErrorCode(error)
       if (!isCreateAccountPassword && code === 'AUTH_PASSWORD_NOT_SET') {
         try {
-          const { normalizedEmail, otpContext } = await requestOtpChallenge('login_otp')
+          const { normalizedEmail, otpContext } = await ensureOtpChallenge('login_otp')
           navigate('/email-verification', {
             state: getAuthState(normalizedEmail, otpContext),
           })
@@ -571,7 +621,7 @@ export function LoginPage() {
     setPasswordErrorText('')
     setIsOtpSending(true)
     try {
-      const { otpContext } = await requestOtpChallenge(purpose)
+      const { otpContext } = await ensureOtpChallenge(purpose, '', normalizedEmail)
       navigate('/email-verification', {
         state: getAuthState(normalizedEmail, otpContext),
       })
