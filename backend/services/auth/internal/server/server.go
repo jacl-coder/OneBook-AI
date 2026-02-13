@@ -413,7 +413,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, user domain.User) {
 	id := strings.TrimPrefix(r.URL.Path, "/auth/admin/users/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if r.Method != http.MethodPatch {
@@ -581,6 +581,81 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+type errorResponse struct {
+	Error string `json:"error"`
+	Code  string `json:"code"`
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, errorResponse{
+		Error: msg,
+		Code:  errorCodeForAuth(status, msg),
+	})
+}
+
+func errorCodeForAuth(status int, msg string) string {
+	message := strings.ToLower(strings.TrimSpace(msg))
+	switch {
+	case strings.Contains(message, "incorrect email address or password"), strings.Contains(message, "invalid credentials"):
+		return "AUTH_INVALID_CREDENTIALS"
+	case strings.Contains(message, "invalid refresh token"), strings.Contains(message, "refresh token required"), strings.Contains(message, "refresh token revoked"), strings.Contains(message, "refresh token expired"):
+		if strings.Contains(message, "required") {
+			return "AUTH_REFRESH_TOKEN_REQUIRED"
+		}
+		return "AUTH_INVALID_REFRESH_TOKEN"
+	case strings.Contains(message, "email and password required"):
+		return "AUTH_INVALID_REQUEST"
+	case strings.Contains(message, "email already exists"):
+		return "AUTH_EMAIL_ALREADY_EXISTS"
+	case strings.HasPrefix(message, "password must"):
+		return "AUTH_PASSWORD_POLICY_VIOLATION"
+	case message == "email required", message == "email is required":
+		return "AUTH_EMAIL_REQUIRED"
+	case message == "currentpassword and newpassword are required":
+		return "AUTH_PASSWORD_FIELDS_REQUIRED"
+	case message == "invalid role":
+		return "ADMIN_INVALID_ROLE"
+	case message == "invalid status":
+		return "ADMIN_INVALID_STATUS"
+	case message == "role or status is required":
+		return "ADMIN_UPDATE_FIELDS_REQUIRED"
+	case message == "too many signup attempts":
+		return "AUTH_SIGNUP_RATE_LIMITED"
+	case message == "too many login attempts":
+		return "AUTH_LOGIN_RATE_LIMITED"
+	case message == "too many refresh attempts", message == "too many logout attempts":
+		return "AUTH_REFRESH_RATE_LIMITED"
+	case message == "too many password change attempts":
+		return "AUTH_PASSWORD_CHANGE_RATE_LIMITED"
+	case message == "jwks not configured":
+		return "AUTH_JWKS_NOT_CONFIGURED"
+	case message == "unauthorized":
+		return "AUTH_INVALID_TOKEN"
+	case message == "forbidden":
+		return "ADMIN_FORBIDDEN"
+	case message == "method not allowed":
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	case message == "not found":
+		return "SYSTEM_NOT_FOUND"
+	}
+
+	switch status {
+	case http.StatusBadRequest:
+		return "AUTH_INVALID_REQUEST"
+	case http.StatusUnauthorized:
+		return "AUTH_INVALID_TOKEN"
+	case http.StatusForbidden:
+		return "ADMIN_FORBIDDEN"
+	case http.StatusNotFound:
+		return "SYSTEM_NOT_FOUND"
+	case http.StatusMethodNotAllowed:
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	case http.StatusTooManyRequests:
+		return "SYSTEM_RATE_LIMITED"
+	default:
+		if status >= http.StatusInternalServerError {
+			return "SYSTEM_INTERNAL_ERROR"
+		}
+		return "REQUEST_ERROR"
+	}
 }

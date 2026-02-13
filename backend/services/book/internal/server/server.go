@@ -146,7 +146,7 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	parts := strings.SplitN(path, "/", 2)
 	id := parts[0]
 	if id == "" {
-		http.NotFound(w, r)
+		notFound(w, "not found")
 		return
 	}
 
@@ -156,7 +156,7 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 		return
 	}
 	if len(parts) == 2 {
-		http.NotFound(w, r)
+		notFound(w, "not found")
 		return
 	}
 
@@ -222,13 +222,13 @@ func (s *Server) handleInternalBook(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/internal/books/")
 	parts := strings.Split(path, "/")
 	if len(parts) != 2 {
-		http.NotFound(w, r)
+		notFound(w, "not found")
 		return
 	}
 	id := parts[0]
 	action := parts[1]
 	if id == "" || action == "" {
-		http.NotFound(w, r)
+		notFound(w, "not found")
 		return
 	}
 	switch action {
@@ -245,7 +245,7 @@ func (s *Server) handleInternalBook(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleInternalStatus(w, r, id)
 	default:
-		http.NotFound(w, r)
+		notFound(w, "not found")
 	}
 }
 
@@ -342,8 +342,66 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+type errorResponse struct {
+	Error string `json:"error"`
+	Code  string `json:"code"`
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, errorResponse{
+		Error: msg,
+		Code:  errorCodeForBook(status, msg),
+	})
+}
+
+func errorCodeForBook(status int, msg string) string {
+	message := strings.ToLower(strings.TrimSpace(msg))
+	switch {
+	case message == "auth client not configured", message == "internal auth not configured":
+		return "SYSTEM_INTERNAL_ERROR"
+	case message == "unauthorized":
+		return "AUTH_INVALID_TOKEN"
+	case message == "forbidden":
+		return "BOOK_FORBIDDEN"
+	case message == "book not found":
+		return "BOOK_NOT_FOUND"
+	case message == "file too large":
+		return "BOOK_FILE_TOO_LARGE"
+	case message == "filename required", strings.Contains(message, "file is required"):
+		return "BOOK_FILE_REQUIRED"
+	case strings.Contains(message, "unsupported file type"):
+		return "BOOK_UNSUPPORTED_FILE_TYPE"
+	case message == "invalid form data":
+		return "BOOK_INVALID_UPLOAD_FORM"
+	case message == "invalid json body":
+		return "BOOK_INVALID_REQUEST"
+	case message == "invalid status":
+		return "BOOK_INVALID_STATUS"
+	case message == "failed to generate download url":
+		return "BOOK_DOWNLOAD_URL_FAILED"
+	case message == "method not allowed":
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	case message == "not found":
+		return "SYSTEM_NOT_FOUND"
+	}
+
+	switch status {
+	case http.StatusBadRequest:
+		return "BOOK_INVALID_REQUEST"
+	case http.StatusUnauthorized:
+		return "AUTH_INVALID_TOKEN"
+	case http.StatusForbidden:
+		return "BOOK_FORBIDDEN"
+	case http.StatusNotFound:
+		return "BOOK_NOT_FOUND"
+	case http.StatusMethodNotAllowed:
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	default:
+		if status >= http.StatusInternalServerError {
+			return "SYSTEM_INTERNAL_ERROR"
+		}
+		return "REQUEST_ERROR"
+	}
 }
 
 type statusRequest struct {

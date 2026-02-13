@@ -289,7 +289,7 @@ func (a *App) ChangePassword(userID, currentPassword, newPassword string) error 
 		return fmt.Errorf("user disabled")
 	}
 	if !auth.CheckPassword(currentPassword, user.PasswordHash) {
-		return fmt.Errorf("invalid credentials")
+		return ErrInvalidCredentials
 	}
 	if currentPassword == newPassword {
 		return fmt.Errorf("new password must differ from current password")
