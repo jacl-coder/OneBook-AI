@@ -120,6 +120,7 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/auth/login/methods", s.handleLoginMethods)
 	s.mux.HandleFunc("/auth/otp/send", s.handleOTPSend)
 	s.mux.HandleFunc("/auth/otp/verify", s.handleOTPVerify)
 	s.mux.HandleFunc("/auth/refresh", s.handleRefresh)
@@ -267,6 +268,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req loginMethodsRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.login.methods", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		s.audit(r, "auth.login.methods", "fail", "reason", "invalid_email")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	if !s.allowRateKey(w, s.loginLimiter, key, "too many login method checks") {
+		s.audit(r, "auth.login.methods", "rate_limited")
+		return
+	}
+	passwordLogin, err := s.app.CanLoginWithPassword(email)
+	if err != nil {
+		slog.Error("auth.login.methods_error", "err", err)
+		s.audit(r, "auth.login.methods", "fail", "reason", "internal_error")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	s.audit(r, "auth.login.methods", "success")
+	writeJSON(w, http.StatusOK, loginMethodsResponse{PasswordLogin: passwordLogin})
+}
+
 func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -367,7 +401,7 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if purpose == otpPurposeSignupPassword && strings.TrimSpace(req.Password) == "" {
 		s.audit(r, "auth.otp.verify", "fail", "reason", "missing_password")
-		writeError(w, http.StatusBadRequest, "password is required for signup_password")
+		writeError(w, http.StatusBadRequest, "password is required for password sign-up")
 		return
 	}
 	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
@@ -634,6 +668,14 @@ type authRequest struct {
 	Password string `json:"password"`
 }
 
+type loginMethodsRequest struct {
+	Email string `json:"email"`
+}
+
+type loginMethodsResponse struct {
+	PasswordLogin bool `json:"passwordLogin"`
+}
+
 type otpSendRequest struct {
 	Email   string `json:"email"`
 	Purpose string `json:"purpose"`
@@ -851,11 +893,13 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_SIGNUP_RATE_LIMITED"
 	case message == "too many login attempts":
 		return "AUTH_LOGIN_RATE_LIMITED"
+	case message == "too many login method checks":
+		return "AUTH_LOGIN_METHOD_RATE_LIMITED"
 	case message == "too many refresh attempts", message == "too many logout attempts":
 		return "AUTH_REFRESH_RATE_LIMITED"
 	case message == "too many password change attempts":
 		return "AUTH_PASSWORD_CHANGE_RATE_LIMITED"
-	case message == "password is required for signup_password":
+	case message == "password is required for password sign-up":
 		return "AUTH_PASSWORD_REQUIRED"
 	case message == "jwks not configured":
 		return "AUTH_JWKS_NOT_CONFIGURED"

@@ -135,6 +135,7 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/api/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/auth/login/methods", s.handleLoginMethods)
 	s.mux.HandleFunc("/api/auth/otp/send", s.handleOTPSend)
 	s.mux.HandleFunc("/api/auth/otp/verify", s.handleOTPVerify)
 	s.mux.HandleFunc("/api/auth/refresh", s.handleRefresh)
@@ -167,7 +168,7 @@ func (s *Server) authenticated(next authHandler) http.Handler {
 		user, ok := s.authorize(r)
 		if !ok {
 			s.audit(r, "gateway.authorize", "fail")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 			return
 		}
 		s.audit(r, "gateway.authorize", "success", "user_id", user.ID)
@@ -180,18 +181,18 @@ func (s *Server) adminOnly(next authHandler) http.Handler {
 		token, ok := bearerToken(r)
 		if !ok {
 			s.audit(r, "gateway.admin.authorize", "fail", "reason", "missing_token")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 			return
 		}
 		user, err := s.auth.Me(requestIDFromRequest(r), token)
 		if err != nil {
 			s.audit(r, "gateway.admin.authorize", "fail", "reason", "auth_me_failed")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 			return
 		}
 		if user.Role != domain.RoleAdmin {
 			s.audit(r, "gateway.admin.authorize", "fail", "user_id", user.ID, "reason", "forbidden")
-			writeErrorWithCode(w, r, http.StatusForbidden, "forbidden", "ADMIN_FORBIDDEN")
+			writeErrorWithCode(w, r, http.StatusForbidden, "you do not have permission", "ADMIN_FORBIDDEN")
 			return
 		}
 		s.audit(r, "gateway.admin.authorize", "success", "user_id", user.ID)
@@ -233,7 +234,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.signup", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	user, accessToken, refreshToken, err := s.auth.SignUp(requestIDFromRequest(r), req.Email, req.Password)
@@ -262,7 +263,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.login", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	user, accessToken, refreshToken, err := s.auth.Login(requestIDFromRequest(r), req.Email, req.Password)
@@ -279,24 +280,54 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if !s.allowRate(w, r, s.loginLimiter, "too many login method checks", "AUTH_LOGIN_METHOD_RATE_LIMITED") {
+		s.audit(r, "gateway.login.methods", "rate_limited")
+		return
+	}
+	var req loginMethodsRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "gateway.login.methods", "fail", "reason", "invalid_json")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		s.audit(r, "gateway.login.methods", "fail", "reason", "missing_email")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
+		return
+	}
+	passwordLogin, err := s.auth.LoginMethods(requestIDFromRequest(r), req.Email)
+	if err != nil {
+		s.audit(r, "gateway.login.methods", "fail", "reason", err.Error())
+		writeAuthError(w, r, err)
+		return
+	}
+	s.audit(r, "gateway.login.methods", "success")
+	writeJSON(w, http.StatusOK, loginMethodsResponse{PasswordLogin: passwordLogin})
+}
+
 func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
 		return
 	}
-	if !s.allowRate(w, r, s.signupLimiter, "too many otp send attempts", "AUTH_OTP_SEND_RATE_LIMITED") {
+	if !s.allowRate(w, r, s.signupLimiter, "too many verification code requests", "AUTH_OTP_SEND_RATE_LIMITED") {
 		s.audit(r, "gateway.otp.send", "rate_limited")
 		return
 	}
 	var req otpSendRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.otp.send", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" {
 		s.audit(r, "gateway.otp.send", "fail", "reason", "missing_fields")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "email and purpose are required", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "email and verification purpose are required", "AUTH_INVALID_REQUEST")
 		return
 	}
 	resp, err := s.auth.OTPSend(requestIDFromRequest(r), req.Email, req.Purpose)
@@ -314,19 +345,19 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, r)
 		return
 	}
-	if !s.allowRate(w, r, s.loginLimiter, "too many otp verify attempts", "AUTH_OTP_VERIFY_RATE_LIMITED") {
+	if !s.allowRate(w, r, s.loginLimiter, "too many verification attempts", "AUTH_OTP_VERIFY_RATE_LIMITED") {
 		s.audit(r, "gateway.otp.verify", "rate_limited")
 		return
 	}
 	var req otpVerifyRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.otp.verify", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	if strings.TrimSpace(req.ChallengeID) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" || strings.TrimSpace(req.Code) == "" {
 		s.audit(r, "gateway.otp.verify", "fail", "reason", "missing_fields")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "challengeId, email, purpose and code are required", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "verification request is incomplete", "AUTH_INVALID_REQUEST")
 		return
 	}
 	user, accessToken, refreshToken, err := s.auth.OTPVerify(
@@ -362,12 +393,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.refresh", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	if strings.TrimSpace(req.RefreshToken) == "" {
 		s.audit(r, "gateway.refresh", "fail", "reason", "missing_refresh_token")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "refreshToken is required", "AUTH_REFRESH_TOKEN_REQUIRED")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "refresh token is required", "AUTH_REFRESH_TOKEN_REQUIRED")
 		return
 	}
 	user, accessToken, refreshToken, err := s.auth.Refresh(requestIDFromRequest(r), req.RefreshToken)
@@ -396,13 +427,13 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	var req logoutRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		s.audit(r, "gateway.logout", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	token, ok := bearerToken(r)
 	if !ok {
 		s.audit(r, "gateway.logout", "fail", "reason", "missing_token")
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	if err := s.auth.Logout(requestIDFromRequest(r), token, req.RefreshToken); err != nil {
@@ -435,7 +466,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 	case http.MethodPatch:
 		var req updateMeRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-			writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+			writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 			return
 		}
 		if req.Email == "" {
@@ -444,7 +475,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 		}
 		token, ok := bearerToken(r)
 		if !ok {
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 			return
 		}
 		updated, err := s.auth.UpdateMe(requestIDFromRequest(r), token, req.Email)
@@ -470,16 +501,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 	}
 	var req changePasswordRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
 	if strings.TrimSpace(req.NewPassword) == "" {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "newPassword is required", "AUTH_NEW_PASSWORD_REQUIRED")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "new password is required", "AUTH_NEW_PASSWORD_REQUIRED")
 		return
 	}
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	if err := s.auth.ChangePassword(requestIDFromRequest(r), token, req.CurrentPassword, req.NewPassword); err != nil {
@@ -494,7 +525,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	_ = user
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	switch r.Method {
@@ -512,7 +543,7 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	_ = user
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/books/")
@@ -612,16 +643,16 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 	}
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	var req chatRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "CHAT_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "CHAT_INVALID_REQUEST")
 		return
 	}
 	if req.BookID == "" {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "bookId is required", "CHAT_BOOK_ID_REQUIRED")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "book ID is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
 	ans, err := s.chat.AskQuestion(requestIDFromRequest(r), token, req.BookID, req.Question)
@@ -641,7 +672,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 	}
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	users, err := s.auth.AdminListUsers(requestIDFromRequest(r), token)
@@ -668,7 +699,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 	}
 	var req adminUserUpdateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "ADMIN_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "ADMIN_INVALID_REQUEST")
 		return
 	}
 	var role *domain.UserRole
@@ -695,7 +726,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 	}
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	updated, err := s.auth.AdminUpdateUser(requestIDFromRequest(r), token, id, role, status)
@@ -714,7 +745,7 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user d
 	}
 	token, ok := bearerToken(r)
 	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
+		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	books, err := s.books.ListBooks(requestIDFromRequest(r), token)
@@ -740,6 +771,14 @@ type chatRequest struct {
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type loginMethodsRequest struct {
+	Email string `json:"email"`
+}
+
+type loginMethodsResponse struct {
+	PasswordLogin bool `json:"passwordLogin"`
 }
 
 type otpSendRequest struct {

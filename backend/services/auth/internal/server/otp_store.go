@@ -23,14 +23,14 @@ const (
 )
 
 var (
-	errOTPSendRateLimited   = errors.New("too many otp send attempts")
-	errOTPVerifyRateLimited = errors.New("too many otp verify attempts")
-	errOTPPurposeInvalid    = errors.New("invalid otp purpose")
-	errOTPChallengeInvalid  = errors.New("otp challenge invalid")
-	errOTPCodeInvalid       = errors.New("otp code invalid")
-	errOTPCodeExpired       = errors.New("otp code expired")
-	errOTPCodeRequired      = errors.New("otp code required")
-	errOTPChallengeRequired = errors.New("otp challengeId required")
+	errOTPSendRateLimited   = errors.New("too many verification code requests")
+	errOTPVerifyRateLimited = errors.New("too many verification attempts")
+	errOTPPurposeInvalid    = errors.New("invalid verification purpose")
+	errOTPChallengeInvalid  = errors.New("verification request is invalid")
+	errOTPCodeInvalid       = errors.New("incorrect verification code")
+	errOTPCodeExpired       = errors.New("verification code expired")
+	errOTPCodeRequired      = errors.New("verification code is required")
+	errOTPChallengeRequired = errors.New("verification session is required")
 )
 
 type otpStore struct {

@@ -56,6 +56,15 @@ func (c *Client) Login(requestID, email, password string) (domain.User, string, 
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
+func (c *Client) LoginMethods(requestID, email string) (bool, error) {
+	payload := map[string]string{"email": email}
+	var resp LoginMethodsResponse
+	if err := c.doJSON(http.MethodPost, "/auth/login/methods", requestID, "", payload, &resp); err != nil {
+		return false, err
+	}
+	return resp.PasswordLogin, nil
+}
+
 func (c *Client) OTPSend(requestID, email, purpose string) (OTPSendResponse, error) {
 	payload := map[string]string{"email": email, "purpose": purpose}
 	var resp OTPSendResponse
@@ -216,6 +225,10 @@ type OTPSendResponse struct {
 	ExpiresInSeconds   int    `json:"expiresInSeconds"`
 	ResendAfterSeconds int    `json:"resendAfterSeconds"`
 	MaskedEmail        string `json:"maskedEmail,omitempty"`
+}
+
+type LoginMethodsResponse struct {
+	PasswordLogin bool `json:"passwordLogin"`
 }
 
 type listUsersResponse struct {

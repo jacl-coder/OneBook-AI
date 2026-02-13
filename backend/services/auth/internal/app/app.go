@@ -288,6 +288,23 @@ func (a *App) HasUserEmail(email string) (bool, error) {
 	return a.store.HasUserEmail(email)
 }
 
+// CanLoginWithPassword reports whether an email should go to password login.
+// Unknown/disabled/non-password accounts all return false to reduce account enumeration.
+func (a *App) CanLoginWithPassword(email string) (bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return false, ErrEmailRequired
+	}
+	user, ok, err := a.store.GetUserByEmail(email)
+	if err != nil {
+		return false, fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok || user.Status == domain.StatusDisabled {
+		return false, nil
+	}
+	return hasPassword(user.PasswordHash), nil
+}
+
 // ListUsers returns all users (admin use only).
 func (a *App) ListUsers() ([]domain.User, error) {
 	return a.store.ListUsers()

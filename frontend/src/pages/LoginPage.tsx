@@ -11,17 +11,31 @@ import eyeIconSvg from '@/assets/icons/eye.svg'
 import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 import successCheckmarkCircleSvg from '@/assets/icons/success-checkmark-circle.svg'
 
-import { getApiErrorMessage, login, signup } from '@/features/auth/api/auth'
+import {
+  getApiErrorCode,
+  getApiErrorMessage,
+  loginMethods,
+  login,
+  sendOtp,
+  type OtpPurpose,
+  verifyOtp,
+} from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const AUTH_EMAIL_STORAGE_KEY = 'auth:email'
 const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
+const AUTH_OTP_CHALLENGE_STORAGE_KEY = 'auth:otp:challenge-id'
+const AUTH_OTP_PURPOSE_STORAGE_KEY = 'auth:otp:purpose'
+const AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY = 'auth:otp:pending-password'
 const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
 
 type AuthNavigationState = {
   email?: string
   errorMessage?: string
+  challengeId?: string
+  purpose?: OtpPurpose
+  pendingPassword?: string
 }
 
 type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew' | 'resetSuccess' | 'error'
@@ -38,6 +52,14 @@ function getStep(pathname: string): Step {
 
 function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeOtpPurpose(value: unknown): OtpPurpose | '' {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'signup_password') return 'signup_password'
+  if (normalized === 'signup_otp') return 'signup_otp'
+  if (normalized === 'login_otp') return 'login_otp'
+  return ''
 }
 
 function readSessionValue(key: string) {
@@ -74,11 +96,23 @@ export function LoginPage() {
   const locationSearchEmail = normalizeText(new URLSearchParams(location.search).get('email'))
   const locationStateEmail = normalizeText(locationState?.email) || locationSearchEmail
   const locationStateErrorMessage = normalizeText(locationState?.errorMessage)
+  const locationStateChallengeId = normalizeText(locationState?.challengeId)
+  const locationStatePurpose = normalizeOtpPurpose(locationState?.purpose)
+  const locationStatePendingPassword = normalizeText(locationState?.pendingPassword)
   const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
   const [authErrorMessage, setAuthErrorMessage] = useState(() => {
     const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
     return initialError || DEFAULT_AUTH_ERROR_MESSAGE
   })
+  const [otpChallengeId, setOtpChallengeId] = useState(
+    () => locationStateChallengeId || readSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY),
+  )
+  const [otpPurpose, setOtpPurpose] = useState<OtpPurpose | ''>(
+    () => locationStatePurpose || normalizeOtpPurpose(readSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY)),
+  )
+  const [otpPendingPassword, setOtpPendingPassword] = useState(
+    () => locationStatePendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY),
+  )
 
   const emailId = useId()
   const emailLabelId = useId()
@@ -123,6 +157,7 @@ export function LoginPage() {
   const lastSubmittedVerifyCodeRef = useRef('')
   const [verifyErrorText, setVerifyErrorText] = useState('')
   const [isVerifySubmitting, setIsVerifySubmitting] = useState(false)
+  const [isOtpSending, setIsOtpSending] = useState(false)
 
   const entryInputRef = useRef<HTMLInputElement>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
@@ -211,6 +246,8 @@ export function LoginPage() {
   const isConfirmPasswordInvalid = confirmPasswordErrorText.length > 0
   const isConfirmPasswordActive = isConfirmPasswordFocused || hasConfirmPasswordValue
   const verifyDescribedBy = verifyErrorText ? `${verifySubtitleId} ${verifyErrorId}` : verifySubtitleId
+  const passwordContinuePath =
+    otpPurpose === 'signup_password' || otpPurpose === 'signup_otp' ? '/create-account/password' : '/log-in/password'
 
   const newPasswordWrapClassName = [
     'auth-input-wrap',
@@ -236,11 +273,47 @@ export function LoginPage() {
     .filter(Boolean)
     .join(' ')
 
-  const getAuthState = (emailValue: string): AuthNavigationState => {
+  const getAuthState = (
+    emailValue: string,
+    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword'>>,
+  ): AuthNavigationState => {
     const normalizedEmail = normalizeText(emailValue)
     const state: AuthNavigationState = {}
     if (normalizedEmail) state.email = normalizedEmail
+    if (extras?.challengeId) state.challengeId = normalizeText(extras.challengeId)
+    if (extras?.purpose) state.purpose = normalizeOtpPurpose(extras.purpose) || undefined
+    if (extras?.pendingPassword) state.pendingPassword = normalizeText(extras.pendingPassword)
     return state
+  }
+
+  const syncOtpContext = (payload: { challengeId: string; purpose: OtpPurpose; pendingPassword?: string }) => {
+    const challengeId = normalizeText(payload.challengeId)
+    const purpose = payload.purpose
+    const pendingPassword = normalizeText(payload.pendingPassword)
+
+    setOtpChallengeId(challengeId)
+    writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, challengeId)
+
+    setOtpPurpose(purpose)
+    writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, purpose)
+
+    if (purpose === 'signup_password' && pendingPassword) {
+      setOtpPendingPassword(pendingPassword)
+      writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, pendingPassword)
+      return { challengeId, purpose, pendingPassword }
+    }
+    setOtpPendingPassword('')
+    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
+    return { challengeId, purpose, pendingPassword: '' }
+  }
+
+  const clearOtpContext = () => {
+    setOtpChallengeId('')
+    setOtpPurpose('')
+    setOtpPendingPassword('')
+    writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, '')
+    writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, '')
+    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
   }
 
   const syncEmail = (emailValue: string) => {
@@ -255,6 +328,30 @@ export function LoginPage() {
     if (nextEmail !== stepEmail) schedule(() => setStepEmail(nextEmail))
     writeSessionValue(AUTH_EMAIL_STORAGE_KEY, nextEmail)
   }, [location.key, locationStateEmail, stepEmail])
+
+  useEffect(() => {
+    const nextChallengeId = locationStateChallengeId || otpChallengeId || readSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY)
+    if (nextChallengeId !== otpChallengeId) schedule(() => setOtpChallengeId(nextChallengeId))
+    writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, nextChallengeId)
+
+    const nextPurpose =
+      locationStatePurpose || otpPurpose || normalizeOtpPurpose(readSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY))
+    if (nextPurpose !== otpPurpose) schedule(() => setOtpPurpose(nextPurpose))
+    writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, nextPurpose)
+
+    const nextPendingPassword =
+      locationStatePendingPassword || otpPendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY)
+    if (nextPendingPassword !== otpPendingPassword) schedule(() => setOtpPendingPassword(nextPendingPassword))
+    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, nextPendingPassword)
+  }, [
+    location.key,
+    locationStateChallengeId,
+    locationStatePurpose,
+    locationStatePendingPassword,
+    otpChallengeId,
+    otpPurpose,
+    otpPendingPassword,
+  ])
 
   useEffect(() => {
     if (step !== 'error') return
@@ -305,16 +402,64 @@ export function LoginPage() {
     const normalizedEmail = email.trim()
     setEmailErrorText('')
     setIsEntrySubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    const nextEmail = syncEmail(normalizedEmail)
-    navigate(isCreateAccountEntry ? '/create-account/password' : '/log-in/password', {
-      state: getAuthState(nextEmail),
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const nextEmail = syncEmail(normalizedEmail)
+      clearOtpContext()
+
+      if (isCreateAccountEntry) {
+        navigate('/create-account/password', {
+          state: getAuthState(nextEmail),
+        })
+        return
+      }
+
+      let passwordLogin = true
+      try {
+        const methods = await loginMethods({ email: nextEmail })
+        passwordLogin = methods.passwordLogin
+      } catch {
+        navigate('/log-in/password', {
+          state: getAuthState(nextEmail),
+        })
+        return
+      }
+
+      if (passwordLogin) {
+        navigate('/log-in/password', {
+          state: getAuthState(nextEmail),
+        })
+        return
+      }
+
+      try {
+        const { otpContext } = await requestOtpChallenge('login_otp', '', nextEmail)
+        navigate('/email-verification', {
+          state: getAuthState(nextEmail, otpContext),
+        })
+      } catch (error) {
+        setEmailErrorText(getApiErrorMessage(error, 'Failed to send verification code. Please try again.'))
+        entryInputRef.current?.focus()
+      }
+    } finally {
+      setIsEntrySubmitting(false)
+    }
+  }
+
+  const requestOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
+    const normalizedEmail = sourceEmail.trim()
+    const otpChallenge = await sendOtp({ email: normalizedEmail, purpose })
+    const otpContext = syncOtpContext({
+      challengeId: otpChallenge.challengeId,
+      purpose,
+      pendingPassword,
     })
+    return { normalizedEmail, otpContext }
   }
 
   const handlePasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (isPasswordSubmitting) return
+    if (isPasswordSubmitting || isOtpSending) return
 
     if (!stepEmail.trim()) {
       setPasswordErrorText('Please enter your email first.')
@@ -338,9 +483,17 @@ export function LoginPage() {
     setPasswordErrorText('')
     setIsPasswordSubmitting(true)
     try {
-      const auth = isCreateAccountPassword
-        ? await signup({ email: stepEmail.trim(), password: password.trim() })
-        : await login({ email: stepEmail.trim(), password: password.trim() })
+      if (isCreateAccountPassword) {
+        const { normalizedEmail, otpContext } = await requestOtpChallenge('signup_password', password.trim())
+        setPassword('')
+        navigate('/email-verification', {
+          state: getAuthState(normalizedEmail, otpContext),
+        })
+        return
+      }
+
+      const auth = await login({ email: stepEmail.trim(), password: password.trim() })
+      clearOtpContext()
       setSession({
         accessToken: auth.token,
         refreshToken: auth.refreshToken,
@@ -353,19 +506,81 @@ export function LoginPage() {
       })
       navigate('/library')
     } catch (error) {
+      const code = getApiErrorCode(error)
+      if (!isCreateAccountPassword && code === 'AUTH_PASSWORD_NOT_SET') {
+        try {
+          const { normalizedEmail, otpContext } = await requestOtpChallenge('login_otp')
+          navigate('/email-verification', {
+            state: getAuthState(normalizedEmail, otpContext),
+          })
+          return
+        } catch (otpError) {
+          setPasswordErrorText(getApiErrorMessage(otpError, 'Failed to send verification code. Please try again.'))
+          passwordInputRef.current?.focus()
+          return
+        }
+      }
       setPasswordErrorText(
-        getApiErrorMessage(error, isCreateAccountPassword ? 'Sign up failed. Please try again.' : 'Login failed. Please try again.'),
+        getApiErrorMessage(error, isCreateAccountPassword ? 'Failed to send verification code. Please try again.' : 'Login failed. Please try again.'),
       )
-      setIsPasswordSubmitting(false)
       passwordInputRef.current?.focus()
+    } finally {
+      setIsPasswordSubmitting(false)
     }
   }
 
-  const resendEmail = () => {
-    lastSubmittedVerifyCodeRef.current = ''
-    setOtp(['', '', '', '', '', ''])
+  const resendEmail = async () => {
+    if (isVerifySubmitting || isOtpSending) return
+    if (!stepEmail.trim()) {
+      setVerifyErrorText('Please enter your email first.')
+      return
+    }
+    if (!otpPurpose) {
+      setVerifyErrorText('Verification session expired. Please restart from login.')
+      return
+    }
     setVerifyErrorText('')
-    otpRefs.current[0]?.focus()
+    setIsOtpSending(true)
+    try {
+      const { otpContext } = await requestOtpChallenge(otpPurpose, otpPendingPassword)
+      navigate('/email-verification', {
+        replace: true,
+        state: getAuthState(stepEmail, otpContext),
+      })
+      lastSubmittedVerifyCodeRef.current = ''
+      setOtp(['', '', '', '', '', ''])
+      otpRefs.current[0]?.focus()
+    } catch (error) {
+      setVerifyErrorText(getApiErrorMessage(error, 'Failed to resend verification code. Please try again.'))
+    } finally {
+      setIsOtpSending(false)
+    }
+  }
+
+  const handlePasswordlessOtpAction = async () => {
+    if (isPasswordSubmitting || isOtpSending) return
+
+    const normalizedEmail = stepEmail.trim()
+    if (!normalizedEmail) {
+      setPasswordErrorText('Please enter your email first.')
+      navigate('/log-in', { state: getAuthState('') })
+      return
+    }
+
+    const purpose: OtpPurpose = isCreateAccountPassword ? 'signup_otp' : 'login_otp'
+    setPasswordErrorText('')
+    setIsOtpSending(true)
+    try {
+      const { otpContext } = await requestOtpChallenge(purpose)
+      navigate('/email-verification', {
+        state: getAuthState(normalizedEmail, otpContext),
+      })
+    } catch (error) {
+      setPasswordErrorText(getApiErrorMessage(error, 'Failed to send verification code. Please try again.'))
+      passwordInputRef.current?.focus()
+    } finally {
+      setIsOtpSending(false)
+    }
   }
 
   const updateOtpAt = (index: number, rawValue: string) => {
@@ -375,6 +590,7 @@ export function LoginPage() {
     setOtp((prev) => {
       const next = [...prev]
       next[index] = value
+      autoSubmitOtpIfComplete(next)
       return next
     })
     if (value && index < 5) {
@@ -394,6 +610,69 @@ export function LoginPage() {
     }
   }
 
+  const submitVerifyCode = async (code: string) => {
+    if (isVerifySubmitting || isOtpSending) return
+
+    const normalizedEmail = stepEmail.trim()
+    if (!normalizedEmail) {
+      setVerifyErrorText('Please enter your email first.')
+      return
+    }
+    if (!otpChallengeId || !otpPurpose) {
+      setVerifyErrorText('Verification session expired. Please restart login or sign up.')
+      return
+    }
+    if (code.length !== 6) {
+      setVerifyErrorText('Please enter the 6-digit verification code.')
+      return
+    }
+
+    const passwordForSignupPassword = otpPurpose === 'signup_password' ? otpPendingPassword.trim() : ''
+    if (otpPurpose === 'signup_password' && !passwordForSignupPassword) {
+      setVerifyErrorText('Sign-up session expired. Please set password again.')
+      return
+    }
+
+    const setSession = useSessionStore.getState().setSession
+    setVerifyErrorText('')
+    setIsVerifySubmitting(true)
+    try {
+      const auth = await verifyOtp({
+        challengeId: otpChallengeId,
+        email: normalizedEmail,
+        purpose: otpPurpose,
+        code,
+        password: passwordForSignupPassword || undefined,
+      })
+      clearOtpContext()
+      setSession({
+        accessToken: auth.token,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: auth.user.id,
+          email: auth.user.email,
+          role: auth.user.role,
+          status: auth.user.status,
+        },
+      })
+      navigate('/library')
+    } catch (error) {
+      setVerifyErrorText(getApiErrorMessage(error, 'Verification failed. Please try again.'))
+    } finally {
+      setIsVerifySubmitting(false)
+    }
+  }
+
+  const autoSubmitOtpIfComplete = (digits: string[]) => {
+    if (step !== 'verify') return
+    if (isVerifySubmitting || isOtpSending) return
+    const code = digits.join('')
+    if (code.length !== 6) return
+    if (lastSubmittedVerifyCodeRef.current === code) return
+    lastSubmittedVerifyCodeRef.current = code
+    void submitVerifyCode(code)
+  }
+
   const handleOtpPaste = (event: ClipboardEvent<HTMLInputElement>) => {
     event.preventDefault()
     const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
@@ -404,6 +683,7 @@ export function LoginPage() {
     const filled = ['','','','','','']
     for (let i = 0; i < pasted.length; i += 1) filled[i] = pasted[i]
     setOtp(filled)
+    autoSubmitOtpIfComplete(filled)
 
     const nextIndex = Math.min(pasted.length, 5)
     otpRefs.current[nextIndex]?.focus()
@@ -424,12 +704,9 @@ export function LoginPage() {
 
   const handleVerifySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    navigate('/log-in/error', {
-      state: {
-        ...getAuthState(stepEmail),
-        errorMessage: 'Email code login/sign-up is not implemented yet. Please continue with password.',
-      } satisfies AuthNavigationState,
-    })
+    const code = otp.join('')
+    lastSubmittedVerifyCodeRef.current = code
+    await submitVerifyCode(code)
   }
 
   const handleResetNewPasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -722,7 +999,7 @@ export function LoginPage() {
 
                   <div className="auth-section auth-section-ctas auth-section-password-ctas">
                     <div className="auth-button-wrapper">
-                      <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting}>
+                      <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting || isOtpSending}>
                         继续
                       </button>
                     </div>
@@ -745,15 +1022,8 @@ export function LoginPage() {
                         <button
                           type="button"
                           className="auth-outline-btn auth-inline-passwordless-login"
-                          onClick={() => {
-                            navigate('/log-in/error', {
-                              state: {
-                                ...getAuthState(stepEmail),
-                                errorMessage:
-                                  '当前版本未接入邮箱验证码登录/注册，请使用密码方式继续。',
-                              } satisfies AuthNavigationState,
-                            })
-                          }}
+                          disabled={isPasswordSubmitting || isOtpSending}
+                          onClick={handlePasswordlessOtpAction}
                         >
                           {isCreateAccountPassword ? '使用一次性验证码注册' : '使用一次性验证码登录'}
                         </button>
@@ -816,7 +1086,7 @@ export function LoginPage() {
                             aria-label={`数字位 ${index + 1}`}
                             aria-describedby={verifyDescribedBy}
                             value={digit}
-                            disabled={isVerifySubmitting}
+                            disabled={isVerifySubmitting || isOtpSending}
                             onChange={(e) => updateOtpAt(index, e.target.value)}
                             onKeyDown={(e) => handleOtpKeyDown(index, e.key)}
                             onPaste={handleOtpPaste}
@@ -839,12 +1109,12 @@ export function LoginPage() {
 
                   <div className="auth-section auth-section-ctas auth-section-verify-ctas">
                     <div className="auth-button-wrapper">
-                      <button type="button" className="auth-outline-btn" onClick={resendEmail}>
+                      <button type="button" className="auth-outline-btn" disabled={isVerifySubmitting || isOtpSending} onClick={resendEmail}>
                         重新发送电子邮件
                       </button>
                     </div>
                     <div className="auth-button-wrapper">
-                      <Link className="auth-link-btn" to="/log-in/password" state={getAuthState(stepEmail)}>
+                      <Link className="auth-link-btn" to={passwordContinuePath} state={getAuthState(stepEmail)}>
                         使用密码继续
                       </Link>
                     </div>
