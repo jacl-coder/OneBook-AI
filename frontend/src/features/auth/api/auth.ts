@@ -8,6 +8,25 @@ type AuthRequest = {
   password: string
 }
 
+type LoginMethodsRequest = {
+  email: string
+}
+
+export type OtpPurpose = 'signup_password' | 'signup_otp' | 'login_otp'
+
+type OtpSendRequest = {
+  email: string
+  purpose: OtpPurpose
+}
+
+type OtpVerifyRequest = {
+  challengeId: string
+  email: string
+  purpose: OtpPurpose
+  code: string
+  password?: string
+}
+
 type BackendUser = AuthUser & {
   createdAt: string
   updatedAt: string
@@ -17,6 +36,17 @@ export type AuthResponse = {
   token: string
   refreshToken: string
   user: BackendUser
+}
+
+export type OtpSendResponse = {
+  challengeId: string
+  expiresInSeconds: number
+  resendAfterSeconds: number
+  maskedEmail?: string
+}
+
+export type LoginMethodsResponse = {
+  passwordLogin: boolean
 }
 
 type ErrorResponse = {
@@ -38,12 +68,34 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+export function getApiErrorCode(error: unknown): string {
+  if (!axios.isAxiosError(error)) return ''
+  const data = error.response?.data as Partial<ErrorResponse> | undefined
+  if (!data || typeof data.code !== 'string') return ''
+  return data.code.trim()
+}
+
 export async function login(payload: AuthRequest): Promise<AuthResponse> {
   const { data } = await http.post<AuthResponse>('/api/auth/login', payload)
   return data
 }
 
+export async function loginMethods(payload: LoginMethodsRequest): Promise<LoginMethodsResponse> {
+  const { data } = await http.post<LoginMethodsResponse>('/api/auth/login/methods', payload)
+  return data
+}
+
 export async function signup(payload: AuthRequest): Promise<AuthResponse> {
   const { data } = await http.post<AuthResponse>('/api/auth/signup', payload)
+  return data
+}
+
+export async function sendOtp(payload: OtpSendRequest): Promise<OtpSendResponse> {
+  const { data } = await http.post<OtpSendResponse>('/api/auth/otp/send', payload)
+  return data
+}
+
+export async function verifyOtp(payload: OtpVerifyRequest): Promise<AuthResponse> {
+  const { data } = await http.post<AuthResponse>('/api/auth/otp/verify', payload)
   return data
 }

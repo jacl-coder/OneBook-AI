@@ -113,6 +113,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/login/methods:
+    post:
+      tags: [auth]
+      summary: Resolve login method by email
+      description: |
+        Returns whether password login should be used for the given email.
+        When `passwordLogin=false`, client should continue with OTP flow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginMethodsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethodsResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/otp/send:
     post:
       tags: [auth]
@@ -753,6 +791,22 @@ components:
         user:
           $ref: "#/components/schemas/User"
       required: [token, refreshToken, user]
+    LoginMethodsRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required: [email]
+    LoginMethodsResponse:
+      type: object
+      properties:
+        passwordLogin:
+          type: boolean
+          description: |
+            Whether the client should continue with password login flow.
+            false means continue with OTP flow.
+      required: [passwordLogin]
     OtpPurpose:
       type: string
       enum: [signup_password, signup_otp, login_otp]
