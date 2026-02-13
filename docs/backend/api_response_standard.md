@@ -82,12 +82,18 @@
 - `AUTH_INVALID_CREDENTIALS`：邮箱或密码错误
 - `AUTH_INVALID_TOKEN`：访问令牌缺失/无效
 - `AUTH_INVALID_REFRESH_TOKEN`：刷新令牌无效/过期/撤销
+- `AUTH_PASSWORD_NOT_SET`：账号未设置密码，应走 OTP 登录
 - `AUTH_EMAIL_ALREADY_EXISTS`：注册邮箱已存在
 - `AUTH_INVALID_EMAIL`：邮箱格式不合法
 - `AUTH_PASSWORD_POLICY_VIOLATION`：密码不满足强度策略
 - `AUTH_EMAIL_REQUIRED`：缺少 email
 - `AUTH_REFRESH_TOKEN_REQUIRED`：缺少 refreshToken
 - `AUTH_PASSWORD_FIELDS_REQUIRED`：缺少 currentPassword/newPassword
+- `AUTH_OTP_CHALLENGE_INVALID`：OTP challenge 无效或不存在
+- `AUTH_OTP_CODE_INVALID`：OTP 验证码错误
+- `AUTH_OTP_CODE_EXPIRED`：OTP 验证码过期
+- `AUTH_OTP_SEND_RATE_LIMITED`：OTP 发送限流
+- `AUTH_OTP_VERIFY_RATE_LIMITED`：OTP 校验限流
 - `AUTH_INVALID_REQUEST`：Auth 域通用参数错误
 - `AUTH_JWKS_NOT_CONFIGURED`：JWKS 未配置
 - `AUTH_SIGNUP_RATE_LIMITED`：注册限流
@@ -144,7 +150,7 @@
 - `401`：未登录/凭证无效
 - `403`：权限不足
 - `404`：资源不存在
-- `409`：资源状态冲突（例如书未 `ready`）
+- `409`：资源或流程状态冲突（例如书未 `ready`，或账号未设密码需走 OTP 登录）
 - `422`：业务校验失败（可选；若不用 422 可继续用 400）
 - `429`：限流
 - `500`：内部错误

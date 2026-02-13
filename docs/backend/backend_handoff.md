@@ -15,10 +15,13 @@
 ### 2.1 登录态
 - 注册：`POST /api/auth/signup`
 - 登录：`POST /api/auth/login`
+- 发送 OTP：`POST /api/auth/otp/send`
+- 校验 OTP：`POST /api/auth/otp/verify`
 - 响应都包含：
   - `token`（access token）
   - `refreshToken`（refresh token）
   - `user`
+- 若密码登录命中无密码账号，返回 `AUTH_PASSWORD_NOT_SET`，前端应跳转 `/email-verification`。
 
 ### 2.2 刷新逻辑
 - 接口：`POST /api/auth/refresh`

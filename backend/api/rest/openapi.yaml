@@ -72,6 +72,10 @@ paths:
     post:
       tags: [auth]
       summary: Login
+      description: |
+        Password login entrypoint. If the account has no password configured,
+        service returns `AUTH_PASSWORD_NOT_SET` and client should continue with
+        OTP login flow at `/api/auth/otp/send` + `/api/auth/otp/verify`.
       requestBody:
         required: true
         content:
@@ -91,6 +95,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Account has no password, use OTP login
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal Server Error
           content:
@@ -99,6 +109,89 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/otp/send:
+    post:
+      tags: [auth]
+      summary: Send one-time verification code
+      description: |
+        Sends a one-time code to email for OTP auth flows.
+        For `signup_password`, client should collect password first, then send
+        OTP, then call `/api/auth/otp/verify` with both code and password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpSendRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpSendResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Verify one-time code
+      description: |
+        Verifies OTP code and completes login/registration.
+        Successful verification returns auth tokens and user payload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Invalid input or invalid OTP challenge/code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: OTP expired or verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -660,6 +753,56 @@ components:
         user:
           $ref: "#/components/schemas/User"
       required: [token, refreshToken, user]
+    OtpPurpose:
+      type: string
+      enum: [signup_password, signup_otp, login_otp]
+      description: |
+        OTP flow purpose:
+        - signup_password: password registration (set password first, then OTP)
+        - signup_otp: passwordless registration
+        - login_otp: OTP login
+    OtpSendRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        purpose:
+          $ref: "#/components/schemas/OtpPurpose"
+      required: [email, purpose]
+    OtpSendResponse:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+        resendAfterSeconds:
+          type: integer
+          minimum: 0
+        maskedEmail:
+          type: string
+      required: [challengeId, expiresInSeconds, resendAfterSeconds]
+    OtpVerifyRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        email:
+          type: string
+          format: email
+        purpose:
+          $ref: "#/components/schemas/OtpPurpose"
+        code:
+          type: string
+          minLength: 4
+          maxLength: 8
+        password:
+          type: string
+          description: Required when purpose is `signup_password`.
+          minLength: 12
+      required: [challengeId, email, purpose, code]
     RefreshRequest:
       type: object
       properties:
@@ -707,11 +850,14 @@ components:
       properties:
         currentPassword:
           type: string
+          description: |
+            Required for accounts that already have a password.
+            Optional for passwordless accounts setting password for the first time.
         newPassword:
           type: string
           description: At least 12 chars and must include upper/lower/digit/special.
           minLength: 12
-      required: [currentPassword, newPassword]
+      required: [newPassword]
     AdminUserUpdateRequest:
       type: object
       properties:
