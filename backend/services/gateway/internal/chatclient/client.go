@@ -35,7 +35,7 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) AskQuestion(token, bookID, question string) (domain.Answer, error) {
+func (c *Client) AskQuestion(requestID, token, bookID, question string) (domain.Answer, error) {
 	payload := chatRequest{BookID: bookID, Question: question}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -46,6 +46,7 @@ func (c *Client) AskQuestion(token, bookID, question string) (domain.Answer, err
 		return domain.Answer{}, err
 	}
 	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
 	req.Header.Set("Content-Type", "application/json")
 
 	var ans domain.Answer
@@ -87,6 +88,13 @@ func addAuthHeader(req *http.Request, token string) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+}
+
+func addRequestIDHeader(req *http.Request, requestID string) {
+	if strings.TrimSpace(requestID) == "" {
+		return
+	}
+	req.Header.Set("X-Request-Id", requestID)
 }
 
 type chatRequest struct {

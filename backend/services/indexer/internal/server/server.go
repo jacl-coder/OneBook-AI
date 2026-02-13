@@ -50,7 +50,7 @@ func New(cfg Config) (*Server, error) {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithSecurityHeaders(util.WithCORS(s.mux))
+	return util.WithRequestID(util.WithSecurityHeaders(util.WithCORS(s.mux)))
 }
 
 func (s *Server) routes() {
@@ -107,7 +107,7 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/indexer/jobs/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	job, ok := s.app.GetJob(id)
@@ -132,6 +132,34 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+type errorResponse struct {
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	RequestID string `json:"requestId,omitempty"`
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, errorResponse{
+		Error:     msg,
+		Code:      errorCodeForStatus(status),
+		RequestID: strings.TrimSpace(w.Header().Get("X-Request-Id")),
+	})
+}
+
+func errorCodeForStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "REQUEST_ERROR"
+	case http.StatusUnauthorized:
+		return "AUTH_INVALID_TOKEN"
+	case http.StatusNotFound:
+		return "SYSTEM_NOT_FOUND"
+	case http.StatusMethodNotAllowed:
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	default:
+		if status >= http.StatusInternalServerError {
+			return "SYSTEM_INTERNAL_ERROR"
+		}
+		return "REQUEST_ERROR"
+	}
 }

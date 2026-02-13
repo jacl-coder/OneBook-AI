@@ -66,7 +66,7 @@ func New(cfg Config) (*Server, error) {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithSecurityHeaders(util.WithCORS(s.mux))
+	return util.WithRequestID(util.WithSecurityHeaders(util.WithCORS(s.mux)))
 }
 
 func (s *Server) routes() {
@@ -343,14 +343,16 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 type errorResponse struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	RequestID string `json:"requestId,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorResponse{
-		Error: msg,
-		Code:  errorCodeForBook(status, msg),
+		Error:     msg,
+		Code:      errorCodeForBook(status, msg),
+		RequestID: strings.TrimSpace(w.Header().Get("X-Request-Id")),
 	})
 }
 

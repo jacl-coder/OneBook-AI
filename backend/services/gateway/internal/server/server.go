@@ -181,7 +181,7 @@ func (s *Server) adminOnly(next authHandler) http.Handler {
 			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 			return
 		}
-		user, err := s.auth.Me(token)
+		user, err := s.auth.Me(requestIDFromRequest(r), token)
 		if err != nil {
 			s.audit(r, "gateway.admin.authorize", "fail", "reason", "auth_me_failed")
 			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
@@ -209,7 +209,7 @@ func (s *Server) authorize(r *http.Request) (domain.User, bool) {
 			return domain.User{}, false
 		}
 	}
-	user, err := s.auth.Me(token)
+	user, err := s.auth.Me(requestIDFromRequest(r), token)
 	if err != nil {
 		s.audit(r, "gateway.token.verify", "fail", "reason", "auth_me_failed")
 		return domain.User{}, false
@@ -234,7 +234,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.SignUp(req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.auth.SignUp(requestIDFromRequest(r), req.Email, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.signup", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -263,7 +263,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.Login(req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.auth.Login(requestIDFromRequest(r), req.Email, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.login", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -297,7 +297,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "refreshToken is required", "AUTH_REFRESH_TOKEN_REQUIRED")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.Refresh(req.RefreshToken)
+	user, accessToken, refreshToken, err := s.auth.Refresh(requestIDFromRequest(r), req.RefreshToken)
 	if err != nil {
 		s.audit(r, "gateway.refresh", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -332,7 +332,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 		return
 	}
-	if err := s.auth.Logout(token, req.RefreshToken); err != nil {
+	if err := s.auth.Logout(requestIDFromRequest(r), token, req.RefreshToken); err != nil {
 		s.audit(r, "gateway.logout", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -346,7 +346,7 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, r)
 		return
 	}
-	keys, err := s.auth.JWKS()
+	keys, err := s.auth.JWKS(requestIDFromRequest(r))
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -374,7 +374,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 			writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 			return
 		}
-		updated, err := s.auth.UpdateMe(token, req.Email)
+		updated, err := s.auth.UpdateMe(requestIDFromRequest(r), token, req.Email)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
@@ -409,7 +409,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 		return
 	}
-	if err := s.auth.ChangePassword(token, req.CurrentPassword, req.NewPassword); err != nil {
+	if err := s.auth.ChangePassword(requestIDFromRequest(r), token, req.CurrentPassword, req.NewPassword); err != nil {
 		writeAuthError(w, r, err)
 		return
 	}
@@ -462,14 +462,14 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 
 	switch r.Method {
 	case http.MethodGet:
-		book, err := s.books.GetBook(token, id)
+		book, err := s.books.GetBook(requestIDFromRequest(r), token, id)
 		if err != nil {
 			writeBookError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, book)
 	case http.MethodDelete:
-		if err := s.books.DeleteBook(token, id); err != nil {
+		if err := s.books.DeleteBook(requestIDFromRequest(r), token, id); err != nil {
 			writeBookError(w, r, err)
 			return
 		}
@@ -485,7 +485,7 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, toke
 		methodNotAllowed(w, r)
 		return
 	}
-	resp, err := s.books.GetDownloadURL(token, id)
+	resp, err := s.books.GetDownloadURL(requestIDFromRequest(r), token, id)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -511,7 +511,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 		writeErrorWithCode(w, r, http.StatusBadRequest, "unsupported file type", "BOOK_UNSUPPORTED_FILE_TYPE")
 		return
 	}
-	book, err := s.books.UploadBook(token, header.Filename, file)
+	book, err := s.books.UploadBook(requestIDFromRequest(r), token, header.Filename, file)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -520,7 +520,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 }
 
 func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, token string) {
-	books, err := s.books.ListBooks(token)
+	books, err := s.books.ListBooks(requestIDFromRequest(r), token)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -551,7 +551,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 		writeErrorWithCode(w, r, http.StatusBadRequest, "bookId is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
-	ans, err := s.chat.AskQuestion(token, req.BookID, req.Question)
+	ans, err := s.chat.AskQuestion(requestIDFromRequest(r), token, req.BookID, req.Question)
 	if err != nil {
 		writeChatError(w, r, err)
 		return
@@ -571,7 +571,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 		return
 	}
-	users, err := s.auth.AdminListUsers(token)
+	users, err := s.auth.AdminListUsers(requestIDFromRequest(r), token)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -625,7 +625,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 		return
 	}
-	updated, err := s.auth.AdminUpdateUser(token, id, role, status)
+	updated, err := s.auth.AdminUpdateUser(requestIDFromRequest(r), token, id, role, status)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -644,7 +644,7 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user d
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "unauthorized", "AUTH_INVALID_TOKEN")
 		return
 	}
-	books, err := s.books.ListBooks(token)
+	books, err := s.books.ListBooks(requestIDFromRequest(r), token)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
