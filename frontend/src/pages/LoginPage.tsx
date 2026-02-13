@@ -11,17 +11,16 @@ import eyeIconSvg from '@/assets/icons/eye.svg'
 import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 import successCheckmarkCircleSvg from '@/assets/icons/success-checkmark-circle.svg'
 
+import { getApiErrorMessage, login, signup } from '@/features/auth/api/auth'
+import { useSessionStore } from '@/features/auth/store/session'
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-const MOCK_VERIFY_CODE = '123456'
 const AUTH_EMAIL_STORAGE_KEY = 'auth:email'
-const AUTH_FLOW_STORAGE_KEY = 'auth:flow'
 const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
 const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
 
-type AuthFlow = '' | 'reset'
 type AuthNavigationState = {
   email?: string
-  flow?: AuthFlow
   errorMessage?: string
 }
 
@@ -55,6 +54,14 @@ function writeSessionValue(key: string, value: string) {
   window.sessionStorage.removeItem(key)
 }
 
+function schedule(fn: () => void) {
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(fn)
+    return
+  }
+  setTimeout(fn, 0)
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -64,19 +71,14 @@ export function LoginPage() {
   const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
   const isCreateAccountPassword = step === 'password' && location.pathname === '/create-account/password'
   const locationState = (location.state as AuthNavigationState | null) ?? null
-  const locationStateEmail = normalizeText(locationState?.email)
+  const locationSearchEmail = normalizeText(new URLSearchParams(location.search).get('email'))
+  const locationStateEmail = normalizeText(locationState?.email) || locationSearchEmail
   const locationStateErrorMessage = normalizeText(locationState?.errorMessage)
-  const locationStateFlow: AuthFlow = locationState?.flow === 'reset' ? 'reset' : ''
   const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
-  const [verifyFlow, setVerifyFlow] = useState<AuthFlow>(() => {
-    const initialFlow = locationStateFlow || readSessionValue(AUTH_FLOW_STORAGE_KEY)
-    return initialFlow === 'reset' ? 'reset' : ''
-  })
   const [authErrorMessage, setAuthErrorMessage] = useState(() => {
     const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
     return initialError || DEFAULT_AUTH_ERROR_MESSAGE
   })
-  const isResetVerifyFlow = step === 'verify' && verifyFlow === 'reset'
 
   const emailId = useId()
   const emailLabelId = useId()
@@ -127,20 +129,24 @@ export function LoginPage() {
 
   useEffect(() => {
     if (step === 'entry') {
-      setEmail(stepEmail)
-      setEmailErrorText('')
-      setIsEmailFocused(false)
-      setIsEntrySubmitting(false)
+      schedule(() => {
+        setEmail(stepEmail)
+        setEmailErrorText('')
+        setIsEmailFocused(false)
+        setIsEntrySubmitting(false)
+      })
     }
   }, [step, stepEmail])
 
   useEffect(() => {
     if (step !== 'verify') return
-    setOtp(['', '', '', '', '', ''])
-    lastSubmittedVerifyCodeRef.current = ''
-    setVerifyErrorText('')
-    setIsVerifySubmitting(false)
-  }, [step, stepEmail, verifyFlow])
+    schedule(() => {
+      setOtp(['', '', '', '', '', ''])
+      lastSubmittedVerifyCodeRef.current = ''
+      setVerifyErrorText('')
+      setIsVerifySubmitting(false)
+    })
+  }, [step, stepEmail])
 
   useEffect(() => {
     if (step !== 'verify') return
@@ -148,20 +154,22 @@ export function LoginPage() {
       otpRefs.current[0]?.focus()
     })
     return () => cancelAnimationFrame(frameId)
-  }, [step, stepEmail, verifyFlow])
+  }, [step, stepEmail])
 
   useEffect(() => {
     if (step !== 'reset') return
-    setIsResetSubmitting(false)
+    schedule(() => setIsResetSubmitting(false))
   }, [step, stepEmail])
 
   useEffect(() => {
     if (step !== 'resetNew') return
-    setIsResetNewSubmitting(false)
-    setNewPassword('')
-    setConfirmPassword('')
-    setNewPasswordErrorText('')
-    setConfirmPasswordErrorText('')
+    schedule(() => {
+      setIsResetNewSubmitting(false)
+      setNewPassword('')
+      setConfirmPassword('')
+      setNewPasswordErrorText('')
+      setConfirmPasswordErrorText('')
+    })
   }, [step, stepEmail])
 
   const hasEmailValue = email.trim().length > 0
@@ -228,53 +236,31 @@ export function LoginPage() {
     .filter(Boolean)
     .join(' ')
 
-  const getAuthState = (emailValue: string, flowValue: AuthFlow = ''): AuthNavigationState => {
+  const getAuthState = (emailValue: string): AuthNavigationState => {
     const normalizedEmail = normalizeText(emailValue)
     const state: AuthNavigationState = {}
     if (normalizedEmail) state.email = normalizedEmail
-    if (flowValue) state.flow = flowValue
     return state
   }
 
-  const syncAuthContext = (emailValue: string, flowValue: AuthFlow) => {
+  const syncEmail = (emailValue: string) => {
     const normalizedEmail = normalizeText(emailValue)
     setStepEmail(normalizedEmail)
-    setVerifyFlow(flowValue)
     writeSessionValue(AUTH_EMAIL_STORAGE_KEY, normalizedEmail)
-    writeSessionValue(AUTH_FLOW_STORAGE_KEY, flowValue)
     return normalizedEmail
   }
 
   useEffect(() => {
     const nextEmail = locationStateEmail || stepEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY)
-    if (nextEmail !== stepEmail) setStepEmail(nextEmail)
+    if (nextEmail !== stepEmail) schedule(() => setStepEmail(nextEmail))
     writeSessionValue(AUTH_EMAIL_STORAGE_KEY, nextEmail)
   }, [location.key, locationStateEmail, stepEmail])
-
-  useEffect(() => {
-    if (locationStateFlow) {
-      if (verifyFlow !== locationStateFlow) setVerifyFlow(locationStateFlow)
-      writeSessionValue(AUTH_FLOW_STORAGE_KEY, locationStateFlow)
-      return
-    }
-
-    if (step === 'verify') {
-      const storedFlow = readSessionValue(AUTH_FLOW_STORAGE_KEY)
-      const nextFlow: AuthFlow = storedFlow === 'reset' ? 'reset' : verifyFlow
-      if (nextFlow !== verifyFlow) setVerifyFlow(nextFlow)
-      writeSessionValue(AUTH_FLOW_STORAGE_KEY, nextFlow)
-      return
-    }
-
-    if (verifyFlow) setVerifyFlow('')
-    writeSessionValue(AUTH_FLOW_STORAGE_KEY, '')
-  }, [location.key, locationStateFlow, step, verifyFlow])
 
   useEffect(() => {
     if (step !== 'error') return
     const nextMessage =
       locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY) || DEFAULT_AUTH_ERROR_MESSAGE
-    if (nextMessage !== authErrorMessage) setAuthErrorMessage(nextMessage)
+    if (nextMessage !== authErrorMessage) schedule(() => setAuthErrorMessage(nextMessage))
     writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, nextMessage)
   }, [step, location.key, locationStateErrorMessage, authErrorMessage])
 
@@ -285,8 +271,23 @@ export function LoginPage() {
 
   const validateEmail = (value: string) => {
     const text = value.trim()
-    if (!text) return '电子邮件地址为必填项。'
-    if (!EMAIL_PATTERN.test(text)) return '电子邮件地址无效。'
+    if (!text) return 'Email is required.'
+    if (!EMAIL_PATTERN.test(text)) return 'Invalid email address.'
+    return ''
+  }
+
+  const validatePasswordPolicy = (value: string) => {
+    const text = value.trim()
+    if (!text) return 'Password is required.'
+    if (text.length < 12) return 'Password must be at least 12 characters.'
+    if (text.length > 128) return 'Password must be at most 128 characters.'
+    const hasUpper = /[A-Z]/.test(text)
+    const hasLower = /[a-z]/.test(text)
+    const hasDigit = /\d/.test(text)
+    const hasSpecial = /[^A-Za-z0-9]/.test(text)
+    if (!hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+      return 'Password must include upper, lower, digit, and special character.'
+    }
     return ''
   }
 
@@ -305,7 +306,7 @@ export function LoginPage() {
     setEmailErrorText('')
     setIsEntrySubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    const nextEmail = syncAuthContext(normalizedEmail, '')
+    const nextEmail = syncEmail(normalizedEmail)
     navigate(isCreateAccountEntry ? '/create-account/password' : '/log-in/password', {
       state: getAuthState(nextEmail),
     })
@@ -315,16 +316,49 @@ export function LoginPage() {
     event.preventDefault()
     if (isPasswordSubmitting) return
 
-    if (!password.trim()) {
-      setPasswordErrorText('密码为必填项。')
+    if (!stepEmail.trim()) {
+      setPasswordErrorText('Please enter your email first.')
+      navigate('/log-in', { state: getAuthState('') })
+      return
+    }
+    if (isCreateAccountPassword) {
+      const error = validatePasswordPolicy(password)
+      if (error) {
+        setPasswordErrorText(error)
+        passwordInputRef.current?.focus()
+        return
+      }
+    } else if (!password.trim()) {
+      setPasswordErrorText('Password is required.')
       passwordInputRef.current?.focus()
       return
     }
 
+    const setSession = useSessionStore.getState().setSession
     setPasswordErrorText('')
     setIsPasswordSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    navigate('/library')
+    try {
+      const auth = isCreateAccountPassword
+        ? await signup({ email: stepEmail.trim(), password: password.trim() })
+        : await login({ email: stepEmail.trim(), password: password.trim() })
+      setSession({
+        accessToken: auth.token,
+        refreshToken: auth.refreshToken,
+        user: {
+          id: auth.user.id,
+          email: auth.user.email,
+          role: auth.user.role,
+          status: auth.user.status,
+        },
+      })
+      navigate('/library')
+    } catch (error) {
+      setPasswordErrorText(
+        getApiErrorMessage(error, isCreateAccountPassword ? 'Sign up failed. Please try again.' : 'Login failed. Please try again.'),
+      )
+      setIsPasswordSubmitting(false)
+      passwordInputRef.current?.focus()
+    }
   }
 
   const resendEmail = () => {
@@ -380,47 +414,23 @@ export function LoginPage() {
     if (isResetSubmitting) return
 
     setIsResetSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    const nextEmail = syncAuthContext(stepEmail, 'reset')
-    navigate('/log-in/verify', { state: getAuthState(nextEmail, 'reset') })
-  }
-
-  const submitVerifyCode = async (code: string) => {
-    if (isVerifySubmitting) return
-    if (code.length !== 6) return
-    if (code === lastSubmittedVerifyCodeRef.current) return
-
-    lastSubmittedVerifyCodeRef.current = code
-    setVerifyErrorText('')
-    setIsVerifySubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-
-    if (code !== MOCK_VERIFY_CODE) {
-      setVerifyErrorText('代码不正确')
-      setIsVerifySubmitting(false)
-      return
-    }
-
-    if (isResetVerifyFlow) {
-      const nextEmail = syncAuthContext(stepEmail, '')
-      navigate('/reset-password/new-password', { state: getAuthState(nextEmail) })
-      return
-    }
-
-    navigate('/library')
+    navigate('/log-in/error', {
+      state: {
+        ...getAuthState(stepEmail),
+        errorMessage: 'Password reset is not implemented yet. Please log in with your password or sign up again.',
+      } satisfies AuthNavigationState,
+    })
   }
 
   const handleVerifySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
-    await submitVerifyCode(otp.join(''))
+    navigate('/log-in/error', {
+      state: {
+        ...getAuthState(stepEmail),
+        errorMessage: 'Email code login/sign-up is not implemented yet. Please continue with password.',
+      } satisfies AuthNavigationState,
+    })
   }
-
-  useEffect(() => {
-    if (step !== 'verify' || isVerifySubmitting) return
-
-    const code = otp.join('')
-    void submitVerifyCode(code)
-  }, [step, otp, isVerifySubmitting, isResetVerifyFlow, stepEmail, navigate])
 
   const handleResetNewPasswordSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -432,30 +442,38 @@ export function LoginPage() {
     const previousPassword = password.trim()
 
     if (!nextPassword) {
-      nextPasswordError = '新密码为必填项。'
-    } else if (nextPassword.length < 8) {
-      nextPasswordError = '密码至少需要 8 个字符。'
+      nextPasswordError = 'New password is required.'
     } else if (previousPassword && nextPassword === previousPassword) {
-      nextPasswordError = '密码不得重复使用。'
+      nextPasswordError = 'Password must be different from your previous password.'
+    }
+    if (!nextPasswordError) {
+      const policyError = validatePasswordPolicy(nextPassword)
+      // keep error copy consistent with "new password" context
+      if (policyError) {
+        nextPasswordError = policyError
+      }
     }
     if (nextPasswordError) hasError = true
     setNewPasswordErrorText(nextPasswordError)
 
-    const nextConfirmError = confirmPassword.trim() ? '' : '请重新输入新密码。'
+    const nextConfirmError = confirmPassword.trim() ? '' : 'Please re-enter your new password.'
     if (nextConfirmError) hasError = true
     setConfirmPasswordErrorText(nextConfirmError)
 
     if (hasError) return
 
     if (newPassword !== confirmPassword) {
-      setConfirmPasswordErrorText('两次输入的密码不一致。')
+      setConfirmPasswordErrorText('Passwords do not match.')
       return
     }
 
     setIsResetNewSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    const nextEmail = syncAuthContext(stepEmail, '')
-    navigate('/reset-password/success', { state: getAuthState(nextEmail) })
+    navigate('/log-in/error', {
+      state: {
+        ...getAuthState(stepEmail),
+        errorMessage: 'Password reset is not implemented yet. Please log in with your password or sign up again.',
+      } satisfies AuthNavigationState,
+    })
   }
 
   const renderSocialButtons = () => (
@@ -728,8 +746,13 @@ export function LoginPage() {
                           type="button"
                           className="auth-outline-btn auth-inline-passwordless-login"
                           onClick={() => {
-                            const nextEmail = syncAuthContext(stepEmail, '')
-                            navigate('/log-in/verify', { state: getAuthState(nextEmail) })
+                            navigate('/log-in/error', {
+                              state: {
+                                ...getAuthState(stepEmail),
+                                errorMessage:
+                                  '当前版本未接入邮箱验证码登录/注册，请使用密码方式继续。',
+                              } satisfies AuthNavigationState,
+                            })
                           }}
                         >
                           {isCreateAccountPassword ? '使用一次性验证码注册' : '使用一次性验证码登录'}

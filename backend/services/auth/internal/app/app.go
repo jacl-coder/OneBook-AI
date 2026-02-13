@@ -109,7 +109,7 @@ func New(cfg Config) (*App, error) {
 func (a *App) SignUp(email, password string) (domain.User, string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || password == "" {
-		return domain.User{}, "", "", errors.New("email and password required")
+		return domain.User{}, "", "", ErrEmailAndPasswordRequired
 	}
 	if err := auth.ValidatePassword(password); err != nil {
 		return domain.User{}, "", "", err
@@ -119,7 +119,7 @@ func (a *App) SignUp(email, password string) (domain.User, string, string, error
 		return domain.User{}, "", "", fmt.Errorf("check email: %w", err)
 	}
 	if exists {
-		return domain.User{}, "", "", fmt.Errorf("email already exists")
+		return domain.User{}, "", "", ErrEmailAlreadyExists
 	}
 	role := domain.RoleUser
 	count, err := a.store.UserCount()
@@ -161,13 +161,13 @@ func (a *App) Login(email, password string) (domain.User, string, string, error)
 		return domain.User{}, "", "", fmt.Errorf("fetch user: %w", err)
 	}
 	if !ok {
-		return domain.User{}, "", "", fmt.Errorf("invalid credentials")
+		return domain.User{}, "", "", ErrInvalidCredentials
 	}
 	if user.Status == domain.StatusDisabled {
-		return domain.User{}, "", "", fmt.Errorf("user disabled")
+		return domain.User{}, "", "", ErrUserDisabled
 	}
 	if !auth.CheckPassword(password, user.PasswordHash) {
-		return domain.User{}, "", "", fmt.Errorf("invalid credentials")
+		return domain.User{}, "", "", ErrInvalidCredentials
 	}
 	accessToken, refreshToken, err := a.issueTokens(user.ID)
 	if err != nil {
@@ -207,12 +207,12 @@ func (a *App) Logout(accessToken, refreshToken string) error {
 func (a *App) Refresh(refreshToken string) (domain.User, string, string, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
-		return domain.User{}, "", "", fmt.Errorf("refresh token required")
+		return domain.User{}, "", "", ErrRefreshTokenRequired
 	}
 	userID, newRefreshToken, err := a.refreshTokens.RotateToken(refreshToken, a.refreshTTL)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidRefreshToken) || errors.Is(err, store.ErrRefreshTokenReplay) {
-			return domain.User{}, "", "", fmt.Errorf("invalid refresh token")
+			return domain.User{}, "", "", ErrInvalidRefreshToken
 		}
 		return domain.User{}, "", "", fmt.Errorf("resolve refresh token: %w", err)
 	}
@@ -222,7 +222,7 @@ func (a *App) Refresh(refreshToken string) (domain.User, string, string, error) 
 	}
 	if !found || user.Status == domain.StatusDisabled {
 		_ = a.refreshTokens.DeleteToken(newRefreshToken)
-		return domain.User{}, "", "", fmt.Errorf("invalid refresh token")
+		return domain.User{}, "", "", ErrInvalidRefreshToken
 	}
 	accessToken, err := a.sessions.NewSession(user.ID)
 	if err != nil {
@@ -250,7 +250,7 @@ func (a *App) ListUsers() ([]domain.User, error) {
 func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, error) {
 	email := strings.TrimSpace(strings.ToLower(newEmail))
 	if email == "" {
-		return domain.User{}, fmt.Errorf("email required")
+		return domain.User{}, ErrEmailRequired
 	}
 	if email == user.Email {
 		return user, nil
@@ -260,7 +260,7 @@ func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, err
 		return domain.User{}, fmt.Errorf("check email: %w", err)
 	}
 	if ok && existing.ID != user.ID {
-		return domain.User{}, fmt.Errorf("email already exists")
+		return domain.User{}, ErrEmailAlreadyExists
 	}
 	user.Email = email
 	user.UpdatedAt = time.Now().UTC()

@@ -39,13 +39,21 @@ export function useTypewriter(options: UseTypewriterOptions): UseTypewriterResul
   }, [])
 
   useEffect(() => {
+    const schedule = (fn: () => void) => {
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(fn)
+        return
+      }
+      setTimeout(fn, 0)
+    }
+
     if (strings.length === 0) {
-      setText('')
+      schedule(() => setText(''))
       return
     }
 
     if (reduceMotion) {
-      setText(strings[0])
+      schedule(() => setText(strings[0] ?? ''))
       return
     }
 
@@ -67,12 +75,14 @@ export function useTypewriter(options: UseTypewriterOptions): UseTypewriterResul
     }
 
     if (isDeleting && text.length === 0) {
-      setIsDeleting(false)
-      setStringIndex((prev) => {
-        if (loop) {
-          return (prev + 1) % strings.length
-        }
-        return Math.min(prev + 1, strings.length - 1)
+      schedule(() => {
+        setIsDeleting(false)
+        setStringIndex((prev) => {
+          if (loop) {
+            return (prev + 1) % strings.length
+          }
+          return Math.min(prev + 1, strings.length - 1)
+        })
       })
       return
     }

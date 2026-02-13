@@ -130,6 +130,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func isPasswordPolicyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// backend/pkg/auth.ValidatePassword returns errors starting with this prefix.
+	return strings.HasPrefix(err.Error(), "password must")
+}
+
 // auth wrappers
 type authHandler func(http.ResponseWriter, *http.Request, domain.User)
 
@@ -184,8 +192,21 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 	user, accessToken, refreshToken, err := s.app.SignUp(req.Email, req.Password)
 	if err != nil {
-		s.audit(r, "auth.signup", "fail", "reason", err.Error())
-		writeError(w, http.StatusBadRequest, err.Error())
+		switch {
+		case errors.Is(err, app.ErrEmailAndPasswordRequired):
+			s.audit(r, "auth.signup", "fail", "reason", "missing_fields")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrEmailAlreadyExists):
+			s.audit(r, "auth.signup", "fail", "reason", "email_exists")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case isPasswordPolicyError(err):
+			s.audit(r, "auth.signup", "fail", "reason", "invalid_password")
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.Error("auth.signup_error", "err", err)
+			s.audit(r, "auth.signup", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 	s.audit(r, "auth.signup", "success", "user_id", user.ID)
@@ -213,8 +234,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user, accessToken, refreshToken, err := s.app.Login(req.Email, req.Password)
 	if err != nil {
-		s.audit(r, "auth.login", "fail", "reason", err.Error())
-		writeError(w, http.StatusUnauthorized, err.Error())
+		switch {
+		case errors.Is(err, app.ErrUserDisabled):
+			s.audit(r, "auth.login", "fail", "reason", "user_disabled")
+			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
+		case errors.Is(err, app.ErrInvalidCredentials):
+			s.audit(r, "auth.login", "fail", "reason", "invalid_credentials")
+			writeError(w, http.StatusUnauthorized, err.Error())
+		default:
+			slog.Error("auth.login_error", "err", err)
+			s.audit(r, "auth.login", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 	s.audit(r, "auth.login", "success", "user_id", user.ID)
@@ -242,8 +273,18 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	user, accessToken, refreshToken, err := s.app.Refresh(req.RefreshToken)
 	if err != nil {
-		s.audit(r, "auth.refresh", "fail", "reason", err.Error())
-		writeError(w, http.StatusUnauthorized, err.Error())
+		switch {
+		case errors.Is(err, app.ErrRefreshTokenRequired):
+			s.audit(r, "auth.refresh", "fail", "reason", "missing_refresh_token")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrInvalidRefreshToken):
+			s.audit(r, "auth.refresh", "fail", "reason", "invalid_refresh_token")
+			writeError(w, http.StatusUnauthorized, err.Error())
+		default:
+			slog.Error("auth.refresh_error", "err", err)
+			s.audit(r, "auth.refresh", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 	s.audit(r, "auth.refresh", "success", "user_id", user.ID)

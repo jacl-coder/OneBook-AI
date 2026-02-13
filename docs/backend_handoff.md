@@ -68,6 +68,7 @@
   - `404`：资源不存在
   - `409`：资源状态冲突（例如书籍未 ready）
   - `429`：限流
+  - `500`：服务内部错误
   - `502`：网关下游服务不可用
 
 ## 6. 本地联调准备
@@ -78,7 +79,7 @@
 ```
 - 若前端本地跨域访问网关，确保设置：
 ```bash
-CORS_ALLOWED_ORIGINS=http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
 （可与 Swagger 地址并存，逗号分隔）
 

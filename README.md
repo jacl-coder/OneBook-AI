@@ -54,6 +54,8 @@ export BOOK_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
 export CHAT_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
 # 如从 Swagger UI 调试跨域请求：
 export CORS_ALLOWED_ORIGINS=http://localhost:8086
+# 如从 Vite 开发服务器调试跨域请求：
+# export CORS_ALLOWED_ORIGINS=http://localhost:8086,http://localhost:5173
 # 如部署在反向代理后（仅当你能信任代理注入的真实源 IP）：
 # export AUTH_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16
 # export GATEWAY_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16
@@ -99,7 +101,7 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 # 默认会在 secrets/jwt/ 与 secrets/internal-jwt/ 下自动生成 RS256 密钥（若不存在）
 # 注意：密钥仅用于本地开发，不应提交到 Git 仓库
 # 会按 Auth -> Book -> Chat -> Ingest -> Indexer -> Gateway 顺序启动，并等待 /healthz 就绪
-# 未设置 CORS_ALLOWED_ORIGINS 时，默认允许 http://localhost:8086（Swagger UI）
+# 未设置 CORS_ALLOWED_ORIGINS 时，默认允许 http://localhost:8086（Swagger UI）和 http://localhost:5173（Vite dev）
 ./run.sh
 ```
 
