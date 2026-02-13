@@ -5,7 +5,7 @@
 ## 1. 项目目标与范围
 - 目标：完成核心闭环 `登录 -> 上传书籍 -> 状态轮询 -> 对话问答 -> 历史查看`。
 - 接口边界：前端仅调用 Gateway（`http://localhost:8080`），不直接访问内部服务。
-- 联调基线：以 `docs/backend_handoff.md` 和 OpenAPI 为准。
+- 联调基线：以 `docs/backend/backend_handoff.md` 和 OpenAPI 为准。
 
 ## 2. 开发总原则（行业通用）
 - 先定契约再写页面：先锁定接口、错误码、状态机，再实现 UI。

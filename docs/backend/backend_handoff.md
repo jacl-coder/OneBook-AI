@@ -10,6 +10,7 @@
   - Internal: `backend/api/rest/openapi-internal.yaml`
 
 ## 2. 认证与会话约定
+- 账号完整流程（登录/注册/验证码/修改密码）请参考：`docs/backend/auth_account_flow.md`
 
 ### 2.1 登录态
 - 注册：`POST /api/auth/signup`
