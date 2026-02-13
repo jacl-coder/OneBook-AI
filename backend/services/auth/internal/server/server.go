@@ -291,7 +291,7 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
-	if !s.allowRateKey(w, r, s.signupLimiter, key, errOTPSendRateLimited.Error()) {
+	if !s.allowRateKey(w, s.signupLimiter, key, errOTPSendRateLimited.Error()) {
 		s.audit(r, "auth.otp.send", "rate_limited")
 		return
 	}
@@ -371,7 +371,7 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
-	if !s.allowRateKey(w, r, s.loginLimiter, key, errOTPVerifyRateLimited.Error()) {
+	if !s.allowRateKey(w, s.loginLimiter, key, errOTPVerifyRateLimited.Error()) {
 		s.audit(r, "auth.otp.verify", "rate_limited")
 		return
 	}
@@ -724,10 +724,10 @@ func parseUserStatus(status string) (domain.UserStatus, bool) {
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
 	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies)}, "|")
-	return s.allowRateKey(w, r, limiter, key, msg)
+	return s.allowRateKey(w, limiter, key, msg)
 }
 
-func (s *Server) allowRateKey(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, key, msg string) bool {
+func (s *Server) allowRateKey(w http.ResponseWriter, limiter *ratelimit.FixedWindowLimiter, key, msg string) bool {
 	if limiter.Allow(key) {
 		return true
 	}
