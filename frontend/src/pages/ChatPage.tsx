@@ -58,6 +58,15 @@ export function ChatPage() {
   const hasPrompt = prompt.trim().length > 0
   const isAuthInvalid = authErrorText.length > 0
 
+  function closeAuthModal() {
+    setIsAuthOpen(false)
+    setAuthMode('login')
+    setAuthEmail('')
+    setIsAuthFocused(false)
+    setIsAuthSubmitting(false)
+    setAuthErrorText('')
+  }
+
   useEffect(() => {
     if (!isAuthOpen) return
     const originalOverflow = document.body.style.overflow
@@ -93,15 +102,6 @@ export function ChatPage() {
   const openAuthModal = (mode: AuthModalMode = 'login') => {
     setAuthMode(mode)
     setIsAuthOpen(true)
-  }
-
-  const closeAuthModal = () => {
-    setIsAuthOpen(false)
-    setAuthMode('login')
-    setAuthEmail('')
-    setIsAuthFocused(false)
-    setIsAuthSubmitting(false)
-    setAuthErrorText('')
   }
 
   const validateAuthEmail = (value: string) => {

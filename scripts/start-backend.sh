@@ -61,7 +61,8 @@ if [ -f "$ROOT_DIR/.env" ]; then
 fi
 
 if [[ -z "${CORS_ALLOWED_ORIGINS:-}" ]]; then
-  export CORS_ALLOWED_ORIGINS="http://localhost:8086"
+  # Default allow local Swagger UI and Vite dev server.
+  export CORS_ALLOWED_ORIGINS="http://localhost:8086,http://localhost:5173"
   echo "CORS_ALLOWED_ORIGINS not set, defaulting to ${CORS_ALLOWED_ORIGINS}"
 fi
 
