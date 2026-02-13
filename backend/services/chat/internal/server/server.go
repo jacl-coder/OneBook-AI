@@ -143,16 +143,78 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+type errorResponse struct {
+	Error string `json:"error"`
+	Code  string `json:"code"`
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeErrorWithCode(w, status, msg, "")
+}
+
+func writeErrorWithCode(w http.ResponseWriter, status int, msg, code string) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = errorCodeForChat(status, msg)
+	}
+	if code == "" {
+		code = "REQUEST_ERROR"
+	}
+	writeJSON(w, status, errorResponse{
+		Error: msg,
+		Code:  code,
+	})
 }
 
 func writeBookError(w http.ResponseWriter, err error) {
 	if apiErr, ok := err.(*bookclient.APIError); ok {
-		writeError(w, apiErr.Status, apiErr.Message)
+		writeErrorWithCode(w, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
-	writeError(w, http.StatusBadGateway, "book service unavailable")
+	writeErrorWithCode(w, http.StatusBadGateway, "book service unavailable", "BOOK_SERVICE_UNAVAILABLE")
+}
+
+func errorCodeForChat(status int, msg string) string {
+	message := strings.ToLower(strings.TrimSpace(msg))
+	switch {
+	case message == "auth client not configured", message == "book client not configured":
+		return "SYSTEM_INTERNAL_ERROR"
+	case message == "unauthorized":
+		return "AUTH_INVALID_TOKEN"
+	case message == "question is required":
+		return "CHAT_QUESTION_REQUIRED"
+	case message == "bookid is required":
+		return "CHAT_BOOK_ID_REQUIRED"
+	case message == "book not ready":
+		return "CHAT_BOOK_NOT_READY"
+	case message == "forbidden":
+		return "CHAT_FORBIDDEN"
+	case message == "invalid json body":
+		return "CHAT_INVALID_REQUEST"
+	case message == "method not allowed":
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	case message == "book service unavailable":
+		return "BOOK_SERVICE_UNAVAILABLE"
+	}
+	switch status {
+	case http.StatusBadRequest:
+		return "CHAT_INVALID_REQUEST"
+	case http.StatusUnauthorized:
+		return "AUTH_INVALID_TOKEN"
+	case http.StatusForbidden:
+		return "CHAT_FORBIDDEN"
+	case http.StatusConflict:
+		return "CHAT_BOOK_NOT_READY"
+	case http.StatusMethodNotAllowed:
+		return "SYSTEM_METHOD_NOT_ALLOWED"
+	case http.StatusBadGateway, http.StatusServiceUnavailable:
+		return "SYSTEM_UPSTREAM_UNAVAILABLE"
+	default:
+		if status >= http.StatusInternalServerError {
+			return "SYSTEM_INTERNAL_ERROR"
+		}
+		return "REQUEST_ERROR"
+	}
 }
 
 func bearerToken(r *http.Request) (string, bool) {

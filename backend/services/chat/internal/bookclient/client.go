@@ -19,6 +19,7 @@ type Client struct {
 type APIError struct {
 	Status  int
 	Message string
+	Code    string
 }
 
 func (e *APIError) Error() string {
@@ -48,13 +49,18 @@ func (c *Client) GetBook(token, id string) (domain.Book, error) {
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`
+			Code  string `json:"code"`
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&errResp)
 		msg := errResp.Error
 		if msg == "" {
 			msg = resp.Status
 		}
-		return domain.Book{}, &APIError{Status: resp.StatusCode, Message: msg}
+		return domain.Book{}, &APIError{
+			Status:  resp.StatusCode,
+			Message: msg,
+			Code:    strings.TrimSpace(errResp.Code),
+		}
 	}
 	var book domain.Book
 	if err := json.NewDecoder(resp.Body).Decode(&book); err != nil {

@@ -4,8 +4,8 @@ import "errors"
 
 var (
 	// ErrInvalidCredentials is returned when the supplied credentials do not match.
-	// Keep the message stable to avoid breaking clients that display it.
-	ErrInvalidCredentials = errors.New("invalid credentials")
+	// This message is intended to be shown to end users and should not enable account enumeration.
+	ErrInvalidCredentials = errors.New("Incorrect email address or password")
 
 	// ErrUserDisabled is returned when an account is disabled.
 	// Handlers should generally NOT expose this to clients to avoid account enumeration.
