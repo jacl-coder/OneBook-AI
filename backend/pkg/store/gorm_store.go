@@ -5,12 +5,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/pgvector/pgvector-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	gormlogger "gorm.io/gorm/logger"
 	"onebookai/pkg/domain"
 )
 
@@ -23,7 +26,16 @@ type GormStore struct {
 
 // NewGormStore opens the DB and runs auto-migrations.
 func NewGormStore(dsn string) (*GormStore, error) {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	gormLog := gormlogger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		gormlogger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormLog})
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
