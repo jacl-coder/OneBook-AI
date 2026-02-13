@@ -50,7 +50,7 @@ func New(cfg Config) (*Server, error) {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithRequestID(util.WithSecurityHeaders(util.WithCORS(s.mux)))
+	return util.WithRequestID(util.WithRequestLog("ingest", util.WithSecurityHeaders(util.WithCORS(s.mux))))
 }
 
 func (s *Server) routes() {

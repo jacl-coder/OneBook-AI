@@ -700,12 +700,12 @@ type adminUserUpdateRequest struct {
 func bearerToken(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		slog.Warn("missing bearer prefix", "path", r.URL.Path)
+		slog.Warn("missing bearer prefix", "path", r.URL.Path, "request_id", requestIDFromRequest(r))
 		return "", false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 	if token == "" {
-		slog.Warn("empty bearer token", "path", r.URL.Path)
+		slog.Warn("empty bearer token", "path", r.URL.Path, "request_id", requestIDFromRequest(r))
 		return "", false
 	}
 	return token, true
@@ -855,25 +855,76 @@ func (s *Server) isExtensionAllowed(filename string) bool {
 
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	if apiErr, ok := err.(*authclient.APIError); ok {
+		slog.Warn(
+			"gateway_upstream_error",
+			"upstream", "auth",
+			"status", apiErr.Status,
+			"code", apiErr.Code,
+			"path", r.URL.Path,
+			"method", r.Method,
+			"request_id", requestIDFromRequest(r),
+		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
+	slog.Error(
+		"gateway_upstream_unavailable",
+		"upstream", "auth",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"request_id", requestIDFromRequest(r),
+		"err", err,
+	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "auth service unavailable", "AUTH_SERVICE_UNAVAILABLE")
 }
 
 func writeBookError(w http.ResponseWriter, r *http.Request, err error) {
 	if apiErr, ok := err.(*bookclient.APIError); ok {
+		slog.Warn(
+			"gateway_upstream_error",
+			"upstream", "book",
+			"status", apiErr.Status,
+			"code", apiErr.Code,
+			"path", r.URL.Path,
+			"method", r.Method,
+			"request_id", requestIDFromRequest(r),
+		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
+	slog.Error(
+		"gateway_upstream_unavailable",
+		"upstream", "book",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"request_id", requestIDFromRequest(r),
+		"err", err,
+	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "book service unavailable", "BOOK_SERVICE_UNAVAILABLE")
 }
 
 func writeChatError(w http.ResponseWriter, r *http.Request, err error) {
 	if apiErr, ok := err.(*chatclient.APIError); ok {
+		slog.Warn(
+			"gateway_upstream_error",
+			"upstream", "chat",
+			"status", apiErr.Status,
+			"code", apiErr.Code,
+			"path", r.URL.Path,
+			"method", r.Method,
+			"request_id", requestIDFromRequest(r),
+		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
+	slog.Error(
+		"gateway_upstream_unavailable",
+		"upstream", "chat",
+		"path", r.URL.Path,
+		"method", r.Method,
+		"request_id", requestIDFromRequest(r),
+		"err", err,
+	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "chat service unavailable", "CHAT_SERVICE_UNAVAILABLE")
 }
 

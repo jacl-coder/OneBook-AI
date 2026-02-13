@@ -4,6 +4,8 @@ info:
   version: 0.1.0
   description: |
     Internal service APIs (book/chat/ingest/indexer). Do not expose publicly.
+    Internal services propagate `X-Request-Id` and include the same value in
+    error payload field `requestId`.
 servers:
   - url: http://localhost:8082
     description: Local dev (book service)
@@ -317,6 +319,12 @@ components:
           items:
             $ref: "#/components/schemas/ErrorDetail"
       required: [error, code]
+      example:
+        error: unauthorized
+        code: AUTH_INVALID_TOKEN
+        requestId: req-demo-20260213-001
+        details:
+          - reason: missing_or_invalid_bearer_token
     ErrorDetail:
       type: object
       properties:
