@@ -194,6 +194,7 @@ paths:
     get:
       tags: [ingest]
       summary: Get ingest job
+      description: Fetch ingest job status and metadata by job id.
       security:
         - internalToken: []
       parameters:
