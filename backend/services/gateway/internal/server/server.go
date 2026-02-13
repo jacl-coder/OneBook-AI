@@ -135,6 +135,8 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/api/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/auth/otp/send", s.handleOTPSend)
+	s.mux.HandleFunc("/api/auth/otp/verify", s.handleOTPVerify)
 	s.mux.HandleFunc("/api/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("/api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("/api/auth/jwks", s.handleJWKS)
@@ -277,6 +279,77 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if !s.allowRate(w, r, s.signupLimiter, "too many otp send attempts", "AUTH_OTP_SEND_RATE_LIMITED") {
+		s.audit(r, "gateway.otp.send", "rate_limited")
+		return
+	}
+	var req otpSendRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "gateway.otp.send", "fail", "reason", "invalid_json")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" {
+		s.audit(r, "gateway.otp.send", "fail", "reason", "missing_fields")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "email and purpose are required", "AUTH_INVALID_REQUEST")
+		return
+	}
+	resp, err := s.auth.OTPSend(requestIDFromRequest(r), req.Email, req.Purpose)
+	if err != nil {
+		s.audit(r, "gateway.otp.send", "fail", "reason", err.Error())
+		writeAuthError(w, r, err)
+		return
+	}
+	s.audit(r, "gateway.otp.send", "success")
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if !s.allowRate(w, r, s.loginLimiter, "too many otp verify attempts", "AUTH_OTP_VERIFY_RATE_LIMITED") {
+		s.audit(r, "gateway.otp.verify", "rate_limited")
+		return
+	}
+	var req otpVerifyRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "gateway.otp.verify", "fail", "reason", "invalid_json")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if strings.TrimSpace(req.ChallengeID) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" || strings.TrimSpace(req.Code) == "" {
+		s.audit(r, "gateway.otp.verify", "fail", "reason", "missing_fields")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "challengeId, email, purpose and code are required", "AUTH_INVALID_REQUEST")
+		return
+	}
+	user, accessToken, refreshToken, err := s.auth.OTPVerify(
+		requestIDFromRequest(r),
+		req.ChallengeID,
+		req.Email,
+		req.Purpose,
+		req.Code,
+		req.Password,
+	)
+	if err != nil {
+		s.audit(r, "gateway.otp.verify", "fail", "reason", err.Error())
+		writeAuthError(w, r, err)
+		return
+	}
+	s.audit(r, "gateway.otp.verify", "success", "user_id", user.ID, "purpose", req.Purpose)
+	writeJSON(w, http.StatusOK, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
+}
+
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
@@ -400,8 +473,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if req.CurrentPassword == "" || req.NewPassword == "" {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "currentPassword and newPassword are required", "AUTH_PASSWORD_FIELDS_REQUIRED")
+	if strings.TrimSpace(req.NewPassword) == "" {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "newPassword is required", "AUTH_NEW_PASSWORD_REQUIRED")
 		return
 	}
 	token, ok := bearerToken(r)
@@ -667,6 +740,19 @@ type chatRequest struct {
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type otpSendRequest struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+}
+
+type otpVerifyRequest struct {
+	ChallengeID string `json:"challengeId"`
+	Email       string `json:"email"`
+	Purpose     string `json:"purpose"`
+	Code        string `json:"code"`
+	Password    string `json:"password,omitempty"`
 }
 
 type authResponse struct {

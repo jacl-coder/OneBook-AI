@@ -113,3 +113,17 @@ flowchart TD
 - OTP 发送与校验均需限流（email + IP 维度）。
 - 统一错误结构：`error + code + requestId + details`。
 - 全链路透传并回传 `X-Request-Id`，日志保留 `request_id` 字段。
+
+## 7. 待实现（邮件通道）
+- 当前状态：
+  - OTP 发送链路已实现 challenge 生成与校验，但未接入真实邮件服务。
+  - 当前仅在服务日志输出 OTP（开发态）。
+- 目标方案（后续实现）：
+  - 毕设/个人项目阶段：首选 `Resend`，优先保证接入速度与演示稳定性。
+  - 产品化阶段：升级为可切换多通道，建议 `SES` 作为主通道（成本优先），保留 `Resend`/`Postmark` 作为故障切换。
+  - 统一抽象 `EmailSender` 接口，配置化切换 provider（`mock|resend|ses|postmark`）。
+- 实现验收标准：
+  - `POST /api/auth/otp/send` 在成功时实际发送邮件，不再输出明文 OTP 到日志。
+  - 生产环境启用域名认证（`SPF`/`DKIM`/`DMARC`）。
+  - 失败可观测：记录 provider 响应码、requestId、重试与限流结果。
+  - 事务邮件与营销邮件分离（独立子域/独立通道），避免互相影响送达率。

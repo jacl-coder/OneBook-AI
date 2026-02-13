@@ -56,6 +56,32 @@ func (c *Client) Login(requestID, email, password string) (domain.User, string, 
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
+func (c *Client) OTPSend(requestID, email, purpose string) (OTPSendResponse, error) {
+	payload := map[string]string{"email": email, "purpose": purpose}
+	var resp OTPSendResponse
+	if err := c.doJSON(http.MethodPost, "/auth/otp/send", requestID, "", payload, &resp); err != nil {
+		return OTPSendResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) OTPVerify(requestID, challengeID, email, purpose, code, password string) (domain.User, string, string, error) {
+	payload := map[string]string{
+		"challengeId": challengeID,
+		"email":       email,
+		"purpose":     purpose,
+		"code":        code,
+	}
+	if strings.TrimSpace(password) != "" {
+		payload["password"] = password
+	}
+	var resp authResponse
+	if err := c.doJSON(http.MethodPost, "/auth/otp/verify", requestID, "", payload, &resp); err != nil {
+		return domain.User{}, "", "", err
+	}
+	return resp.User, resp.Token, resp.RefreshToken, nil
+}
+
 func (c *Client) Refresh(requestID, refreshToken string) (domain.User, string, string, error) {
 	payload := map[string]string{"refreshToken": refreshToken}
 	var resp authResponse
@@ -91,9 +117,9 @@ func (c *Client) UpdateMe(requestID, token, email string) (domain.User, error) {
 }
 
 func (c *Client) ChangePassword(requestID, token, currentPassword, newPassword string) error {
-	payload := map[string]string{
-		"currentPassword": currentPassword,
-		"newPassword":     newPassword,
+	payload := map[string]string{"newPassword": newPassword}
+	if strings.TrimSpace(currentPassword) != "" {
+		payload["currentPassword"] = currentPassword
 	}
 	return c.doJSON(http.MethodPost, "/auth/me/password", requestID, token, payload, nil)
 }
@@ -183,6 +209,13 @@ type authResponse struct {
 	Token        string      `json:"token"`
 	RefreshToken string      `json:"refreshToken"`
 	User         domain.User `json:"user"`
+}
+
+type OTPSendResponse struct {
+	ChallengeID        string `json:"challengeId"`
+	ExpiresInSeconds   int    `json:"expiresInSeconds"`
+	ResendAfterSeconds int    `json:"resendAfterSeconds"`
+	MaskedEmail        string `json:"maskedEmail,omitempty"`
 }
 
 type listUsersResponse struct {
