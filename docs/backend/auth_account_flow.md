@@ -89,6 +89,25 @@ flowchart TD
 - `POST /api/auth/otp/verify`：校验一次性验证码并换取登录态或注册凭据
 - `POST /api/users/me/password`：登录态修改密码
 
+### 5.1 OTP 关键字段
+- `otp/send` 请求体：
+  - `email`
+  - `purpose`：`signup_password | signup_otp | login_otp`
+- `otp/verify` 请求体：
+  - `challengeId`
+  - `email`
+  - `purpose`
+  - `code`
+  - `password`（仅 `signup_password` 必填）
+
+### 5.2 关键错误码约定
+- `AUTH_PASSWORD_NOT_SET`：密码登录入口命中无密码账号，前端跳转到 `/email-verification`
+- `AUTH_OTP_CHALLENGE_INVALID`：challenge 无效
+- `AUTH_OTP_CODE_INVALID`：验证码错误
+- `AUTH_OTP_CODE_EXPIRED`：验证码过期
+- `AUTH_OTP_SEND_RATE_LIMITED`：OTP 发送限流
+- `AUTH_OTP_VERIFY_RATE_LIMITED`：OTP 校验限流
+
 ## 6. 安全与风控要求
 - OTP 单次使用，建议 5 分钟有效期，成功后立即失效。
 - OTP 发送与校验均需限流（email + IP 维度）。
