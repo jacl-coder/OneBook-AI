@@ -17,5 +17,8 @@ var (
 	ErrRefreshTokenRequired = errors.New("refresh token required")
 	ErrInvalidRefreshToken  = errors.New("invalid refresh token")
 
-	ErrEmailRequired = errors.New("email required")
+	ErrEmailRequired           = errors.New("email required")
+	ErrPasswordNotSet          = errors.New("password not set")
+	ErrCurrentPasswordRequired = errors.New("current password required")
+	ErrNewPasswordRequired     = errors.New("new password required")
 )

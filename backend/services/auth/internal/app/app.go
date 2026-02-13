@@ -133,24 +133,39 @@ func (a *App) SignUp(email, password string) (domain.User, string, string, error
 	if count == 0 {
 		role = domain.RoleAdmin
 	}
-	now := time.Now().UTC()
-	user := domain.User{
-		ID:           util.NewID(),
-		Email:        email,
-		PasswordHash: passwordHash,
-		Role:         role,
-		Status:       domain.StatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	if err := a.store.SaveUser(user); err != nil {
-		return domain.User{}, "", "", fmt.Errorf("save user: %w", err)
-	}
-	accessToken, refreshToken, err := a.issueTokens(user.ID)
+	user, err := a.createUser(email, passwordHash, role)
 	if err != nil {
 		return domain.User{}, "", "", err
 	}
-	return user, accessToken, refreshToken, nil
+	return a.issueUserTokens(user)
+}
+
+// SignUpPasswordless registers a new user without password and issues tokens.
+func (a *App) SignUpPasswordless(email string) (domain.User, string, string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return domain.User{}, "", "", ErrEmailRequired
+	}
+	exists, err := a.store.HasUserEmail(email)
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("check email: %w", err)
+	}
+	if exists {
+		return domain.User{}, "", "", ErrEmailAlreadyExists
+	}
+	role := domain.RoleUser
+	count, err := a.store.UserCount()
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("count users: %w", err)
+	}
+	if count == 0 {
+		role = domain.RoleAdmin
+	}
+	user, err := a.createUser(email, "", role)
+	if err != nil {
+		return domain.User{}, "", "", err
+	}
+	return a.issueUserTokens(user)
 }
 
 // Login validates credentials and issues a session token.
@@ -166,9 +181,32 @@ func (a *App) Login(email, password string) (domain.User, string, string, error)
 	if user.Status == domain.StatusDisabled {
 		return domain.User{}, "", "", ErrUserDisabled
 	}
+	if !hasPassword(user.PasswordHash) {
+		return domain.User{}, "", "", ErrPasswordNotSet
+	}
 	if !auth.CheckPassword(password, user.PasswordHash) {
 		return domain.User{}, "", "", ErrInvalidCredentials
 	}
+	return a.issueUserTokens(user)
+}
+
+// LoginByEmail issues a session token for an existing account.
+func (a *App) LoginByEmail(email string) (domain.User, string, string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	user, ok, err := a.store.GetUserByEmail(email)
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok {
+		return domain.User{}, "", "", ErrInvalidCredentials
+	}
+	if user.Status == domain.StatusDisabled {
+		return domain.User{}, "", "", ErrUserDisabled
+	}
+	return a.issueUserTokens(user)
+}
+
+func (a *App) issueUserTokens(user domain.User) (domain.User, string, string, error) {
 	accessToken, refreshToken, err := a.issueTokens(user.ID)
 	if err != nil {
 		return domain.User{}, "", "", err
@@ -241,6 +279,15 @@ func (a *App) RevokeRefreshToken(refreshToken string) error {
 	return a.refreshTokens.DeleteToken(refreshToken)
 }
 
+// HasUserEmail checks whether email already exists.
+func (a *App) HasUserEmail(email string) (bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return false, ErrEmailRequired
+	}
+	return a.store.HasUserEmail(email)
+}
+
 // ListUsers returns all users (admin use only).
 func (a *App) ListUsers() ([]domain.User, error) {
 	return a.store.ListUsers()
@@ -273,7 +320,7 @@ func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, err
 // ChangePassword updates the user's password after verifying the current password.
 func (a *App) ChangePassword(userID, currentPassword, newPassword string) error {
 	if strings.TrimSpace(newPassword) == "" {
-		return fmt.Errorf("new password required")
+		return ErrNewPasswordRequired
 	}
 	if err := auth.ValidatePassword(newPassword); err != nil {
 		return err
@@ -288,11 +335,16 @@ func (a *App) ChangePassword(userID, currentPassword, newPassword string) error 
 	if user.Status == domain.StatusDisabled {
 		return fmt.Errorf("user disabled")
 	}
-	if !auth.CheckPassword(currentPassword, user.PasswordHash) {
-		return ErrInvalidCredentials
-	}
-	if currentPassword == newPassword {
-		return fmt.Errorf("new password must differ from current password")
+	if hasPassword(user.PasswordHash) {
+		if strings.TrimSpace(currentPassword) == "" {
+			return ErrCurrentPasswordRequired
+		}
+		if !auth.CheckPassword(currentPassword, user.PasswordHash) {
+			return ErrInvalidCredentials
+		}
+		if currentPassword == newPassword {
+			return fmt.Errorf("new password must differ from current password")
+		}
 	}
 	passwordHash, err := auth.HashPassword(newPassword)
 	if err != nil {
@@ -382,4 +434,25 @@ func (a *App) revokeAllUserTokens(userID string, since time.Time) error {
 		return fmt.Errorf("refresh token store does not support user token revocation")
 	}
 	return refreshRevoker.RevokeUserRefreshTokens(userID)
+}
+
+func (a *App) createUser(email, passwordHash string, role domain.UserRole) (domain.User, error) {
+	now := time.Now().UTC()
+	user := domain.User{
+		ID:           util.NewID(),
+		Email:        email,
+		PasswordHash: passwordHash,
+		Role:         role,
+		Status:       domain.StatusActive,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := a.store.SaveUser(user); err != nil {
+		return domain.User{}, fmt.Errorf("save user: %w", err)
+	}
+	return user, nil
+}
+
+func hasPassword(passwordHash string) bool {
+	return strings.TrimSpace(passwordHash) != ""
 }

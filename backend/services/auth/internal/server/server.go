@@ -33,6 +33,7 @@ type Config struct {
 // Server exposes HTTP endpoints for the auth service.
 type Server struct {
 	app             *app.App
+	otp             *otpStore
 	mux             *http.ServeMux
 	signupLimiter   *ratelimit.FixedWindowLimiter
 	loginLimiter    *ratelimit.FixedWindowLimiter
@@ -89,8 +90,13 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse trustedProxyCIDRs: %w", err)
 	}
+	otpStore, err := newOTPStore(cfg.RedisAddr, cfg.RedisPassword)
+	if err != nil {
+		return nil, fmt.Errorf("init otp store: %w", err)
+	}
 	s := &Server{
 		app:             cfg.App,
+		otp:             otpStore,
 		mux:             http.NewServeMux(),
 		signupLimiter:   signupLimiter,
 		loginLimiter:    loginLimiter,
@@ -114,6 +120,8 @@ func (s *Server) routes() {
 	// auth
 	s.mux.HandleFunc("/auth/signup", s.handleSignup)
 	s.mux.HandleFunc("/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/auth/otp/send", s.handleOTPSend)
+	s.mux.HandleFunc("/auth/otp/verify", s.handleOTPVerify)
 	s.mux.HandleFunc("/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("/auth/jwks", s.handleJWKS)
@@ -235,6 +243,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	user, accessToken, refreshToken, err := s.app.Login(req.Email, req.Password)
 	if err != nil {
 		switch {
+		case errors.Is(err, app.ErrPasswordNotSet):
+			s.audit(r, "auth.login", "fail", "reason", "password_not_set")
+			writeError(w, http.StatusConflict, err.Error())
 		case errors.Is(err, app.ErrUserDisabled):
 			s.audit(r, "auth.login", "fail", "reason", "user_disabled")
 			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
@@ -249,6 +260,159 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "auth.login", "success", "user_id", user.ID)
+	writeJSON(w, http.StatusOK, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
+}
+
+func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req otpSendRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_email")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	purpose := strings.TrimSpace(strings.ToLower(req.Purpose))
+	if !isValidOTPPurpose(purpose) {
+		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_purpose")
+		writeError(w, http.StatusBadRequest, errOTPPurposeInvalid.Error())
+		return
+	}
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	if !s.allowRateKey(w, r, s.signupLimiter, key, errOTPSendRateLimited.Error()) {
+		s.audit(r, "auth.otp.send", "rate_limited")
+		return
+	}
+	if purpose == otpPurposeSignupPassword || purpose == otpPurposeSignupOTP {
+		exists, err := s.app.HasUserEmail(email)
+		if err != nil {
+			slog.Error("auth.otp.send_error", "err", err)
+			s.audit(r, "auth.otp.send", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if exists {
+			s.audit(r, "auth.otp.send", "fail", "reason", "email_exists")
+			writeError(w, http.StatusBadRequest, app.ErrEmailAlreadyExists.Error())
+			return
+		}
+	}
+	challengeID, code, expiresIn, resendAfter, err := s.otp.CreateChallenge(email, purpose)
+	if err != nil {
+		switch {
+		case errors.Is(err, errOTPSendRateLimited):
+			s.audit(r, "auth.otp.send", "rate_limited")
+			writeError(w, http.StatusTooManyRequests, err.Error())
+		case errors.Is(err, errOTPPurposeInvalid):
+			s.audit(r, "auth.otp.send", "fail", "reason", "invalid_purpose")
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.Error("auth.otp.send_error", "err", err)
+			s.audit(r, "auth.otp.send", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	slog.Info(
+		"auth_otp_sent",
+		"email", maskEmail(email),
+		"purpose", purpose,
+		"challenge_id", challengeID,
+		"otp_code", code,
+		"request_id", util.RequestIDFromRequest(r),
+	)
+	s.audit(r, "auth.otp.send", "success")
+	writeJSON(w, http.StatusAccepted, otpSendResponse{
+		ChallengeID:        challengeID,
+		ExpiresInSeconds:   expiresIn,
+		ResendAfterSeconds: resendAfter,
+		MaskedEmail:        maskEmail(email),
+	})
+}
+
+func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req otpVerifyRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_email")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	purpose := strings.TrimSpace(strings.ToLower(req.Purpose))
+	if !isValidOTPPurpose(purpose) {
+		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_purpose")
+		writeError(w, http.StatusBadRequest, errOTPPurposeInvalid.Error())
+		return
+	}
+	if purpose == otpPurposeSignupPassword && strings.TrimSpace(req.Password) == "" {
+		s.audit(r, "auth.otp.verify", "fail", "reason", "missing_password")
+		writeError(w, http.StatusBadRequest, "password is required for signup_password")
+		return
+	}
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	if !s.allowRateKey(w, r, s.loginLimiter, key, errOTPVerifyRateLimited.Error()) {
+		s.audit(r, "auth.otp.verify", "rate_limited")
+		return
+	}
+	if err := s.otp.VerifyChallenge(req.ChallengeID, email, purpose, req.Code); err != nil {
+		switch {
+		case errors.Is(err, errOTPChallengeInvalid):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "challenge_invalid")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errOTPCodeInvalid):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "code_invalid")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errOTPCodeExpired):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "code_expired")
+			writeError(w, http.StatusUnauthorized, err.Error())
+		case errors.Is(err, errOTPChallengeRequired), errors.Is(err, errOTPCodeRequired), errors.Is(err, errOTPPurposeInvalid):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_request")
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.Error("auth.otp.verify_error", "err", err)
+			s.audit(r, "auth.otp.verify", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	user, accessToken, refreshToken, err := s.completeOTPFlow(purpose, email, req.Password)
+	if err != nil {
+		switch {
+		case errors.Is(err, app.ErrEmailAlreadyExists), errors.Is(err, app.ErrEmailAndPasswordRequired), errors.Is(err, app.ErrEmailRequired), isPasswordPolicyError(err):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_request")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrUserDisabled), errors.Is(err, app.ErrInvalidCredentials):
+			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_credentials")
+			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
+		default:
+			slog.Error("auth.otp.verify_flow_error", "err", err)
+			s.audit(r, "auth.otp.verify", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	s.audit(r, "auth.otp.verify", "success", "user_id", user.ID, "purpose", purpose)
 	writeJSON(w, http.StatusOK, authResponse{
 		Token:        accessToken,
 		RefreshToken: refreshToken,
@@ -379,14 +543,20 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if req.CurrentPassword == "" || req.NewPassword == "" {
+	if strings.TrimSpace(req.NewPassword) == "" {
 		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", "missing_fields")
-		writeError(w, http.StatusBadRequest, "currentPassword and newPassword are required")
+		writeError(w, http.StatusBadRequest, app.ErrNewPasswordRequired.Error())
 		return
 	}
 	if err := s.app.ChangePassword(user.ID, req.CurrentPassword, req.NewPassword); err != nil {
 		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", err.Error())
-		writeError(w, http.StatusBadRequest, err.Error())
+		switch {
+		case errors.Is(err, app.ErrCurrentPasswordRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrInvalidCredentials), isPasswordPolicyError(err):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.Error("auth.password.change_error", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 	s.audit(r, "auth.password.change", "success", "user_id", user.ID)
@@ -464,6 +634,26 @@ type authRequest struct {
 	Password string `json:"password"`
 }
 
+type otpSendRequest struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+}
+
+type otpSendResponse struct {
+	ChallengeID        string `json:"challengeId"`
+	ExpiresInSeconds   int    `json:"expiresInSeconds"`
+	ResendAfterSeconds int    `json:"resendAfterSeconds"`
+	MaskedEmail        string `json:"maskedEmail,omitempty"`
+}
+
+type otpVerifyRequest struct {
+	ChallengeID string `json:"challengeId"`
+	Email       string `json:"email"`
+	Purpose     string `json:"purpose"`
+	Code        string `json:"code"`
+	Password    string `json:"password,omitempty"`
+}
+
 type authResponse struct {
 	Token        string      `json:"token"`
 	RefreshToken string      `json:"refreshToken,omitempty"`
@@ -533,13 +723,30 @@ func parseUserStatus(status string) (domain.UserStatus, bool) {
 }
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
-	key := r.URL.Path + "|" + util.ClientIP(r, s.trustedProxies)
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies)}, "|")
+	return s.allowRateKey(w, r, limiter, key, msg)
+}
+
+func (s *Server) allowRateKey(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, key, msg string) bool {
 	if limiter.Allow(key) {
 		return true
 	}
 	w.Header().Set("Retry-After", "60")
 	writeError(w, http.StatusTooManyRequests, msg)
 	return false
+}
+
+func (s *Server) completeOTPFlow(purpose, email, password string) (domain.User, string, string, error) {
+	switch purpose {
+	case otpPurposeSignupPassword:
+		return s.app.SignUp(email, password)
+	case otpPurposeSignupOTP:
+		return s.app.SignUpPasswordless(email)
+	case otpPurposeLoginOTP:
+		return s.app.LoginByEmail(email)
+	default:
+		return domain.User{}, "", "", errOTPPurposeInvalid
+	}
 }
 
 func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
@@ -610,12 +817,30 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_INVALID_REQUEST"
 	case strings.Contains(message, "email already exists"):
 		return "AUTH_EMAIL_ALREADY_EXISTS"
+	case message == app.ErrPasswordNotSet.Error():
+		return "AUTH_PASSWORD_NOT_SET"
 	case strings.HasPrefix(message, "password must"):
 		return "AUTH_PASSWORD_POLICY_VIOLATION"
+	case message == errOTPChallengeInvalid.Error():
+		return "AUTH_OTP_CHALLENGE_INVALID"
+	case message == errOTPCodeInvalid.Error():
+		return "AUTH_OTP_CODE_INVALID"
+	case message == errOTPCodeExpired.Error():
+		return "AUTH_OTP_CODE_EXPIRED"
+	case message == errOTPSendRateLimited.Error():
+		return "AUTH_OTP_SEND_RATE_LIMITED"
+	case message == errOTPVerifyRateLimited.Error():
+		return "AUTH_OTP_VERIFY_RATE_LIMITED"
+	case message == errOTPPurposeInvalid.Error():
+		return "AUTH_INVALID_REQUEST"
+	case message == errOTPCodeRequired.Error(), message == errOTPChallengeRequired.Error():
+		return "AUTH_INVALID_REQUEST"
 	case message == "email required", message == "email is required":
 		return "AUTH_EMAIL_REQUIRED"
-	case message == "currentpassword and newpassword are required":
-		return "AUTH_PASSWORD_FIELDS_REQUIRED"
+	case message == app.ErrCurrentPasswordRequired.Error():
+		return "AUTH_CURRENT_PASSWORD_REQUIRED"
+	case message == app.ErrNewPasswordRequired.Error():
+		return "AUTH_NEW_PASSWORD_REQUIRED"
 	case message == "invalid role":
 		return "ADMIN_INVALID_ROLE"
 	case message == "invalid status":
@@ -630,6 +855,8 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_REFRESH_RATE_LIMITED"
 	case message == "too many password change attempts":
 		return "AUTH_PASSWORD_CHANGE_RATE_LIMITED"
+	case message == "password is required for signup_password":
+		return "AUTH_PASSWORD_REQUIRED"
 	case message == "jwks not configured":
 		return "AUTH_JWKS_NOT_CONFIGURED"
 	case message == "unauthorized":
