@@ -73,6 +73,29 @@
   - `code`：稳定机器码，供前端分支处理与埋点。
   - `requestId`：请求追踪 ID（与响应头 `X-Request-Id` 对应）。
   - `details`：可选字段级错误详情。
+- 端到端示例（推荐前端/运维直接照此落地）：
+```bash
+curl -i -X POST http://localhost:8080/api/chats \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -H "X-Request-Id: req-demo-20260213-001" \
+  -d '{"bookId":"book_xxx","question":"请总结第一章"}'
+```
+```http
+HTTP/1.1 409 Conflict
+X-Request-Id: req-demo-20260213-001
+Content-Type: application/json
+
+{
+  "error": "book not ready",
+  "code": "CHAT_BOOK_NOT_READY",
+  "requestId": "req-demo-20260213-001",
+  "details": [
+    { "reason": "book_status_conflict" }
+  ]
+}
+```
+- 若请求未携带 `X-Request-Id`，网关会自动生成并在响应头/响应体返回。
 - 常见状态码：
   - `400`：参数/请求体错误
   - `401`：未登录或 token 无效
