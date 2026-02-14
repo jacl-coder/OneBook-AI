@@ -37,6 +37,8 @@ paths:
     post:
       tags: [auth]
       summary: Sign up
+      description: |
+        Password sign-up endpoint. On success, gateway sets HttpOnly refresh-token cookie.
       requestBody:
         required: true
         content:
@@ -76,6 +78,7 @@ paths:
         Password login entrypoint. If the account has no password configured,
         service returns `AUTH_PASSWORD_NOT_SET` and client should continue with
         OTP login flow at `/api/auth/otp/send` + `/api/auth/otp/verify`.
+        On success, gateway sets HttpOnly refresh-token cookie.
       requestBody:
         required: true
         content:
@@ -198,6 +201,7 @@ paths:
         Verifies OTP code and completes login/registration.
         Successful verification returns auth tokens and user payload.
         For forgot-password flow, use `/api/auth/password/reset/verify`.
+        For signup/login OTP purposes, gateway sets HttpOnly refresh-token cookie.
       requestBody:
         required: true
         content:
@@ -323,8 +327,11 @@ paths:
     post:
       tags: [auth]
       summary: Refresh access token
+      description: |
+        Refresh token can be provided in request body `refreshToken` (legacy)
+        or HttpOnly cookie (preferred). On success, refresh cookie is rotated.
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -365,8 +372,8 @@ paths:
       tags: [auth]
       summary: Logout
       description: |
-        Revoke current access token. If `refreshToken` is provided, it will be
-        revoked as well.
+        Revoke current access token and clear refresh-token cookie. If
+        `refreshToken` is provided, it will be revoked as well.
       security:
         - bearerAuth: []
       requestBody:
@@ -873,9 +880,10 @@ components:
           type: string
         refreshToken:
           type: string
+          description: Optional legacy field; preferred refresh storage is HttpOnly cookie.
         user:
           $ref: "#/components/schemas/User"
-      required: [token, refreshToken, user]
+      required: [token, user]
     LoginMethodsRequest:
       type: object
       properties:
@@ -983,7 +991,6 @@ components:
       properties:
         refreshToken:
           type: string
-      required: [refreshToken]
     LogoutRequest:
       type: object
       properties:

@@ -25,12 +25,24 @@ type contextKey string
 
 const requestIDContextKey contextKey = "request_id"
 
+const (
+	defaultRefreshCookieName   = "onebook_refresh"
+	defaultRefreshCookiePath   = "/api/auth"
+	defaultRefreshCookieMaxAge = 30 * 24 * time.Hour
+)
+
 // Config wires required dependencies for the HTTP server.
 type Config struct {
 	Auth                       *authclient.Client
 	Book                       *bookclient.Client
 	Chat                       *chatclient.Client
 	TokenVerifier              *usertoken.Verifier
+	RefreshCookieName          string
+	RefreshCookieDomain        string
+	RefreshCookiePath          string
+	RefreshCookieSecure        bool
+	RefreshCookieSameSite      string
+	RefreshCookieMaxAge        time.Duration
 	RedisAddr                  string
 	RedisPassword              string
 	TrustedProxyCIDRs          []string
@@ -48,6 +60,8 @@ type Server struct {
 	books             *bookclient.Client
 	chat              *chatclient.Client
 	tokenVerifier     *usertoken.Verifier
+	refreshCookieName string
+	refreshCookieCfg  http.Cookie
 	mux               *http.ServeMux
 	maxUploadBytes    int64
 	allowedExtensions map[string]struct{}
@@ -110,6 +124,16 @@ func New(cfg Config) (*Server, error) {
 		books:             cfg.Book,
 		chat:              cfg.Chat,
 		tokenVerifier:     cfg.TokenVerifier,
+		refreshCookieName: normalizeRefreshCookieName(cfg.RefreshCookieName),
+		refreshCookieCfg: http.Cookie{
+			Name:     normalizeRefreshCookieName(cfg.RefreshCookieName),
+			Path:     normalizeRefreshCookiePath(cfg.RefreshCookiePath),
+			Domain:   strings.TrimSpace(cfg.RefreshCookieDomain),
+			MaxAge:   int(normalizeRefreshCookieMaxAge(cfg.RefreshCookieMaxAge).Seconds()),
+			HttpOnly: true,
+			Secure:   cfg.RefreshCookieSecure,
+			SameSite: parseSameSiteMode(cfg.RefreshCookieSameSite),
+		},
 		mux:               http.NewServeMux(),
 		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
 		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
@@ -246,10 +270,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.signup", "success", "user_id", user.ID)
+	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusCreated, authResponse{
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-		User:         user,
+		Token: accessToken,
+		User:  user,
 	})
 }
 
@@ -275,10 +299,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.login", "success", "user_id", user.ID)
+	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-		User:         user,
+		Token: accessToken,
+		User:  user,
 	})
 }
 
@@ -376,10 +400,10 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.otp.verify", "success", "user_id", user.ID, "purpose", req.Purpose)
+	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-		User:         user,
+		Token: accessToken,
+		User:  user,
 	})
 }
 
@@ -452,27 +476,31 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req refreshRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		s.audit(r, "gateway.refresh", "fail", "reason", "invalid_json")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
+	refreshToken := s.resolveRefreshToken(r, req.RefreshToken)
+	if refreshToken == "" {
 		s.audit(r, "gateway.refresh", "fail", "reason", "missing_refresh_token")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "refresh token is required", "AUTH_REFRESH_TOKEN_REQUIRED")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.Refresh(requestIDFromRequest(r), req.RefreshToken)
+	user, accessToken, newRefreshToken, err := s.auth.Refresh(requestIDFromRequest(r), refreshToken)
 	if err != nil {
+		if apiErr, ok := err.(*authclient.APIError); ok && apiErr.Status == http.StatusUnauthorized {
+			s.clearRefreshCookie(w)
+		}
 		s.audit(r, "gateway.refresh", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
 	}
 	s.audit(r, "gateway.refresh", "success", "user_id", user.ID)
+	s.setRefreshCookie(w, newRefreshToken)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-		User:         user,
+		Token: accessToken,
+		User:  user,
 	})
 }
 
@@ -485,6 +513,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.logout", "rate_limited")
 		return
 	}
+	defer s.clearRefreshCookie(w)
 	var req logoutRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		s.audit(r, "gateway.logout", "fail", "reason", "invalid_json")
@@ -497,7 +526,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
-	if err := s.auth.Logout(requestIDFromRequest(r), token, req.RefreshToken); err != nil {
+	refreshToken := s.resolveRefreshToken(r, req.RefreshToken)
+	if err := s.auth.Logout(requestIDFromRequest(r), token, refreshToken); err != nil {
 		s.audit(r, "gateway.logout", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -874,7 +904,7 @@ type authResponse struct {
 }
 
 type refreshRequest struct {
-	RefreshToken string `json:"refreshToken"`
+	RefreshToken string `json:"refreshToken,omitempty"`
 }
 
 type logoutRequest struct {
@@ -907,6 +937,36 @@ func bearerToken(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return token, true
+}
+
+func (s *Server) resolveRefreshToken(r *http.Request, fromBody string) string {
+	token := strings.TrimSpace(fromBody)
+	if token != "" {
+		return token
+	}
+	cookie, err := r.Cookie(s.refreshCookieName)
+	if err != nil || cookie == nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+func (s *Server) setRefreshCookie(w http.ResponseWriter, refreshToken string) {
+	token := strings.TrimSpace(refreshToken)
+	if token == "" {
+		return
+	}
+	cookie := s.refreshCookieCfg
+	cookie.Value = token
+	http.SetCookie(w, &cookie)
+}
+
+func (s *Server) clearRefreshCookie(w http.ResponseWriter) {
+	cookie := s.refreshCookieCfg
+	cookie.Value = ""
+	cookie.MaxAge = -1
+	cookie.Expires = time.Unix(0, 0)
+	http.SetCookie(w, &cookie)
 }
 
 func parseUserRole(role string) (domain.UserRole, bool) {
@@ -995,6 +1055,47 @@ func normalizeMaxBytes(value int64) int64 {
 		return 50 * 1024 * 1024
 	}
 	return value
+}
+
+func normalizeRefreshCookieName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return defaultRefreshCookieName
+	}
+	return name
+}
+
+func normalizeRefreshCookiePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return defaultRefreshCookiePath
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "/" + path
+	}
+	return path
+}
+
+func normalizeRefreshCookieMaxAge(age time.Duration) time.Duration {
+	if age <= 0 {
+		return defaultRefreshCookieMaxAge
+	}
+	return age
+}
+
+func parseSameSiteMode(value string) http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "strict":
+		return http.SameSiteStrictMode
+	case "none":
+		return http.SameSiteNoneMode
+	case "default":
+		return http.SameSiteDefaultMode
+	case "lax", "":
+		return http.SameSiteLaxMode
+	default:
+		return http.SameSiteLaxMode
+	}
 }
 
 func normalizeExtensions(exts []string) map[string]struct{} {

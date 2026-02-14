@@ -17,6 +17,12 @@ type FileConfig struct {
 	LogLevel                   string   `yaml:"logLevel"`
 	AuthServiceURL             string   `yaml:"authServiceURL"`
 	AuthJWKSURL                string   `yaml:"authJwksURL"`
+	RefreshCookieName          string   `yaml:"refreshCookieName"`
+	RefreshCookieDomain        string   `yaml:"refreshCookieDomain"`
+	RefreshCookiePath          string   `yaml:"refreshCookiePath"`
+	RefreshCookieSecure        bool     `yaml:"refreshCookieSecure"`
+	RefreshCookieSameSite      string   `yaml:"refreshCookieSameSite"`
+	RefreshCookieMaxAgeSeconds int      `yaml:"refreshCookieMaxAgeSeconds"`
 	JWTIssuer                  string   `yaml:"jwtIssuer"`
 	JWTAudience                string   `yaml:"jwtAudience"`
 	JWTLeeway                  string   `yaml:"jwtLeeway"`
@@ -53,6 +59,28 @@ func Load(path string) (FileConfig, error) {
 	}
 	if v := os.Getenv("GATEWAY_AUTH_JWKS_URL"); v != "" {
 		cfg.AuthJWKSURL = v
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_NAME"); v != "" {
+		cfg.RefreshCookieName = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_DOMAIN"); v != "" {
+		cfg.RefreshCookieDomain = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_PATH"); v != "" {
+		cfg.RefreshCookiePath = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_SECURE"); v != "" {
+		if b, err := strconv.ParseBool(strings.TrimSpace(v)); err == nil {
+			cfg.RefreshCookieSecure = b
+		}
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_SAME_SITE"); v != "" {
+		cfg.RefreshCookieSameSite = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("GATEWAY_REFRESH_COOKIE_MAX_AGE_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.RefreshCookieMaxAgeSeconds = n
+		}
 	}
 	if v := os.Getenv("JWT_ISSUER"); v != "" {
 		cfg.JWTIssuer = v

@@ -63,7 +63,7 @@
 
 ## 3. 与后端契约的关键对齐点
 - 网关基址：`http://localhost:8080`
-- token 机制：登录返回 `token + refreshToken`，401 时走刷新再重试。
+- token 机制：登录返回 `token + user`；`refreshToken` 由 `HttpOnly Cookie` 承载，401 时走刷新再重试。
 - 上传：`multipart/form-data`，字段名固定 `file`。
 - 书籍状态：前端轮询 `GET /api/books/{id}`，到 `ready` 才允许问答。
 - 统一错误结构：`{ "error": "..." }`
