@@ -10,12 +10,11 @@ import { env } from '@/shared/config/env'
 
 type RefreshPayload = {
   token: string
-  refreshToken: string
+  refreshToken?: string
 }
 
 type SetupAuthInterceptorsOptions = {
   getAccessToken: () => string | null
-  getRefreshToken: () => string | null
   updateTokens: (payload: RefreshPayload) => void
   onAuthFailed: () => void
 }
@@ -35,15 +34,14 @@ function createRefreshClient() {
   return axios.create({
     baseURL: env.apiBaseUrl,
     timeout: env.requestTimeoutMs,
+    withCredentials: true,
     headers: { 'Content-Type': 'application/json' },
   })
 }
 
-async function refreshTokens(refreshToken: string): Promise<RefreshPayload> {
+async function refreshTokens(): Promise<RefreshPayload> {
   const refreshClient = createRefreshClient()
-  const { data } = await refreshClient.post<RefreshPayload>('/api/auth/refresh', {
-    refreshToken,
-  })
+  const { data } = await refreshClient.post<RefreshPayload>('/api/auth/refresh', {})
   return data
 }
 
@@ -76,17 +74,11 @@ export function setupAuthInterceptors(
         return Promise.reject(error)
       }
 
-      const currentRefreshToken = options.getRefreshToken()
-      if (!currentRefreshToken) {
-        options.onAuthFailed()
-        return Promise.reject(error)
-      }
-
       originalConfig._retry = true
 
       try {
         if (!inflightRefresh) {
-          inflightRefresh = refreshTokens(currentRefreshToken)
+          inflightRefresh = refreshTokens()
         }
         const refreshed = await inflightRefresh
         options.updateTokens(refreshed)
@@ -109,4 +101,3 @@ export function setupAuthInterceptors(
     http.interceptors.response.eject(responseInterceptor)
   }
 }
-

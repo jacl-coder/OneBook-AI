@@ -21,14 +21,15 @@
 - 忘记密码完成重置：`POST /api/auth/password/reset/complete`
 - 响应都包含：
   - `token`（access token）
-  - `refreshToken`（refresh token）
   - `user`
+- `refreshToken` 由 Gateway 通过 `HttpOnly Cookie` 下发（默认 `onebook_refresh`），前端不读取明文值。
 - 若密码登录命中无密码账号，返回 `AUTH_PASSWORD_NOT_SET`，前端应跳转 `/email-verification`。
 
 ### 2.2 刷新逻辑
 - 接口：`POST /api/auth/refresh`
-- 请求体：`{ "refreshToken": "<token>" }`
-- 成功会返回新 `token` 和新 `refreshToken`（前端必须覆盖旧值）。
+- 请求体可选（兼容）：`{ "refreshToken": "<token>" }`
+- 推荐：不传请求体，依赖浏览器自动携带 `HttpOnly refresh cookie`。
+- 成功会返回新 `token`（access token）并轮换写入新的 refresh cookie。
 - 安全语义：
   - refresh token 采用轮换（rotation）。
   - 旧 token 被重放时，会撤销该 family，后续 refresh 会失败，需要重新登录。
@@ -129,8 +130,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 - 队列失败重试：在同一事务中执行 `XADD + XACK + XDEL`，避免“已确认但未重投”的丢任务窗口。
 
 ## 8. 前端最小联调清单
-1. 注册/登录并保存 token 对。
+1. 注册/登录并保存 `access token + user`（refresh token 由 cookie 自动维护）。
 2. 上传一本 `pdf/epub/txt`。
 3. 轮询到 `ready`。
 4. 发起一次问答并展示 `answer + sources`。
-5. 验证 `401 -> refresh -> retry` 自动恢复流程。
+5. 验证 `401 -> refresh(cookie) -> retry` 自动恢复流程。

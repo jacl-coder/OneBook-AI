@@ -11,7 +11,6 @@ const SESSION_STORAGE_KEY = 'onebook:session'
 
 type StoredSession = {
   accessToken: string
-  refreshToken: string
   user: AuthUser
 }
 
@@ -22,7 +21,7 @@ function readStoredSession(): StoredSession | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredSession>
     if (!parsed || typeof parsed !== 'object') return null
-    if (typeof parsed.accessToken !== 'string' || typeof parsed.refreshToken !== 'string') return null
+    if (typeof parsed.accessToken !== 'string') return null
     const user = parsed.user as Partial<AuthUser> | undefined
     if (!user || typeof user !== 'object') return null
     if (typeof user.id !== 'string' || typeof user.email !== 'string') return null
@@ -30,7 +29,6 @@ function readStoredSession(): StoredSession | null {
     if (user.status !== 'active' && user.status !== 'disabled') return null
     return {
       accessToken: parsed.accessToken,
-      refreshToken: parsed.refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -56,40 +54,37 @@ const initialSession = readStoredSession()
 
 type SessionState = {
   accessToken: string | null
-  refreshToken: string | null
   user: AuthUser | null
   setSession: (payload: {
     accessToken: string
-    refreshToken: string
     user: AuthUser
   }) => void
-  updateTokens: (payload: { accessToken: string; refreshToken: string }) => void
+  updateTokens: (payload: { accessToken: string }) => void
   clearSession: () => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
   accessToken: initialSession?.accessToken ?? null,
-  refreshToken: initialSession?.refreshToken ?? null,
   user: initialSession?.user ?? null,
-  setSession: ({ accessToken, refreshToken, user }) =>
+  setSession: ({ accessToken, user }) =>
     set(() => {
-      const nextSession: StoredSession = { accessToken, refreshToken, user }
+      const nextSession: StoredSession = { accessToken, user }
       writeStoredSession(nextSession)
       return nextSession
     }),
-  updateTokens: ({ accessToken, refreshToken }) =>
+  updateTokens: ({ accessToken }) =>
     set((state) => {
       if (!state.user) {
         writeStoredSession(null)
-        return { accessToken: null, refreshToken: null, user: null }
+        return { accessToken: null, user: null }
       }
-      const nextSession: StoredSession = { accessToken, refreshToken, user: state.user }
+      const nextSession: StoredSession = { accessToken, user: state.user }
       writeStoredSession(nextSession)
       return nextSession
     }),
   clearSession: () =>
     set(() => {
       writeStoredSession(null)
-      return { accessToken: null, refreshToken: null, user: null }
+      return { accessToken: null, user: null }
     }),
 }))
