@@ -91,6 +91,28 @@ func (c *Client) OTPVerify(requestID, challengeID, email, purpose, code, passwor
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
+func (c *Client) PasswordResetVerify(requestID, challengeID, email, code string) (PasswordResetVerifyResponse, error) {
+	payload := map[string]string{
+		"challengeId": challengeID,
+		"email":       email,
+		"code":        code,
+	}
+	var resp PasswordResetVerifyResponse
+	if err := c.doJSON(http.MethodPost, "/auth/password/reset/verify", requestID, "", payload, &resp); err != nil {
+		return PasswordResetVerifyResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) PasswordResetComplete(requestID, email, resetToken, newPassword string) error {
+	payload := map[string]string{
+		"email":       email,
+		"resetToken":  resetToken,
+		"newPassword": newPassword,
+	}
+	return c.doJSON(http.MethodPost, "/auth/password/reset/complete", requestID, "", payload, nil)
+}
+
 func (c *Client) Refresh(requestID, refreshToken string) (domain.User, string, string, error) {
 	payload := map[string]string{"refreshToken": refreshToken}
 	var resp authResponse
@@ -229,6 +251,11 @@ type OTPSendResponse struct {
 
 type LoginMethodsResponse struct {
 	PasswordLogin bool `json:"passwordLogin"`
+}
+
+type PasswordResetVerifyResponse struct {
+	ResetToken       string `json:"resetToken"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
 }
 
 type listUsersResponse struct {

@@ -17,6 +17,8 @@
 - 登录：`POST /api/auth/login`
 - 发送 OTP：`POST /api/auth/otp/send`
 - 校验 OTP：`POST /api/auth/otp/verify`
+- 忘记密码验证码校验：`POST /api/auth/password/reset/verify`
+- 忘记密码完成重置：`POST /api/auth/password/reset/complete`
 - 响应都包含：
   - `token`（access token）
   - `refreshToken`（refresh token）

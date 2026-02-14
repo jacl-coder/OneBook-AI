@@ -12,12 +12,14 @@ import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 import successCheckmarkCircleSvg from '@/assets/icons/success-checkmark-circle.svg'
 
 import {
+  completePasswordReset,
   getApiErrorCode,
   getApiErrorMessage,
   loginMethods,
   login,
   sendOtp,
   type OtpPurpose,
+  verifyPasswordReset,
   verifyOtp,
 } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
@@ -29,6 +31,7 @@ const AUTH_OTP_CHALLENGE_STORAGE_KEY = 'auth:otp:challenge-id'
 const AUTH_OTP_PURPOSE_STORAGE_KEY = 'auth:otp:purpose'
 const AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY = 'auth:otp:pending-password'
 const AUTH_OTP_EMAIL_STORAGE_KEY = 'auth:otp:email'
+const AUTH_RESET_TOKEN_STORAGE_KEY = 'auth:reset:token'
 const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
 
 type AuthNavigationState = {
@@ -38,6 +41,7 @@ type AuthNavigationState = {
   purpose?: OtpPurpose
   pendingPassword?: string
   otpEmail?: string
+  resetToken?: string
 }
 
 type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew' | 'resetSuccess' | 'error'
@@ -61,6 +65,7 @@ function normalizeOtpPurpose(value: unknown): OtpPurpose | '' {
   if (normalized === 'signup_password') return 'signup_password'
   if (normalized === 'signup_otp') return 'signup_otp'
   if (normalized === 'login_otp') return 'login_otp'
+  if (normalized === 'reset_password') return 'reset_password'
   return ''
 }
 
@@ -102,6 +107,7 @@ export function LoginPage() {
   const locationStatePurpose = normalizeOtpPurpose(locationState?.purpose)
   const locationStatePendingPassword = normalizeText(locationState?.pendingPassword)
   const locationStateOtpEmail = normalizeText(locationState?.otpEmail)
+  const locationStateResetToken = normalizeText(locationState?.resetToken)
   const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
   const [authErrorMessage, setAuthErrorMessage] = useState(() => {
     const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
@@ -118,6 +124,9 @@ export function LoginPage() {
   )
   const [otpEmail, setOtpEmail] = useState(
     () => locationStateOtpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY),
+  )
+  const [resetToken, setResetToken] = useState(
+    () => locationStateResetToken || readSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY),
   )
 
   const emailId = useId()
@@ -281,7 +290,7 @@ export function LoginPage() {
 
   const getAuthState = (
     emailValue: string,
-    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword' | 'otpEmail'>>,
+    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword' | 'otpEmail' | 'resetToken'>>,
   ): AuthNavigationState => {
     const normalizedEmail = normalizeText(emailValue)
     const state: AuthNavigationState = {}
@@ -290,6 +299,7 @@ export function LoginPage() {
     if (extras?.purpose) state.purpose = normalizeOtpPurpose(extras.purpose) || undefined
     if (extras?.pendingPassword) state.pendingPassword = normalizeText(extras.pendingPassword)
     if (extras?.otpEmail) state.otpEmail = normalizeText(extras.otpEmail)
+    if (extras?.resetToken) state.resetToken = normalizeText(extras.resetToken)
     return state
   }
 
@@ -329,6 +339,17 @@ export function LoginPage() {
     writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, '')
   }
 
+  const syncResetToken = (value: string) => {
+    const normalized = normalizeText(value)
+    setResetToken(normalized)
+    writeSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY, normalized)
+    return normalized
+  }
+
+  const clearResetToken = () => {
+    syncResetToken('')
+  }
+
   const syncEmail = (emailValue: string) => {
     const normalizedEmail = normalizeText(emailValue)
     setStepEmail(normalizedEmail)
@@ -360,16 +381,22 @@ export function LoginPage() {
     const nextOtpEmail = locationStateOtpEmail || otpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY)
     if (nextOtpEmail !== otpEmail) schedule(() => setOtpEmail(nextOtpEmail))
     writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, nextOtpEmail)
+
+    const nextResetToken = locationStateResetToken || resetToken || readSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY)
+    if (nextResetToken !== resetToken) schedule(() => setResetToken(nextResetToken))
+    writeSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY, nextResetToken)
   }, [
     location.key,
     locationStateChallengeId,
     locationStatePurpose,
     locationStatePendingPassword,
     locationStateOtpEmail,
+    locationStateResetToken,
     otpChallengeId,
     otpPurpose,
     otpPendingPassword,
     otpEmail,
+    resetToken,
   ])
 
   useEffect(() => {
@@ -468,6 +495,7 @@ export function LoginPage() {
 
       if (isCreateAccountEntry) {
         clearOtpContext()
+        clearResetToken()
         navigate('/create-account/password', {
           state: getAuthState(nextEmail),
         })
@@ -487,6 +515,7 @@ export function LoginPage() {
 
       if (passwordLogin) {
         clearOtpContext()
+        clearResetToken()
         navigate('/log-in/password', {
           state: getAuthState(nextEmail),
         })
@@ -544,6 +573,7 @@ export function LoginPage() {
 
       const auth = await login({ email: stepEmail.trim(), password: password.trim() })
       clearOtpContext()
+      clearResetToken()
       setSession({
         accessToken: auth.token,
         refreshToken: auth.refreshToken,
@@ -683,6 +713,28 @@ export function LoginPage() {
       return
     }
 
+    if (otpPurpose === 'reset_password') {
+      setVerifyErrorText('')
+      setIsVerifySubmitting(true)
+      try {
+        const result = await verifyPasswordReset({
+          challengeId: otpChallengeId,
+          email: normalizedEmail,
+          code,
+        })
+        clearOtpContext()
+        const token = syncResetToken(result.resetToken)
+        navigate('/reset-password/new-password', {
+          state: getAuthState(normalizedEmail, { resetToken: token }),
+        })
+      } catch (error) {
+        setVerifyErrorText(getApiErrorMessage(error, 'Verification failed. Please try again.'))
+      } finally {
+        setIsVerifySubmitting(false)
+      }
+      return
+    }
+
     const setSession = useSessionStore.getState().setSession
     setVerifyErrorText('')
     setIsVerifySubmitting(true)
@@ -695,6 +747,7 @@ export function LoginPage() {
         password: passwordForSignupPassword || undefined,
       })
       clearOtpContext()
+      clearResetToken()
       setSession({
         accessToken: auth.token,
         refreshToken: auth.refreshToken,
@@ -743,13 +796,34 @@ export function LoginPage() {
     event.preventDefault()
     if (isResetSubmitting) return
 
+    const normalizedEmail = stepEmail.trim()
+    if (!normalizedEmail) {
+      navigate('/log-in', {
+        state: {
+          ...getAuthState(''),
+          errorMessage: 'Please enter your email first.',
+        } satisfies AuthNavigationState,
+      })
+      return
+    }
+
     setIsResetSubmitting(true)
-    navigate('/log-in/error', {
-      state: {
-        ...getAuthState(stepEmail),
-        errorMessage: 'Password reset is not implemented yet. Please log in with your password or sign up again.',
-      } satisfies AuthNavigationState,
-    })
+    try {
+      clearResetToken()
+      const { otpContext } = await requestOtpChallenge('reset_password', '', normalizedEmail)
+      navigate('/email-verification', {
+        state: getAuthState(normalizedEmail, otpContext),
+      })
+    } catch (error) {
+      navigate('/log-in/error', {
+        state: {
+          ...getAuthState(normalizedEmail),
+          errorMessage: getApiErrorMessage(error, 'Failed to send verification code. Please try again.'),
+        } satisfies AuthNavigationState,
+      })
+    } finally {
+      setIsResetSubmitting(false)
+    }
   }
 
   const handleVerifySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -794,13 +868,36 @@ export function LoginPage() {
       return
     }
 
+    const normalizedEmail = stepEmail.trim()
+    const activeResetToken = normalizeText(resetToken || readSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY))
+    if (!normalizedEmail || !activeResetToken) {
+      navigate('/log-in/error', {
+        state: {
+          ...getAuthState(normalizedEmail),
+          errorMessage: 'Password reset session expired. Please restart verification.',
+        } satisfies AuthNavigationState,
+      })
+      return
+    }
+
     setIsResetNewSubmitting(true)
-    navigate('/log-in/error', {
-      state: {
-        ...getAuthState(stepEmail),
-        errorMessage: 'Password reset is not implemented yet. Please log in with your password or sign up again.',
-      } satisfies AuthNavigationState,
-    })
+    try {
+      await completePasswordReset({
+        email: normalizedEmail,
+        resetToken: activeResetToken,
+        newPassword: nextPassword,
+      })
+      clearResetToken()
+      setNewPassword('')
+      setConfirmPassword('')
+      navigate('/reset-password/success', {
+        state: getAuthState(normalizedEmail),
+      })
+    } catch (error) {
+      setConfirmPasswordErrorText(getApiErrorMessage(error, 'Failed to reset password. Please try again.'))
+    } finally {
+      setIsResetNewSubmitting(false)
+    }
   }
 
   const renderSocialButtons = () => (

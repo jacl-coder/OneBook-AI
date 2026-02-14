@@ -123,6 +123,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/auth/login/methods", s.handleLoginMethods)
 	s.mux.HandleFunc("/auth/otp/send", s.handleOTPSend)
 	s.mux.HandleFunc("/auth/otp/verify", s.handleOTPVerify)
+	s.mux.HandleFunc("/auth/password/reset/verify", s.handlePasswordResetVerify)
+	s.mux.HandleFunc("/auth/password/reset/complete", s.handlePasswordResetComplete)
 	s.mux.HandleFunc("/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("/auth/jwks", s.handleJWKS)
@@ -399,6 +401,11 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errOTPPurposeInvalid.Error())
 		return
 	}
+	if purpose == otpPurposeResetPassword {
+		s.audit(r, "auth.otp.verify", "fail", "reason", "unsupported_purpose")
+		writeError(w, http.StatusBadRequest, "use password reset verification endpoint")
+		return
+	}
 	if purpose == otpPurposeSignupPassword && strings.TrimSpace(req.Password) == "" {
 		s.audit(r, "auth.otp.verify", "fail", "reason", "missing_password")
 		writeError(w, http.StatusBadRequest, "password is required for password sign-up")
@@ -452,6 +459,119 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken,
 		User:         user,
 	})
+}
+
+func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req passwordResetVerifyRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_email")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	if !s.allowRateKey(w, s.loginLimiter, key, errPasswordResetVerifyRateLimited.Error()) {
+		s.audit(r, "auth.password.reset.verify", "rate_limited")
+		return
+	}
+	if err := s.otp.VerifyChallenge(req.ChallengeID, email, otpPurposeResetPassword, req.Code); err != nil {
+		switch {
+		case errors.Is(err, errOTPChallengeInvalid):
+			s.audit(r, "auth.password.reset.verify", "fail", "reason", "challenge_invalid")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errOTPCodeInvalid):
+			s.audit(r, "auth.password.reset.verify", "fail", "reason", "code_invalid")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errOTPCodeExpired):
+			s.audit(r, "auth.password.reset.verify", "fail", "reason", "code_expired")
+			writeError(w, http.StatusUnauthorized, err.Error())
+		case errors.Is(err, errOTPChallengeRequired), errors.Is(err, errOTPCodeRequired):
+			s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_request")
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			slog.Error("auth.password.reset.verify_error", "err", err)
+			s.audit(r, "auth.password.reset.verify", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	resetToken, expiresInSeconds, err := s.otp.CreateResetToken(email)
+	if err != nil {
+		slog.Error("auth.password.reset.token_error", "err", err)
+		s.audit(r, "auth.password.reset.verify", "fail", "reason", "internal_error")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	s.audit(r, "auth.password.reset.verify", "success")
+	writeJSON(w, http.StatusOK, passwordResetVerifyResponse{
+		ResetToken:       resetToken,
+		ExpiresInSeconds: expiresInSeconds,
+	})
+}
+
+func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.allowRate(w, r, s.passwordLimiter, "too many password reset attempts") {
+		s.audit(r, "auth.password.reset.complete", "rate_limited")
+		return
+	}
+	var req passwordResetCompleteRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.password.reset.complete", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	email, err := normalizeEmail(req.Email)
+	if err != nil {
+		s.audit(r, "auth.password.reset.complete", "fail", "reason", "invalid_email")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.otp.ValidateResetToken(req.ResetToken, email); err != nil {
+		switch {
+		case errors.Is(err, errResetTokenRequired):
+			s.audit(r, "auth.password.reset.complete", "fail", "reason", "token_required")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, errResetTokenInvalid):
+			s.audit(r, "auth.password.reset.complete", "fail", "reason", "token_invalid")
+			writeError(w, http.StatusUnauthorized, err.Error())
+		default:
+			slog.Error("auth.password.reset.validate_error", "err", err)
+			s.audit(r, "auth.password.reset.complete", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	if err := s.app.ResetPasswordByEmail(email, req.NewPassword); err != nil {
+		s.audit(r, "auth.password.reset.complete", "fail", "reason", err.Error())
+		switch {
+		case errors.Is(err, app.ErrEmailRequired), errors.Is(err, app.ErrNewPasswordRequired), isPasswordPolicyError(err):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrInvalidCredentials), errors.Is(err, app.ErrUserDisabled):
+			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
+		default:
+			slog.Error("auth.password.reset.complete_error", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	if err := s.otp.ConsumeResetToken(req.ResetToken); err != nil {
+		slog.Warn("auth.password.reset.consume_token_error", "err", err)
+	}
+	s.audit(r, "auth.password.reset.complete", "success")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -696,6 +816,23 @@ type otpVerifyRequest struct {
 	Password    string `json:"password,omitempty"`
 }
 
+type passwordResetVerifyRequest struct {
+	ChallengeID string `json:"challengeId"`
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+}
+
+type passwordResetVerifyResponse struct {
+	ResetToken       string `json:"resetToken"`
+	ExpiresInSeconds int    `json:"expiresInSeconds"`
+}
+
+type passwordResetCompleteRequest struct {
+	Email       string `json:"email"`
+	ResetToken  string `json:"resetToken"`
+	NewPassword string `json:"newPassword"`
+}
+
 type authResponse struct {
 	Token        string      `json:"token"`
 	RefreshToken string      `json:"refreshToken,omitempty"`
@@ -873,10 +1010,16 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_OTP_SEND_RATE_LIMITED"
 	case message == errOTPVerifyRateLimited.Error():
 		return "AUTH_OTP_VERIFY_RATE_LIMITED"
+	case message == errPasswordResetVerifyRateLimited.Error():
+		return "AUTH_PASSWORD_RESET_VERIFY_RATE_LIMITED"
 	case message == errOTPPurposeInvalid.Error():
 		return "AUTH_INVALID_REQUEST"
 	case message == errOTPCodeRequired.Error(), message == errOTPChallengeRequired.Error():
 		return "AUTH_INVALID_REQUEST"
+	case message == errResetTokenRequired.Error():
+		return "AUTH_PASSWORD_RESET_TOKEN_REQUIRED"
+	case message == errResetTokenInvalid.Error():
+		return "AUTH_PASSWORD_RESET_TOKEN_INVALID"
 	case message == "email required", message == "email is required":
 		return "AUTH_EMAIL_REQUIRED"
 	case message == app.ErrCurrentPasswordRequired.Error():
@@ -899,6 +1042,8 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_REFRESH_RATE_LIMITED"
 	case message == "too many password change attempts":
 		return "AUTH_PASSWORD_CHANGE_RATE_LIMITED"
+	case message == "too many password reset attempts":
+		return "AUTH_PASSWORD_RESET_RATE_LIMITED"
 	case message == "password is required for password sign-up":
 		return "AUTH_PASSWORD_REQUIRED"
 	case message == "jwks not configured":

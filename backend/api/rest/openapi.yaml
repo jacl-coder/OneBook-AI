@@ -197,6 +197,7 @@ paths:
       description: |
         Verifies OTP code and completes login/registration.
         Successful verification returns auth tokens and user payload.
+        For forgot-password flow, use `/api/auth/password/reset/verify`.
       requestBody:
         required: true
         content:
@@ -218,6 +219,90 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: OTP expired or verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/password/reset/verify:
+    post:
+      tags: [auth]
+      summary: Verify reset-password code
+      description: |
+        Verifies the one-time email code for password reset and returns a
+        short-lived reset token for the next step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetVerifyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetVerifyResponse"
+        "400":
+          description: Invalid input or invalid OTP challenge/code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: OTP expired or verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/password/reset/complete:
+    post:
+      tags: [auth]
+      summary: Complete password reset
+      description: |
+        Sets a new password using a valid reset token returned by
+        `/api/auth/password/reset/verify`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetCompleteRequest"
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid or expired reset token
           content:
             application/json:
               schema:
@@ -809,12 +894,13 @@ components:
       required: [passwordLogin]
     OtpPurpose:
       type: string
-      enum: [signup_password, signup_otp, login_otp]
+      enum: [signup_password, signup_otp, login_otp, reset_password]
       description: |
         OTP flow purpose:
         - signup_password: password registration (set password first, then OTP)
         - signup_otp: passwordless registration
         - login_otp: OTP login
+        - reset_password: forgot-password verification
     OtpSendRequest:
       type: object
       properties:
@@ -857,6 +943,41 @@ components:
           description: Required when purpose is `signup_password`.
           minLength: 12
       required: [challengeId, email, purpose, code]
+    PasswordResetVerifyRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          minLength: 4
+          maxLength: 8
+      required: [challengeId, email, code]
+    PasswordResetVerifyResponse:
+      type: object
+      properties:
+        resetToken:
+          type: string
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+      required: [resetToken, expiresInSeconds]
+    PasswordResetCompleteRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        resetToken:
+          type: string
+        newPassword:
+          type: string
+          description: At least 12 chars and must include upper/lower/digit/special.
+          minLength: 12
+      required: [email, resetToken, newPassword]
     RefreshRequest:
       type: object
       properties:

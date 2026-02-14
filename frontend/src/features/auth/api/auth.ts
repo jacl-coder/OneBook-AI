@@ -12,7 +12,7 @@ type LoginMethodsRequest = {
   email: string
 }
 
-export type OtpPurpose = 'signup_password' | 'signup_otp' | 'login_otp'
+export type OtpPurpose = 'signup_password' | 'signup_otp' | 'login_otp' | 'reset_password'
 
 type OtpSendRequest = {
   email: string
@@ -25,6 +25,18 @@ type OtpVerifyRequest = {
   purpose: OtpPurpose
   code: string
   password?: string
+}
+
+type PasswordResetVerifyRequest = {
+  challengeId: string
+  email: string
+  code: string
+}
+
+type PasswordResetCompleteRequest = {
+  email: string
+  resetToken: string
+  newPassword: string
 }
 
 type BackendUser = AuthUser & {
@@ -47,6 +59,11 @@ export type OtpSendResponse = {
 
 export type LoginMethodsResponse = {
   passwordLogin: boolean
+}
+
+export type PasswordResetVerifyResponse = {
+  resetToken: string
+  expiresInSeconds: number
 }
 
 type ErrorResponse = {
@@ -98,4 +115,15 @@ export async function sendOtp(payload: OtpSendRequest): Promise<OtpSendResponse>
 export async function verifyOtp(payload: OtpVerifyRequest): Promise<AuthResponse> {
   const { data } = await http.post<AuthResponse>('/api/auth/otp/verify', payload)
   return data
+}
+
+export async function verifyPasswordReset(
+  payload: PasswordResetVerifyRequest,
+): Promise<PasswordResetVerifyResponse> {
+  const { data } = await http.post<PasswordResetVerifyResponse>('/api/auth/password/reset/verify', payload)
+  return data
+}
+
+export async function completePasswordReset(payload: PasswordResetCompleteRequest): Promise<void> {
+  await http.post('/api/auth/password/reset/complete', payload)
 }
