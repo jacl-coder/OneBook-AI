@@ -70,6 +70,12 @@
   background: #f4f4f4;
 }
 
+.chatgpt-auth-close-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 .chatgpt-auth-dialog-body {
   flex: 1;
   overflow-y: auto;
@@ -258,7 +264,10 @@
   justify-content: center;
 }
 
-.chatgpt-auth-error-icon img {
+.chatgpt-auth-error-icon img,
+.chatgpt-auth-error-icon svg {
+  width: 16px;
+  height: 16px;
   display: block;
 }
 

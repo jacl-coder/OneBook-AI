@@ -1,27 +1,17 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import attachIcon from '@/assets/icons/chat/attach.svg'
-import arrowUpIcon from '@/assets/icons/chat/arrow-up.svg'
-import chevronDownIcon from '@/assets/icons/chat/chevron-down.svg'
-import micIcon from '@/assets/icons/chat/mic.svg'
-import profileIcon from '@/assets/icons/chat/profile.svg'
-import quoteIcon from '@/assets/icons/chat/quote.svg'
-import searchIcon from '@/assets/icons/chat/search.svg'
-import studyIcon from '@/assets/icons/chat/study.svg'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
 import appleLogo from '@/assets/brand/provider/apple-logo.svg'
 import microsoftLogo from '@/assets/brand/provider/microsoft-logo.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
-import errorCircleIcon from '@/assets/icons/error-circle.svg'
-import closeIcon from '@/assets/icons/close.svg'
 
 const quickActions = [
-  { icon: attachIcon, label: '附件' },
-  { icon: searchIcon, label: '检索书库' },
-  { icon: studyIcon, label: '学习模式' },
-  { icon: quoteIcon, label: '引用回答' },
+  { symbolId: 'chat-attach', label: '附件' },
+  { symbolId: 'chat-search', label: '检索书库' },
+  { symbolId: 'chat-study', label: '学习模式' },
+  { symbolId: 'chat-quote', label: '引用回答' },
 ]
 
 const headingPool = [
@@ -35,6 +25,7 @@ const headingPool = [
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 type AuthModalMode = 'login' | 'register'
+const CHAT_ICON_SPRITE_URL = '/icons/chat/sprite.svg'
 
 export function ChatPage() {
   const navigate = useNavigate()
@@ -143,19 +134,25 @@ export function ChatPage() {
           </Link>
           <button type="button" className="chatgpt-model-btn" aria-label="模型选择器，当前模型为 OneBook AI">
             <span>OneBook AI</span>
-            <img src={chevronDownIcon} alt="" aria-hidden="true" className="chatgpt-model-icon" />
+            <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-model-icon">
+              <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
+            </svg>
           </button>
         </div>
 
         <div className="chatgpt-entry-right">
           <button type="button" className="chatgpt-top-btn chatgpt-top-btn-dark" onClick={() => openAuthModal('login')}>
-            登录
+            <div className="chatgpt-top-btn-label">登录</div>
           </button>
           <button type="button" className="chatgpt-top-btn chatgpt-top-btn-light" onClick={() => openAuthModal('register')}>
-            免费注册
+            <div className="chatgpt-top-btn-label">免费注册</div>
           </button>
           <button type="button" className="chatgpt-profile-btn" aria-label="打开“个人资料”菜单">
-            <img src={profileIcon} alt="" aria-hidden="true" className="chatgpt-profile-icon" />
+            <div className="chatgpt-profile-btn-inner">
+                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-profile-icon">
+                <use href={`${CHAT_ICON_SPRITE_URL}#chat-profile`} fill="currentColor" />
+                </svg>
+            </div>
           </button>
         </div>
       </header>
@@ -235,7 +232,9 @@ export function ChatPage() {
                                   : 'chatgpt-action-btn'
                               }
                             >
-                              <img src={item.icon} alt="" aria-hidden="true" className="chatgpt-action-icon" />
+                              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-action-icon">
+                                <use href={`${CHAT_ICON_SPRITE_URL}#${item.symbolId}`} fill="currentColor" />
+                              </svg>
                               <span>{item.label}</span>
                             </button>
                           ))}
@@ -243,18 +242,35 @@ export function ChatPage() {
                       </div>
 
                       <div className="chatgpt-composer-trailing">
-                        <button type="button" className="chatgpt-voice-btn" aria-label="启动语音功能">
-                          <img src={micIcon} alt="" aria-hidden="true" className="chatgpt-voice-icon" />
-                          <span>语音</span>
-                        </button>
-                        <button
-                          type="submit"
-                          className="chatgpt-send-btn"
-                          aria-label="发送"
-                          disabled={!hasPrompt}
-                        >
-                          <img src={arrowUpIcon} alt="" aria-hidden="true" className="chatgpt-send-icon" />
-                        </button>
+                        {!hasPrompt ? (
+                          <button
+                            type="button"
+                            className="chatgpt-voice-btn"
+                            aria-label="启动语音功能"
+                            data-testid="composer-speech-button"
+                          >
+                            <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-voice-icon">
+                              <use href={`${CHAT_ICON_SPRITE_URL}#chat-voice`} fill="currentColor" />
+                            </svg>
+                            <span>语音</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            className="chatgpt-send-btn"
+                            aria-label="发送提示"
+                            data-testid="send-button"
+                          >
+                            <svg
+                              viewBox="0 0 20 20"
+                              xmlns="http://www.w3.org/2000/svg"
+                              aria-hidden="true"
+                              className="chatgpt-send-icon"
+                            >
+                              <use href={`${CHAT_ICON_SPRITE_URL}#chat-send`} fill="currentColor" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </form>
@@ -309,7 +325,9 @@ export function ChatPage() {
               <header className="chatgpt-auth-dialog-header">
                 <div className="chatgpt-auth-dialog-header-title" />
                 <button type="button" className="chatgpt-auth-close-btn" aria-label="关闭" onClick={closeAuthModal}>
-                  <img src={closeIcon} alt="" aria-hidden="true" />
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-auth-close-icon">
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-close`} fill="currentColor" />
+                  </svg>
                 </button>
               </header>
 
@@ -392,7 +410,9 @@ export function ChatPage() {
                       {isAuthInvalid ? (
                         <div className="chatgpt-auth-error" id={authErrorId}>
                           <span className="chatgpt-auth-error-icon">
-                            <img src={errorCircleIcon} alt="" aria-hidden="true" />
+                            <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                              <use href={`${CHAT_ICON_SPRITE_URL}#chat-error-circle`} />
+                            </svg>
                           </span>
                           <span>{authErrorText}</span>
                         </div>
