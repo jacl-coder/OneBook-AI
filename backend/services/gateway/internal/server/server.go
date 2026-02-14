@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"onebookai/internal/ratelimit"
 	"onebookai/internal/usertoken"
 	"onebookai/internal/util"
@@ -26,10 +27,15 @@ type contextKey string
 const requestIDContextKey contextKey = "request_id"
 
 const (
+	defaultAccessCookieName    = "onebook_access"
+	defaultAccessCookiePath    = "/"
+	defaultAccessCookieMaxAge  = 15 * time.Minute
 	defaultRefreshCookieName   = "onebook_refresh"
 	defaultRefreshCookiePath   = "/api/auth"
 	defaultRefreshCookieMaxAge = 30 * 24 * time.Hour
 )
+
+var errSessionUnauthorized = errors.New("session unauthorized")
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
@@ -37,6 +43,12 @@ type Config struct {
 	Book                       *bookclient.Client
 	Chat                       *chatclient.Client
 	TokenVerifier              *usertoken.Verifier
+	AccessCookieName           string
+	AccessCookieDomain         string
+	AccessCookiePath           string
+	AccessCookieSecure         bool
+	AccessCookieSameSite       string
+	AccessCookieMaxAge         time.Duration
 	RefreshCookieName          string
 	RefreshCookieDomain        string
 	RefreshCookiePath          string
@@ -60,8 +72,11 @@ type Server struct {
 	books             *bookclient.Client
 	chat              *chatclient.Client
 	tokenVerifier     *usertoken.Verifier
+	accessCookieName  string
+	accessCookieCfg   http.Cookie
 	refreshCookieName string
 	refreshCookieCfg  http.Cookie
+	refreshSingle     singleflight.Group
 	mux               *http.ServeMux
 	maxUploadBytes    int64
 	allowedExtensions map[string]struct{}
@@ -120,10 +135,20 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("parse trustedProxyCIDRs: %w", err)
 	}
 	s := &Server{
-		auth:              cfg.Auth,
-		books:             cfg.Book,
-		chat:              cfg.Chat,
-		tokenVerifier:     cfg.TokenVerifier,
+		auth:             cfg.Auth,
+		books:            cfg.Book,
+		chat:             cfg.Chat,
+		tokenVerifier:    cfg.TokenVerifier,
+		accessCookieName: normalizeAccessCookieName(cfg.AccessCookieName),
+		accessCookieCfg: http.Cookie{
+			Name:     normalizeAccessCookieName(cfg.AccessCookieName),
+			Path:     normalizeAccessCookiePath(cfg.AccessCookiePath),
+			Domain:   strings.TrimSpace(cfg.AccessCookieDomain),
+			MaxAge:   int(normalizeAccessCookieMaxAge(cfg.AccessCookieMaxAge).Seconds()),
+			HttpOnly: true,
+			Secure:   cfg.AccessCookieSecure,
+			SameSite: parseSameSiteMode(cfg.AccessCookieSameSite),
+		},
 		refreshCookieName: normalizeRefreshCookieName(cfg.RefreshCookieName),
 		refreshCookieCfg: http.Cookie{
 			Name:     normalizeRefreshCookieName(cfg.RefreshCookieName),
@@ -187,64 +212,126 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // auth wrappers
-type authHandler func(http.ResponseWriter, *http.Request, domain.User)
+type authContext struct {
+	User         domain.User
+	AccessToken  string
+	RefreshToken string
+}
+
+type authHandler func(http.ResponseWriter, *http.Request, authContext)
 
 func (s *Server) authenticated(next authHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, ok := s.authorize(r)
-		if !ok {
+		ctx, err := s.resolveSession(w, r)
+		if err != nil {
 			s.audit(r, "gateway.authorize", "fail")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
+			if errors.Is(err, errSessionUnauthorized) {
+				s.clearAuthCookies(w)
+				writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
+				return
+			}
+			writeAuthError(w, r, err)
 			return
 		}
-		s.audit(r, "gateway.authorize", "success", "user_id", user.ID)
-		next(w, r, user)
+		s.audit(r, "gateway.authorize", "success", "user_id", ctx.User.ID)
+		next(w, r, ctx)
 	})
 }
 
 func (s *Server) adminOnly(next authHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r)
-		if !ok {
-			s.audit(r, "gateway.admin.authorize", "fail", "reason", "missing_token")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-			return
-		}
-		user, err := s.auth.Me(requestIDFromRequest(r), token)
+		ctx, err := s.resolveSession(w, r)
 		if err != nil {
-			s.audit(r, "gateway.admin.authorize", "fail", "reason", "auth_me_failed")
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
+			s.audit(r, "gateway.admin.authorize", "fail", "reason", err.Error())
+			if errors.Is(err, errSessionUnauthorized) {
+				s.clearAuthCookies(w)
+				writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
+				return
+			}
+			writeAuthError(w, r, err)
 			return
 		}
-		if user.Role != domain.RoleAdmin {
-			s.audit(r, "gateway.admin.authorize", "fail", "user_id", user.ID, "reason", "forbidden")
+		if ctx.User.Role != domain.RoleAdmin {
+			s.audit(r, "gateway.admin.authorize", "fail", "user_id", ctx.User.ID, "reason", "forbidden")
 			writeErrorWithCode(w, r, http.StatusForbidden, "you do not have permission", "ADMIN_FORBIDDEN")
 			return
 		}
-		s.audit(r, "gateway.admin.authorize", "success", "user_id", user.ID)
-		next(w, r, user)
+		s.audit(r, "gateway.admin.authorize", "success", "user_id", ctx.User.ID)
+		next(w, r, ctx)
 	})
 }
 
-func (s *Server) authorize(r *http.Request) (domain.User, bool) {
-	token, ok := bearerToken(r)
-	if !ok {
-		s.audit(r, "gateway.token.verify", "fail", "reason", "missing_token")
-		return domain.User{}, false
+func (s *Server) resolveSession(w http.ResponseWriter, r *http.Request) (authContext, error) {
+	accessToken := tokenFromCookie(r, s.accessCookieName)
+	refreshToken := tokenFromCookie(r, s.refreshCookieName)
+	if accessToken != "" {
+		user, err := s.authorizeAccessToken(r, accessToken)
+		if err == nil {
+			return authContext{User: user, AccessToken: accessToken, RefreshToken: refreshToken}, nil
+		}
+		if !errors.Is(err, errSessionUnauthorized) {
+			return authContext{}, err
+		}
+	}
+	refreshed, err := s.refreshViaCookie(w, r, refreshToken)
+	if err != nil {
+		return authContext{}, err
+	}
+	return refreshed, nil
+}
+
+func (s *Server) authorizeAccessToken(r *http.Request, accessToken string) (domain.User, error) {
+	token := strings.TrimSpace(accessToken)
+	if token == "" {
+		s.audit(r, "gateway.token.verify", "fail", "reason", "missing_access_cookie")
+		return domain.User{}, errSessionUnauthorized
 	}
 	if s.tokenVerifier != nil {
 		if _, err := s.tokenVerifier.VerifySubject(token); err != nil {
 			s.audit(r, "gateway.token.verify", "fail", "reason", "invalid_signature_or_claims")
-			return domain.User{}, false
+			return domain.User{}, errSessionUnauthorized
 		}
 	}
 	user, err := s.auth.Me(requestIDFromRequest(r), token)
 	if err != nil {
-		s.audit(r, "gateway.token.verify", "fail", "reason", "auth_me_failed")
-		return domain.User{}, false
+		if isUnauthorizedAuthError(err) {
+			s.audit(r, "gateway.token.verify", "fail", "reason", "auth_me_unauthorized")
+			return domain.User{}, errSessionUnauthorized
+		}
+		return domain.User{}, err
 	}
 	s.audit(r, "gateway.token.verify", "success", "user_id", user.ID)
-	return user, true
+	return user, nil
+}
+
+func (s *Server) refreshViaCookie(w http.ResponseWriter, r *http.Request, refreshToken string) (authContext, error) {
+	token := strings.TrimSpace(refreshToken)
+	if token == "" {
+		s.audit(r, "gateway.refresh", "fail", "reason", "missing_refresh_cookie")
+		return authContext{}, errSessionUnauthorized
+	}
+	result, err, _ := s.refreshSingle.Do(token, func() (any, error) {
+		user, accessToken, newRefreshToken, err := s.auth.Refresh(requestIDFromRequest(r), token)
+		if err != nil {
+			return nil, err
+		}
+		return authContext{
+			User:         user,
+			AccessToken:  accessToken,
+			RefreshToken: newRefreshToken,
+		}, nil
+	})
+	if err != nil {
+		if isUnauthorizedAuthError(err) {
+			s.audit(r, "gateway.refresh", "fail", "reason", "invalid_refresh_cookie")
+			return authContext{}, errSessionUnauthorized
+		}
+		return authContext{}, err
+	}
+	ctx := result.(authContext)
+	s.setAccessCookie(w, ctx.AccessToken)
+	s.setRefreshCookie(w, ctx.RefreshToken)
+	return ctx, nil
 }
 
 // auth handlers
@@ -270,10 +357,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.signup", "success", "user_id", user.ID)
+	s.setAccessCookie(w, accessToken)
 	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusCreated, authResponse{
-		Token: accessToken,
-		User:  user,
+		User: user,
 	})
 }
 
@@ -299,10 +386,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.login", "success", "user_id", user.ID)
+	s.setAccessCookie(w, accessToken)
 	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token: accessToken,
-		User:  user,
+		User: user,
 	})
 }
 
@@ -400,10 +487,10 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gateway.otp.verify", "success", "user_id", user.ID, "purpose", req.Purpose)
+	s.setAccessCookie(w, accessToken)
 	s.setRefreshCookie(w, refreshToken)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token: accessToken,
-		User:  user,
+		User: user,
 	})
 }
 
@@ -475,32 +562,19 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.refresh", "rate_limited")
 		return
 	}
-	var req refreshRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		s.audit(r, "gateway.refresh", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
-		return
-	}
-	refreshToken := s.resolveRefreshToken(r, req.RefreshToken)
-	if refreshToken == "" {
-		s.audit(r, "gateway.refresh", "fail", "reason", "missing_refresh_token")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "refresh token is required", "AUTH_REFRESH_TOKEN_REQUIRED")
-		return
-	}
-	user, accessToken, newRefreshToken, err := s.auth.Refresh(requestIDFromRequest(r), refreshToken)
+	ctx, err := s.refreshViaCookie(w, r, tokenFromCookie(r, s.refreshCookieName))
 	if err != nil {
-		if apiErr, ok := err.(*authclient.APIError); ok && apiErr.Status == http.StatusUnauthorized {
-			s.clearRefreshCookie(w)
+		if errors.Is(err, errSessionUnauthorized) {
+			s.clearAuthCookies(w)
+			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_REFRESH_TOKEN")
+			return
 		}
-		s.audit(r, "gateway.refresh", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
 	}
-	s.audit(r, "gateway.refresh", "success", "user_id", user.ID)
-	s.setRefreshCookie(w, newRefreshToken)
+	s.audit(r, "gateway.refresh", "success", "user_id", ctx.User.ID)
 	writeJSON(w, http.StatusOK, authResponse{
-		Token: accessToken,
-		User:  user,
+		User: ctx.User,
 	})
 }
 
@@ -513,21 +587,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.logout", "rate_limited")
 		return
 	}
-	defer s.clearRefreshCookie(w)
-	var req logoutRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		s.audit(r, "gateway.logout", "fail", "reason", "invalid_json")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
+	defer s.clearAuthCookies(w)
+	accessToken := tokenFromCookie(r, s.accessCookieName)
+	refreshToken := tokenFromCookie(r, s.refreshCookieName)
+	if strings.TrimSpace(accessToken) == "" && strings.TrimSpace(refreshToken) == "" {
+		s.audit(r, "gateway.logout", "success", "reason", "no_active_session")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	token, ok := bearerToken(r)
-	if !ok {
-		s.audit(r, "gateway.logout", "fail", "reason", "missing_token")
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
-	refreshToken := s.resolveRefreshToken(r, req.RefreshToken)
-	if err := s.auth.Logout(requestIDFromRequest(r), token, refreshToken); err != nil {
+	if err := s.auth.Logout(requestIDFromRequest(r), accessToken, refreshToken); err != nil {
 		s.audit(r, "gateway.logout", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -550,10 +618,10 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.User) {
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, user)
+		writeJSON(w, http.StatusOK, ctx.User)
 	case http.MethodPatch:
 		var req updateMeRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
@@ -564,12 +632,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 			writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
 			return
 		}
-		token, ok := bearerToken(r)
-		if !ok {
-			writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-			return
-		}
-		updated, err := s.auth.UpdateMe(requestIDFromRequest(r), token, req.Email)
+		updated, err := s.auth.UpdateMe(requestIDFromRequest(r), ctx.AccessToken, req.Email)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
@@ -580,8 +643,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 	}
 }
 
-func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
 		return
@@ -599,12 +661,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		writeErrorWithCode(w, r, http.StatusBadRequest, "new password is required", "AUTH_NEW_PASSWORD_REQUIRED")
 		return
 	}
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
-	if err := s.auth.ChangePassword(requestIDFromRequest(r), token, req.CurrentPassword, req.NewPassword); err != nil {
+	if err := s.auth.ChangePassword(requestIDFromRequest(r), ctx.AccessToken, req.CurrentPassword, req.NewPassword); err != nil {
 		writeAuthError(w, r, err)
 		return
 	}
@@ -612,31 +669,19 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 }
 
 // /api/books
-func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
+func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	switch r.Method {
 	case http.MethodPost:
-		s.handleUploadBook(w, r, token)
+		s.handleUploadBook(w, r, ctx.AccessToken)
 	case http.MethodGet:
-		s.handleListBooks(w, r, token)
+		s.handleListBooks(w, r, ctx.AccessToken)
 	default:
 		methodNotAllowed(w, r)
 	}
 }
 
 // /api/books/{id} or /api/books/{id}/download
-func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
+func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/books/")
 	parts := strings.SplitN(path, "/", 2)
 	id := parts[0]
@@ -647,7 +692,7 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 
 	// Handle /api/books/{id}/download
 	if len(parts) == 2 && parts[1] == "download" {
-		s.handleDownloadBook(w, r, token, id)
+		s.handleDownloadBook(w, r, ctx.AccessToken, id)
 		return
 	}
 	if len(parts) == 2 {
@@ -657,14 +702,14 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 
 	switch r.Method {
 	case http.MethodGet:
-		book, err := s.books.GetBook(requestIDFromRequest(r), token, id)
+		book, err := s.books.GetBook(requestIDFromRequest(r), ctx.AccessToken, id)
 		if err != nil {
 			writeBookError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, book)
 	case http.MethodDelete:
-		if err := s.books.DeleteBook(requestIDFromRequest(r), token, id); err != nil {
+		if err := s.books.DeleteBook(requestIDFromRequest(r), ctx.AccessToken, id); err != nil {
 			writeBookError(w, r, err)
 			return
 		}
@@ -726,15 +771,9 @@ func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, token s
 	})
 }
 
-func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
+func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
-		return
-	}
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 		return
 	}
 	var req chatRequest
@@ -746,7 +785,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 		writeErrorWithCode(w, r, http.StatusBadRequest, "book ID is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
-	ans, err := s.chat.AskQuestion(requestIDFromRequest(r), token, req.BookID, req.Question)
+	ans, err := s.chat.AskQuestion(requestIDFromRequest(r), ctx.AccessToken, req.BookID, req.Question)
 	if err != nil {
 		writeChatError(w, r, err)
 		return
@@ -755,18 +794,12 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, user domain
 }
 
 // admin handlers
-func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
+func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, r)
 		return
 	}
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
-	users, err := s.auth.AdminListUsers(requestIDFromRequest(r), token)
+	users, err := s.auth.AdminListUsers(requestIDFromRequest(r), ctx.AccessToken)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -777,8 +810,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 	})
 }
 
-func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
+func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
 	if id == "" || strings.Contains(id, "/") {
 		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
@@ -815,12 +847,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		writeErrorWithCode(w, r, http.StatusBadRequest, "role or status is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
 		return
 	}
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
-	updated, err := s.auth.AdminUpdateUser(requestIDFromRequest(r), token, id, role, status)
+	updated, err := s.auth.AdminUpdateUser(requestIDFromRequest(r), ctx.AccessToken, id, role, status)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -828,18 +855,12 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 	writeJSON(w, http.StatusOK, updated)
 }
 
-func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
-	_ = user
+func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, r)
 		return
 	}
-	token, ok := bearerToken(r)
-	if !ok {
-		writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
-		return
-	}
-	books, err := s.books.ListBooks(requestIDFromRequest(r), token)
+	books, err := s.books.ListBooks(requestIDFromRequest(r), ctx.AccessToken)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -898,17 +919,7 @@ type passwordResetCompleteRequest struct {
 }
 
 type authResponse struct {
-	Token        string      `json:"token"`
-	RefreshToken string      `json:"refreshToken,omitempty"`
-	User         domain.User `json:"user"`
-}
-
-type refreshRequest struct {
-	RefreshToken string `json:"refreshToken,omitempty"`
-}
-
-type logoutRequest struct {
-	RefreshToken string `json:"refreshToken,omitempty"`
+	User domain.User `json:"user"`
 }
 
 type updateMeRequest struct {
@@ -925,30 +936,25 @@ type adminUserUpdateRequest struct {
 	Status string `json:"status"`
 }
 
-func bearerToken(r *http.Request) (string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		slog.Warn("missing bearer prefix", "path", r.URL.Path, "request_id", requestIDFromRequest(r))
-		return "", false
+func tokenFromCookie(r *http.Request, name string) string {
+	if r == nil || strings.TrimSpace(name) == "" {
+		return ""
 	}
-	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	if token == "" {
-		slog.Warn("empty bearer token", "path", r.URL.Path, "request_id", requestIDFromRequest(r))
-		return "", false
-	}
-	return token, true
-}
-
-func (s *Server) resolveRefreshToken(r *http.Request, fromBody string) string {
-	token := strings.TrimSpace(fromBody)
-	if token != "" {
-		return token
-	}
-	cookie, err := r.Cookie(s.refreshCookieName)
+	cookie, err := r.Cookie(name)
 	if err != nil || cookie == nil {
 		return ""
 	}
 	return strings.TrimSpace(cookie.Value)
+}
+
+func (s *Server) setAccessCookie(w http.ResponseWriter, accessToken string) {
+	token := strings.TrimSpace(accessToken)
+	if token == "" {
+		return
+	}
+	cookie := s.accessCookieCfg
+	cookie.Value = token
+	http.SetCookie(w, &cookie)
 }
 
 func (s *Server) setRefreshCookie(w http.ResponseWriter, refreshToken string) {
@@ -961,12 +967,25 @@ func (s *Server) setRefreshCookie(w http.ResponseWriter, refreshToken string) {
 	http.SetCookie(w, &cookie)
 }
 
+func (s *Server) clearAccessCookie(w http.ResponseWriter) {
+	cookie := s.accessCookieCfg
+	cookie.Value = ""
+	cookie.MaxAge = -1
+	cookie.Expires = time.Unix(0, 0)
+	http.SetCookie(w, &cookie)
+}
+
 func (s *Server) clearRefreshCookie(w http.ResponseWriter) {
 	cookie := s.refreshCookieCfg
 	cookie.Value = ""
 	cookie.MaxAge = -1
 	cookie.Expires = time.Unix(0, 0)
 	http.SetCookie(w, &cookie)
+}
+
+func (s *Server) clearAuthCookies(w http.ResponseWriter) {
+	s.clearAccessCookie(w)
+	s.clearRefreshCookie(w)
 }
 
 func parseUserRole(role string) (domain.UserRole, bool) {
@@ -1055,6 +1074,32 @@ func normalizeMaxBytes(value int64) int64 {
 		return 50 * 1024 * 1024
 	}
 	return value
+}
+
+func normalizeAccessCookieName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return defaultAccessCookieName
+	}
+	return name
+}
+
+func normalizeAccessCookiePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return defaultAccessCookiePath
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "/" + path
+	}
+	return path
+}
+
+func normalizeAccessCookieMaxAge(age time.Duration) time.Duration {
+	if age <= 0 {
+		return defaultAccessCookieMaxAge
+	}
+	return age
 }
 
 func normalizeRefreshCookieName(name string) string {
@@ -1175,6 +1220,14 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 		"err", err,
 	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "auth service unavailable", "AUTH_SERVICE_UNAVAILABLE")
+}
+
+func isUnauthorizedAuthError(err error) bool {
+	apiErr, ok := err.(*authclient.APIError)
+	if !ok {
+		return false
+	}
+	return apiErr.Status == http.StatusUnauthorized
 }
 
 func writeBookError(w http.ResponseWriter, r *http.Request, err error) {

@@ -13,7 +13,7 @@
 - 注册支持两种模式：
   - 密码注册：先设置密码，再验证码校验。
   - 一次性验证码注册：无密码创建账号。
-- 注册成功后直接签发 `token`，并通过 `HttpOnly refresh cookie` 建立会话，用户处于已登录状态。
+- 注册成功后直接建立 HttpOnly 会话 Cookie（`onebook_access` + `onebook_refresh`），用户处于已登录状态。
 - 已存在账号登录时，始终支持“密码登录”与“一次性验证码登录”二选一。
 - 若账号无密码，访问 `/log-in/password` 时应跳转到 `/email-verification`（或返回错误码后前端跳转）。
 - 忘记密码采用两步：
@@ -43,7 +43,7 @@ flowchart TD
   R4 --> R5["发送 OTP"]
   R5 --> R6["校验 OTP"]
   R6 --> R7["创建账号（有密码）"]
-  R7 --> R8["签发 token + 设置 refresh cookie（自动登录）"]
+  R7 --> R8["设置 access/refresh 会话 Cookie（自动登录）"]
   R8 --> HOME["进入系统（已登录）"]
 
   R3 -->|一次性验证码注册| R9["发送 OTP"]
@@ -57,12 +57,12 @@ flowchart TD
 
   L3 --> L3a["发送 OTP"]
   L3a --> L3b["校验 OTP"]
-  L3b --> L3c["签发 token + 设置 refresh cookie"]
+  L3b --> L3c["设置 access/refresh 会话 Cookie"]
   L3c --> HOME
 
   L4 --> L4a{"账号是否有密码"}
   L4a -->|有| L4b["输入密码校验"]
-  L4b --> L4c["签发 token + 设置 refresh cookie"]
+  L4b --> L4c["设置 access/refresh 会话 Cookie"]
   L4c --> HOME
   L4a -->|无| L4d["跳转 /email-verification"]
   L4d --> L3
@@ -82,7 +82,7 @@ flowchart TD
   P3 --> P5["更新成功"]
   P4 --> P5["更新成功"]
 
-  HOME --> T1["业务请求携带 access token"]
+  HOME --> T1["业务请求自动携带会话 Cookie"]
   T1 --> T2{"是否 401"}
   T2 -->|否| T1
   T2 -->|是| T3["调用 /api/auth/refresh（携带 refresh cookie）"]
@@ -95,7 +95,7 @@ flowchart TD
 ## 5. 接口契约建议（对外走 Gateway）
 - `POST /api/auth/signup`：密码注册
 - `POST /api/auth/login`：密码登录
-- `POST /api/auth/refresh`：刷新 access token（优先使用 `HttpOnly refresh cookie`，请求体 `refreshToken` 仅兼容）
+- `POST /api/auth/refresh`：刷新会话 Cookie（基于 `HttpOnly refresh cookie`）
 - `POST /api/auth/logout`：退出登录
 - `POST /api/auth/otp/send`：发送一次性验证码
 - `POST /api/auth/otp/verify`：校验一次性验证码并换取登录态或注册凭据

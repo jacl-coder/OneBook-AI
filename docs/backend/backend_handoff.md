@@ -19,24 +19,23 @@
 - 校验 OTP：`POST /api/auth/otp/verify`
 - 忘记密码验证码校验：`POST /api/auth/password/reset/verify`
 - 忘记密码完成重置：`POST /api/auth/password/reset/complete`
-- 响应都包含：
-  - `token`（access token）
-  - `user`
-- `refreshToken` 由 Gateway 通过 `HttpOnly Cookie` 下发（默认 `onebook_refresh`），前端不读取明文值。
+- 登录/注册/OTP 校验成功响应包含 `user`。
+- Gateway 同时下发 HttpOnly 会话 Cookie：
+  - `onebook_access`（短期）
+  - `onebook_refresh`（长期）
 - 若密码登录命中无密码账号，返回 `AUTH_PASSWORD_NOT_SET`，前端应跳转 `/email-verification`。
 
 ### 2.2 刷新逻辑
 - 接口：`POST /api/auth/refresh`
-- 请求体可选（兼容）：`{ "refreshToken": "<token>" }`
-- 推荐：不传请求体，依赖浏览器自动携带 `HttpOnly refresh cookie`。
-- 成功会返回新 `token`（access token）并轮换写入新的 refresh cookie。
+- 不传请求体，依赖浏览器自动携带 `HttpOnly refresh cookie`。
+- 成功会轮换更新 `onebook_access` / `onebook_refresh` cookie。
 - 安全语义：
   - refresh token 采用轮换（rotation）。
   - 旧 token 被重放时，会撤销该 family，后续 refresh 会失败，需要重新登录。
 
-### 2.3 鉴权头
-- 所有受保护接口使用：
-  - `Authorization: Bearer <token>`
+### 2.3 鉴权方式
+- 所有受保护接口由浏览器自动携带会话 Cookie。
+- 前端不再注入 `Authorization` 头。
 
 ## 3. 主要业务接口（给前端）
 - `GET /healthz`：服务健康检查。
@@ -84,7 +83,7 @@
 ```bash
 curl -i -X POST http://localhost:8080/api/chats \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  --cookie "onebook_access=<cookie_value>" \
   -H "X-Request-Id: req-demo-20260213-001" \
   -d '{"bookId":"book_xxx","question":"请总结第一章"}'
 ```
@@ -130,8 +129,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 - 队列失败重试：在同一事务中执行 `XADD + XACK + XDEL`，避免“已确认但未重投”的丢任务窗口。
 
 ## 8. 前端最小联调清单
-1. 注册/登录并保存 `access token + user`（refresh token 由 cookie 自动维护）。
+1. 注册/登录成功后确认浏览器写入 `onebook_access` + `onebook_refresh`。
 2. 上传一本 `pdf/epub/txt`。
 3. 轮询到 `ready`。
 4. 发起一次问答并展示 `answer + sources`。
-5. 验证 `401 -> refresh(cookie) -> retry` 自动恢复流程。
+5. 验证会话过期后通过 `/api/auth/refresh` 自动恢复。

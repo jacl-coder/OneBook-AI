@@ -87,7 +87,7 @@
 - `AUTH_INVALID_EMAIL`：邮箱格式不合法
 - `AUTH_PASSWORD_POLICY_VIOLATION`：密码不满足强度策略
 - `AUTH_EMAIL_REQUIRED`：缺少 email
-- `AUTH_REFRESH_TOKEN_REQUIRED`：缺少 refresh 凭据（`HttpOnly Cookie` 或兼容的 `refreshToken` 请求体）
+- `AUTH_REFRESH_TOKEN_REQUIRED`：缺少 refresh 会话 Cookie
 - `AUTH_PASSWORD_FIELDS_REQUIRED`：缺少 currentPassword/newPassword
 - `AUTH_OTP_CHALLENGE_INVALID`：OTP challenge 无效或不存在
 - `AUTH_OTP_CODE_INVALID`：OTP 验证码错误

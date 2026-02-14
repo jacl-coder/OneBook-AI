@@ -45,8 +45,6 @@ type BackendUser = AuthUser & {
 }
 
 export type AuthResponse = {
-  token: string
-  refreshToken?: string
   user: BackendUser
 }
 
@@ -128,6 +126,6 @@ export async function completePasswordReset(payload: PasswordResetCompleteReques
   await http.post('/api/auth/password/reset/complete', payload)
 }
 
-export async function logout(payload?: { refreshToken?: string }): Promise<void> {
-  await http.post('/api/auth/logout', payload ?? {})
+export async function logout(): Promise<void> {
+  await http.post('/api/auth/logout', {})
 }

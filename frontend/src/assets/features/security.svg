@@ -20,12 +20,12 @@
     <!-- Login step -->
     <rect x="36" y="176" width="246" height="32" rx="6" fill="#EEF8F2" stroke="#D6EBDC"/>
     <text fill="#355847" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="196">POST /api/auth/login</tspan></text>
-    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="196">→ token + refreshToken</tspan></text>
+    <text fill="#6B8577" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="196">→ HttpOnly session cookies</tspan></text>
 
     <!-- Access token -->
     <rect x="36" y="214" width="246" height="32" rx="6" fill="#EEF5FB" stroke="#D7E5F2"/>
-    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="234">Access Token</tspan></text>
-    <text fill="#6D7F8D" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="234">short-lived · Bearer</tspan></text>
+    <text fill="#344B5F" font-family="Arial, sans-serif" font-size="11" font-weight="600"><tspan x="48" y="234">Access Cookie</tspan></text>
+    <text fill="#6D7F8D" font-family="Arial, sans-serif" font-size="10" text-anchor="end"><tspan x="272" y="234">short-lived · HttpOnly</tspan></text>
 
     <!-- Refresh flow -->
     <rect x="36" y="252" width="246" height="32" rx="6" fill="#FFF7EE" stroke="#F0DFCB"/>

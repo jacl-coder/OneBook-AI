@@ -575,7 +575,6 @@ export function LoginPage() {
       clearOtpContext()
       clearResetToken()
       setSession({
-        accessToken: auth.token,
         user: {
           id: auth.user.id,
           email: auth.user.email,
@@ -748,7 +747,6 @@ export function LoginPage() {
       clearOtpContext()
       clearResetToken()
       setSession({
-        accessToken: auth.token,
         user: {
           id: auth.user.id,
           email: auth.user.email,
