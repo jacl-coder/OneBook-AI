@@ -10,7 +10,6 @@ export type AuthUser = {
 const SESSION_STORAGE_KEY = 'onebook:session'
 
 type StoredSession = {
-  accessToken: string
   user: AuthUser
 }
 
@@ -21,14 +20,12 @@ function readStoredSession(): StoredSession | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredSession>
     if (!parsed || typeof parsed !== 'object') return null
-    if (typeof parsed.accessToken !== 'string') return null
     const user = parsed.user as Partial<AuthUser> | undefined
     if (!user || typeof user !== 'object') return null
     if (typeof user.id !== 'string' || typeof user.email !== 'string') return null
     if (user.role !== 'user' && user.role !== 'admin') return null
     if (user.status !== 'active' && user.status !== 'disabled') return null
     return {
-      accessToken: parsed.accessToken,
       user: {
         id: user.id,
         email: user.email,
@@ -53,38 +50,22 @@ function writeStoredSession(session: StoredSession | null) {
 const initialSession = readStoredSession()
 
 type SessionState = {
-  accessToken: string | null
   user: AuthUser | null
-  setSession: (payload: {
-    accessToken: string
-    user: AuthUser
-  }) => void
-  updateTokens: (payload: { accessToken: string }) => void
+  setSession: (payload: { user: AuthUser }) => void
   clearSession: () => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
-  accessToken: initialSession?.accessToken ?? null,
   user: initialSession?.user ?? null,
-  setSession: ({ accessToken, user }) =>
+  setSession: ({ user }) =>
     set(() => {
-      const nextSession: StoredSession = { accessToken, user }
+      const nextSession: StoredSession = { user }
       writeStoredSession(nextSession)
-      return nextSession
-    }),
-  updateTokens: ({ accessToken }) =>
-    set((state) => {
-      if (!state.user) {
-        writeStoredSession(null)
-        return { accessToken: null, user: null }
-      }
-      const nextSession: StoredSession = { accessToken, user: state.user }
-      writeStoredSession(nextSession)
-      return nextSession
+      return { user }
     }),
   clearSession: () =>
     set(() => {
       writeStoredSession(null)
-      return { accessToken: null, user: null }
+      return { user: null }
     }),
 }))

@@ -78,7 +78,7 @@ func TestAuthenticatedRouteRequiresValidTokenAndAuthoritativeUser(t *testing.T) 
 
 	// 2) Invalid signature token should be blocked before auth/me.
 	req, _ := http.NewRequest(http.MethodGet, gwSrv.URL+"/api/users/me", nil)
-	req.Header.Set("Authorization", "Bearer "+invalidToken)
+	req.AddCookie(&http.Cookie{Name: defaultAccessCookieName, Value: invalidToken})
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request invalid token: %v", err)
@@ -93,7 +93,7 @@ func TestAuthenticatedRouteRequiresValidTokenAndAuthoritativeUser(t *testing.T) 
 
 	// 3) Valid token should pass and /api/users/me should make one authoritative call via middleware.
 	req, _ = http.NewRequest(http.MethodGet, gwSrv.URL+"/api/users/me", nil)
-	req.Header.Set("Authorization", "Bearer "+validToken)
+	req.AddCookie(&http.Cookie{Name: defaultAccessCookieName, Value: validToken})
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request valid token: %v", err)
@@ -142,7 +142,7 @@ func TestAdminRouteUsesAuthoritativeRole(t *testing.T) {
 	defer gwSrv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, gwSrv.URL+"/api/admin/users", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: defaultAccessCookieName, Value: token})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request admin route: %v", err)

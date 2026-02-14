@@ -52,7 +52,7 @@
 ## 2.8 网络请求层
 - `Axios`（或原生 `fetch` 封装）
 - 原因：
-  - 易实现统一拦截器：`Authorization` 注入、`401 -> refresh -> retry`。
+  - 易实现统一会话请求：`withCredentials`、`401 -> refresh -> retry`。
   - 统一错误处理，减少页面重复代码。
 
 ## 2.9 测试体系
@@ -63,7 +63,7 @@
 
 ## 3. 与后端契约的关键对齐点
 - 网关基址：`http://localhost:8080`
-- token 机制：登录返回 `token + user`；`refreshToken` 由 `HttpOnly Cookie` 承载，401 时走刷新再重试。
+- 会话机制：登录返回 `user`；鉴权由 HttpOnly Cookie 承载，401 时走刷新再重试。
 - 上传：`multipart/form-data`，字段名固定 `file`。
 - 书籍状态：前端轮询 `GET /api/books/{id}`，到 `ready` 才允许问答。
 - 统一错误结构：`{ "error": "..." }`

@@ -9,6 +9,12 @@ port: "8080"
 logLevel: "info"
 authServiceURL: "http://localhost:8081"
 authJwksURL: "http://localhost:8081/auth/jwks"
+accessCookieName: "onebook_access"
+accessCookieDomain: ""
+accessCookiePath: "/"
+accessCookieSecure: false
+accessCookieSameSite: "Lax"
+accessCookieMaxAgeSeconds: 900
 refreshCookieName: "onebook_refresh"
 refreshCookieDomain: ""
 refreshCookiePath: "/api/auth"

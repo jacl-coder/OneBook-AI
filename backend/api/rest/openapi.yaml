@@ -38,7 +38,8 @@ paths:
       tags: [auth]
       summary: Sign up
       description: |
-        Password sign-up endpoint. On success, gateway sets HttpOnly refresh-token cookie.
+        Password sign-up endpoint. On success, gateway sets HttpOnly
+        `onebook_access` + `onebook_refresh` cookies.
       requestBody:
         required: true
         content:
@@ -78,7 +79,7 @@ paths:
         Password login entrypoint. If the account has no password configured,
         service returns `AUTH_PASSWORD_NOT_SET` and client should continue with
         OTP login flow at `/api/auth/otp/send` + `/api/auth/otp/verify`.
-        On success, gateway sets HttpOnly refresh-token cookie.
+        On success, gateway sets HttpOnly `onebook_access` + `onebook_refresh` cookies.
       requestBody:
         required: true
         content:
@@ -199,9 +200,10 @@ paths:
       summary: Verify one-time code
       description: |
         Verifies OTP code and completes login/registration.
-        Successful verification returns auth tokens and user payload.
+        Successful verification returns user payload.
         For forgot-password flow, use `/api/auth/password/reset/verify`.
-        For signup/login OTP purposes, gateway sets HttpOnly refresh-token cookie.
+        For signup/login OTP purposes, gateway sets HttpOnly
+        `onebook_access` + `onebook_refresh` cookies.
       requestBody:
         required: true
         content:
@@ -326,16 +328,11 @@ paths:
   /api/auth/refresh:
     post:
       tags: [auth]
-      summary: Refresh access token
+      summary: Refresh session cookies
       description: |
-        Refresh token can be provided in request body `refreshToken` (legacy)
-        or HttpOnly cookie (preferred). On success, refresh cookie is rotated.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
+        Rotates current session cookies using HttpOnly refresh cookie.
+      security:
+        - sessionCookieAuth: []
       responses:
         "200":
           description: OK
@@ -372,16 +369,9 @@ paths:
       tags: [auth]
       summary: Logout
       description: |
-        Revoke current access token and clear refresh-token cookie. If
-        `refreshToken` is provided, it will be revoked as well.
+        Revoke current session and clear HttpOnly auth cookies.
       security:
-        - bearerAuth: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LogoutRequest"
+        - sessionCookieAuth: []
       responses:
         "204":
           description: No Content
@@ -439,7 +429,7 @@ paths:
       tags: [auth]
       summary: Get current user
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       responses:
         "200":
           description: OK
@@ -457,7 +447,7 @@ paths:
       tags: [auth]
       summary: Update current user email
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       requestBody:
         required: true
         content:
@@ -488,7 +478,7 @@ paths:
       tags: [auth]
       summary: Change password
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       requestBody:
         required: true
         content:
@@ -521,7 +511,7 @@ paths:
       tags: [books]
       summary: List books
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       responses:
         "200":
           description: OK
@@ -542,7 +532,7 @@ paths:
         Upload a PDF/EPUB/TXT file. Size and allowed extensions are configurable
         on the server (default 50MB, .pdf/.epub/.txt).
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       requestBody:
         required: true
         content:
@@ -578,7 +568,7 @@ paths:
       tags: [books]
       summary: Get book
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       parameters:
         - name: id
           in: path
@@ -608,7 +598,7 @@ paths:
       tags: [books]
       summary: Delete book
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       parameters:
         - name: id
           in: path
@@ -640,7 +630,7 @@ paths:
       summary: Get download URL for book file
       description: Returns a pre-signed URL to download the original book file. The URL expires after 15 minutes.
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       parameters:
         - name: id
           in: path
@@ -680,7 +670,7 @@ paths:
         The service may include the most recent conversation history when
         generating the answer (history length is configurable).
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       requestBody:
         required: true
         content:
@@ -723,7 +713,7 @@ paths:
       tags: [admin]
       summary: List users (admin only)
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       responses:
         "200":
           description: OK
@@ -748,7 +738,7 @@ paths:
       tags: [admin]
       summary: Update user role or status (admin only)
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       parameters:
         - name: id
           in: path
@@ -797,7 +787,7 @@ paths:
       tags: [admin]
       summary: List books (admin only)
       security:
-        - bearerAuth: []
+        - sessionCookieAuth: []
       responses:
         "200":
           description: OK
@@ -819,10 +809,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    sessionCookieAuth:
+      type: apiKey
+      in: cookie
+      name: onebook_access
   schemas:
     HealthResponse:
       type: object
@@ -876,14 +866,9 @@ components:
     AuthResponse:
       type: object
       properties:
-        token:
-          type: string
-        refreshToken:
-          type: string
-          description: Optional legacy field; preferred refresh storage is HttpOnly cookie.
         user:
           $ref: "#/components/schemas/User"
-      required: [token, user]
+      required: [user]
     LoginMethodsRequest:
       type: object
       properties:
@@ -986,16 +971,6 @@ components:
           description: At least 12 chars and must include upper/lower/digit/special.
           minLength: 12
       required: [email, resetToken, newPassword]
-    RefreshRequest:
-      type: object
-      properties:
-        refreshToken:
-          type: string
-    LogoutRequest:
-      type: object
-      properties:
-        refreshToken:
-          type: string
     JWK:
       type: object
       properties:
