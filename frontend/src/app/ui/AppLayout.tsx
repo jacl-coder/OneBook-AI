@@ -1,9 +1,7 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
 const navItems = [
-  { to: '/library', label: '书库' },
   { to: '/chat', label: '对话' },
-  { to: '/history', label: '会话历史' },
 ]
 
 export function AppLayout() {

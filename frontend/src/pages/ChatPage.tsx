@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
@@ -6,8 +6,9 @@ import googleLogo from '@/assets/brand/provider/google-logo.svg'
 import appleLogo from '@/assets/brand/provider/apple-logo.svg'
 import microsoftLogo from '@/assets/brand/provider/microsoft-logo.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
-import { logout } from '@/features/auth/api/auth'
+import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
+import { http } from '@/shared/lib/http/client'
 
 const quickActions = [
   { key: 'attach', symbolId: 'chat-attach', label: '附件' },
@@ -29,6 +30,7 @@ const CHAT_ICON_SPRITE_URL = '/icons/chat/sprite.svg'
 type ThreadSource = {
   label: string
   location: string
+  snippet?: string
 }
 
 type ThreadMessage = {
@@ -52,6 +54,29 @@ type ChatThread = {
 }
 
 type ThreadSectionKey = 'today' | 'yesterday' | 'earlier'
+
+type BookSummary = {
+  id: string
+  title: string
+  status: 'queued' | 'processing' | 'ready' | 'failed'
+}
+
+type ListBooksResponse = {
+  items: BookSummary[]
+  count: number
+}
+
+type ChatAnswer = {
+  bookId: string
+  question: string
+  answer: string
+  sources: Array<{
+    label: string
+    location: string
+    snippet: string
+  }>
+  createdAt: string
+}
 
 const sectionOrder: ThreadSectionKey[] = ['today', 'yesterday', 'earlier']
 const sectionLabel: Record<ThreadSectionKey, string> = {
@@ -111,81 +136,16 @@ function getThreadSection(timestamp: number): ThreadSectionKey {
   return 'earlier'
 }
 
-function buildAssistantReply(input: string): ThreadMessage {
+function createEmptyThread(): ChatThread {
   return {
-    id: createMessageId(),
-    role: 'assistant',
-    createdAt: nowTimestamp(),
-    text: `我已基于你的书库检索到相关内容，先给你结论：${input.slice(0, 36)}。如果你需要，我可以继续展开步骤和反例。`,
-    sources: [
-      { label: '《深度学习实战》', location: '第 3 章 · 3.2 小节' },
-      { label: '《软件架构设计》', location: '2.4 节 · 检索链路' },
-    ],
+    id: createThreadId(),
+    title: '新对话',
+    updatedAt: nowTimestamp(),
+    status: 'idle',
+    lastUserPrompt: '',
+    errorText: '',
+    messages: [],
   }
-}
-
-function buildSeededThreads(): ChatThread[] {
-  const now = nowTimestamp()
-  return [
-    {
-      id: 'thread-seed-1',
-      title: 'RAG 检索链路设计讨论',
-      updatedAt: now - 8 * 60_000,
-      status: 'idle',
-      lastUserPrompt: '我该怎么优化检索召回率？',
-      errorText: '',
-      messages: [
-        {
-          id: 'seed-1-u',
-          role: 'user',
-          createdAt: now - 12 * 60_000,
-          text: '我该怎么优化检索召回率？',
-        },
-        {
-          id: 'seed-1-a',
-          role: 'assistant',
-          createdAt: now - 8 * 60_000,
-          text: '建议先统一切分策略，再对 embedding 模型和 top-k 做 A/B。最后加 rerank，可明显提升有效召回。',
-          sources: [
-            { label: '《信息检索导论》', location: '第 5 章 · 语义检索' },
-            { label: '《软件架构设计》', location: '2.4 节 · 召回与重排' },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'thread-seed-2',
-      title: 'Auth 流程联调清单',
-      updatedAt: now - 5 * 3_600_000,
-      status: 'idle',
-      lastUserPrompt: '登录和 OTP 注册链路怎么测？',
-      errorText: '',
-      messages: [
-        {
-          id: 'seed-2-a',
-          role: 'assistant',
-          createdAt: now - 5 * 3_600_000,
-          text: '我给你整理了 4 条主链路：密码注册、OTP 注册、密码登录、OTP 登录。每条都应覆盖失败重试和限流。',
-        },
-      ],
-    },
-    {
-      id: 'thread-seed-3',
-      title: '书库索引状态异常排查',
-      updatedAt: now - 26 * 3_600_000,
-      status: 'idle',
-      lastUserPrompt: '为什么 indexer 启动失败？',
-      errorText: '',
-      messages: [
-        {
-          id: 'seed-3-a',
-          role: 'assistant',
-          createdAt: now - 26 * 3_600_000,
-          text: '日志显示 8085 端口被占用。先停止旧进程，再执行 run.sh；如需并行启动，改 indexer 监听端口。',
-        },
-      ],
-    },
-  ]
 }
 
 function updateThreadAndMoveTop(
@@ -210,7 +170,7 @@ export function ChatPage() {
   const authInputRef = useRef<HTMLInputElement>(null)
   const uploadGuestInputRef = useRef<HTMLInputElement>(null)
   const uploadAuthInputRef = useRef<HTMLInputElement>(null)
-  const sendTimerRef = useRef<number | null>(null)
+  const pendingAskIdRef = useRef(0)
 
   const [guestPrompt, setGuestPrompt] = useState('')
   const [authPrompt, setAuthPrompt] = useState('')
@@ -224,10 +184,13 @@ export function ChatPage() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
   const [authErrorText, setAuthErrorText] = useState('')
 
-  const [threads, setThreads] = useState<ChatThread[]>(() => buildSeededThreads())
-  const [activeThreadId, setActiveThreadId] = useState<string>(() => buildSeededThreads()[0]?.id ?? '')
+  const [threads, setThreads] = useState<ChatThread[]>(() => [createEmptyThread()])
+  const [activeThreadId, setActiveThreadId] = useState<string>('')
   const [threadSearch, setThreadSearch] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [books, setBooks] = useState<BookSummary[]>([])
+  const [selectedBookId, setSelectedBookId] = useState('')
+  const [bookListErrorText, setBookListErrorText] = useState('')
 
   const authEmailId = useId()
   const authErrorId = useId()
@@ -265,14 +228,44 @@ export function ChatPage() {
 
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
+  const selectedBook = useMemo(
+    () => books.find((book) => book.id === selectedBookId) ?? null,
+    [books, selectedBookId],
+  )
+  const hasReadyBooks = books.length > 0
+  const canAsk = hasReadyBooks && selectedBookId !== ''
 
-  useEffect(() => {
-    return () => {
-      if (sendTimerRef.current) {
-        window.clearTimeout(sendTimerRef.current)
+  const loadReadyBooks = useCallback(async () => {
+    try {
+      const { data } = await http.get<ListBooksResponse>('/api/books')
+      const readyBooks = data.items.filter((book) => book.status === 'ready')
+      setBooks(readyBooks)
+      if (!readyBooks.length) {
+        setSelectedBookId('')
+        setBookListErrorText('你的书库暂无可提问书籍，请先上传并等待处理完成。')
+        return
       }
+      setBookListErrorText('')
+      setSelectedBookId((current) =>
+        current && readyBooks.some((book) => book.id === current) ? current : readyBooks[0].id,
+      )
+    } catch (error) {
+      setBooks([])
+      setSelectedBookId('')
+      setBookListErrorText(getApiErrorMessage(error, '加载书籍失败，请稍后重试。'))
     }
   }, [])
+
+  useEffect(() => {
+    if (activeThreadId) return
+    if (!threads.length) return
+    setActiveThreadId(threads[0].id)
+  }, [activeThreadId, threads])
+
+  useEffect(() => {
+    if (!sessionUser) return
+    void loadReadyBooks()
+  }, [sessionUser, loadReadyBooks])
 
   function closeAuthModal() {
     setIsAuthOpen(false)
@@ -336,87 +329,104 @@ export function ChatPage() {
     resetGuestComposer()
   }
 
-  const scheduleAssistantReply = (threadId: string, prompt: string) => {
-    if (sendTimerRef.current) {
-      window.clearTimeout(sendTimerRef.current)
-    }
-
-    sendTimerRef.current = window.setTimeout(() => {
-      const normalizedPrompt = prompt.trim().toLowerCase()
-      const shouldFail = normalizedPrompt.includes('error') || normalizedPrompt.includes('失败')
-
+  const askAssistant = async (threadId: string, prompt: string, appendUserMessage: boolean) => {
+    if (!threadId || activeThreadIsSending) return
+    const trimmedPrompt = prompt.trim()
+    if (!trimmedPrompt) return
+    if (!selectedBookId) {
       setThreads((previous) =>
-        updateThreadAndMoveTop(previous, threadId, (thread) => {
-          if (shouldFail) {
-            return {
-              ...thread,
-              updatedAt: nowTimestamp(),
-              status: 'error',
-              errorText: '请求暂时失败，请重试。',
-            }
-          }
-
-          return {
-            ...thread,
-            updatedAt: nowTimestamp(),
-            status: 'idle',
-            errorText: '',
-            messages: [...thread.messages, buildAssistantReply(prompt)],
-          }
-        }),
+        updateThreadAndMoveTop(previous, threadId, (thread) => ({
+          ...thread,
+          status: 'error',
+          errorText: bookListErrorText || '请先在书库选择一本已处理完成的书。',
+        })),
       )
-      sendTimerRef.current = null
-    }, 960)
+      return
+    }
+    const now = nowTimestamp()
+    const requestId = pendingAskIdRef.current + 1
+    pendingAskIdRef.current = requestId
+
+    setThreads((previous) =>
+      updateThreadAndMoveTop(previous, threadId, (thread) => ({
+        ...thread,
+        title: thread.title === '新对话' ? truncateThreadTitle(trimmedPrompt) : thread.title,
+        updatedAt: now,
+        status: 'sending',
+        errorText: '',
+        lastUserPrompt: trimmedPrompt,
+        messages: appendUserMessage
+          ? [
+              ...thread.messages,
+              {
+                id: createMessageId(),
+                role: 'user',
+                text: trimmedPrompt,
+                createdAt: now,
+              },
+            ]
+          : thread.messages,
+      })),
+    )
+    if (appendUserMessage) {
+      resetAuthComposer()
+    }
+    try {
+      const { data } = await http.post<ChatAnswer>('/api/chats', {
+        bookId: selectedBookId,
+        question: trimmedPrompt,
+      })
+      if (requestId !== pendingAskIdRef.current) return
+      setThreads((previous) =>
+        updateThreadAndMoveTop(previous, threadId, (thread) => ({
+          ...thread,
+          updatedAt: nowTimestamp(),
+          status: 'idle',
+          errorText: '',
+          messages: [
+            ...thread.messages,
+            {
+              id: createMessageId(),
+              role: 'assistant',
+              text: data.answer,
+              createdAt: Date.parse(data.createdAt) || nowTimestamp(),
+              sources: data.sources.map((source) => ({
+                label: source.label,
+                location: source.location,
+                snippet: source.snippet,
+              })),
+            },
+          ],
+        })),
+      )
+    } catch (error) {
+      if (requestId !== pendingAskIdRef.current) return
+      setThreads((previous) =>
+        updateThreadAndMoveTop(previous, threadId, (thread) => ({
+          ...thread,
+          updatedAt: nowTimestamp(),
+          status: 'error',
+          errorText: getApiErrorMessage(error, '请求失败，请稍后重试。'),
+        })),
+      )
+    }
   }
 
   const submitAuthPrompt = () => {
     if (!hasAuthPrompt || !activeThreadId || activeThreadIsSending) return
-
-    const prompt = authPrompt.trim()
-    const now = nowTimestamp()
-    const userMessage: ThreadMessage = {
-      id: createMessageId(),
-      role: 'user',
-      text: prompt,
-      createdAt: now,
-    }
-
-    setThreads((previous) =>
-      updateThreadAndMoveTop(previous, activeThreadId, (thread) => ({
-        ...thread,
-        title: thread.title === '新对话' ? truncateThreadTitle(prompt) : thread.title,
-        updatedAt: now,
-        status: 'sending',
-        errorText: '',
-        lastUserPrompt: prompt,
-        messages: [...thread.messages, userMessage],
-      })),
-    )
-
-    resetAuthComposer()
-    scheduleAssistantReply(activeThreadId, prompt)
+    void askAssistant(activeThreadId, authPrompt, true)
   }
 
   const handleAuthComposerSubmit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canAsk) return
     submitAuthPrompt()
   }
 
   const handleRetryAssistant = () => {
     if (!activeThread || !activeThread.lastUserPrompt || activeThread.status !== 'error') return
 
-    const prompt = activeThread.lastUserPrompt
-    const threadId = activeThread.id
-
-    setThreads((previous) =>
-      updateThreadAndMoveTop(previous, threadId, (thread) => ({
-        ...thread,
-        status: 'sending',
-        errorText: '',
-      })),
-    )
-
-    scheduleAssistantReply(threadId, prompt)
+    void askAssistant(activeThread.id, activeThread.lastUserPrompt, false)
   }
 
   const openAuthModal = (mode: AuthModalMode = 'login') => {
@@ -451,27 +461,9 @@ export function ChatPage() {
   }
 
   const handleCreateConversation = () => {
-    const id = createThreadId()
-    const now = nowTimestamp()
-    const newThread: ChatThread = {
-      id,
-      title: '新对话',
-      updatedAt: now,
-      status: 'idle',
-      lastUserPrompt: '',
-      errorText: '',
-      messages: [
-        {
-          id: createMessageId(),
-          role: 'assistant',
-          createdAt: now,
-          text: '你好，我已准备好基于你的书库回答问题。你想先聊哪本书？',
-        },
-      ],
-    }
-
+    const newThread = createEmptyThread()
     setThreads((previous) => [newThread, ...previous])
-    setActiveThreadId(id)
+    setActiveThreadId(newThread.id)
     setIsSidebarOpen(false)
     requestAnimationFrame(() => authEditorRef.current?.focus())
   }
@@ -579,13 +571,6 @@ export function ChatPage() {
           </div>
 
           <div className="chatgpt-app-sidebar-foot">
-            <button type="button" className="chatgpt-app-side-link" onClick={() => navigate('/library')}>
-              我的书库
-            </button>
-            <button type="button" className="chatgpt-app-side-link" onClick={() => navigate('/history')}>
-              会话历史
-            </button>
-
             <div className="chatgpt-app-account-card">
               <span className="chatgpt-app-avatar" aria-hidden="true">
                 {avatarLetter}
@@ -622,6 +607,21 @@ export function ChatPage() {
                   <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
                 </svg>
               </button>
+              <label className="chatgpt-app-book-picker" htmlFor="chat-book-selector">
+                <span>书籍</span>
+                <select
+                  id="chat-book-selector"
+                  value={selectedBookId}
+                  onChange={(event) => setSelectedBookId(event.target.value)}
+                >
+                  {!hasReadyBooks ? <option value="">暂无可提问书籍</option> : null}
+                  {books.map((book) => (
+                    <option key={book.id} value={book.id}>
+                      {book.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="chatgpt-app-main-actions">
@@ -638,6 +638,15 @@ export function ChatPage() {
               <div className="chatgpt-app-thread-max">
                 {activeThread ? (
                   <>
+                    {bookListErrorText ? (
+                      <div className="chatgpt-app-thread-error" role="status" aria-live="polite">
+                        <span>{bookListErrorText}</span>
+                        <button type="button" onClick={() => void loadReadyBooks()}>
+                          重新加载
+                        </button>
+                      </div>
+                    ) : null}
+
                     <div className="chatgpt-app-date-divider">
                       <span>{getRelativeTimeLabel(activeThread.updatedAt)}</span>
                     </div>
@@ -656,6 +665,7 @@ export function ChatPage() {
                                 <button key={`${source.label}-${source.location}`} type="button" className="chatgpt-app-source-pill">
                                   <span>{source.label}</span>
                                   <span>{source.location}</span>
+                                  {source.snippet ? <span>{source.snippet}</span> : null}
                                 </button>
                               ))}
                             </div>
@@ -725,13 +735,15 @@ export function ChatPage() {
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' && !event.shiftKey) {
                                 event.preventDefault()
-                                if (hasAuthPrompt) submitAuthPrompt()
+                                if (hasAuthPrompt && canAsk) submitAuthPrompt()
                               }
                             }}
                           />
                           {!hasAuthPrompt ? (
                             <div className="chatgpt-prosemirror-placeholder" aria-hidden="true">
-                              在你的书库里提问，回答将附带可追溯引用
+                              {canAsk
+                                ? `基于《${selectedBook?.title ?? '所选书籍'}》提问，回答将附带可追溯引用`
+                                : '请先在书库上传并等待书籍处理完成'}
                             </div>
                           ) : null}
                         </div>
@@ -774,7 +786,7 @@ export function ChatPage() {
                             className="chatgpt-send-btn"
                             aria-label="发送提示"
                             data-testid="send-button"
-                            disabled={activeThreadIsSending}
+                            disabled={activeThreadIsSending || !canAsk}
                           >
                             <svg
                               viewBox="0 0 20 20"

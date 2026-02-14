@@ -187,9 +187,7 @@ const footerColumns = [
   {
     title: 'Workspace',
     links: [
-      { label: 'Library', href: '/library' },
       { label: 'Chat', href: '/chat' },
-      { label: 'History', href: '/history' },
       { label: 'Login', href: '/log-in' },
     ],
   },
