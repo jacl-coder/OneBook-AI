@@ -379,6 +379,47 @@ func (a *App) ChangePassword(userID, currentPassword, newPassword string) error 
 	return nil
 }
 
+// ResetPasswordByEmail updates password after reset verification.
+func (a *App) ResetPasswordByEmail(email, newPassword string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return ErrEmailRequired
+	}
+	if strings.TrimSpace(newPassword) == "" {
+		return ErrNewPasswordRequired
+	}
+	if err := auth.ValidatePassword(newPassword); err != nil {
+		return err
+	}
+	user, ok, err := a.store.GetUserByEmail(email)
+	if err != nil {
+		return fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	if user.Status == domain.StatusDisabled {
+		return ErrUserDisabled
+	}
+	if hasPassword(user.PasswordHash) && auth.CheckPassword(newPassword, user.PasswordHash) {
+		return fmt.Errorf("new password must differ from current password")
+	}
+	passwordHash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	revokeSince := time.Now().UTC()
+	user.PasswordHash = passwordHash
+	user.UpdatedAt = revokeSince
+	if err := a.store.SaveUser(user); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if err := a.revokeAllUserTokens(user.ID, revokeSince); err != nil {
+		return fmt.Errorf("revoke user tokens: %w", err)
+	}
+	return nil
+}
+
 func (a *App) issueTokens(userID string) (string, string, error) {
 	accessToken, err := a.sessions.NewSession(userID)
 	if err != nil {

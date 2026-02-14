@@ -5,6 +5,7 @@
 ## 1. 范围
 - 注册（密码注册、一次性验证码注册）
 - 登录（密码登录、一次性验证码登录）
+- 忘记密码（邮箱验证码找回）
 - 登录态修改密码
 - 刷新会话与退出登录
 
@@ -15,6 +16,9 @@
 - 注册成功后直接签发 `token + refreshToken`，用户处于已登录状态。
 - 已存在账号登录时，始终支持“密码登录”与“一次性验证码登录”二选一。
 - 若账号无密码，访问 `/log-in/password` 时应跳转到 `/email-verification`（或返回错误码后前端跳转）。
+- 忘记密码采用两步：
+  - 先校验邮箱验证码，获得短时 `resetToken`
+  - 再提交 `newPassword + resetToken` 完成重置
 - 登录态允许进入 `/reset-password/new-password` 设置/修改密码。
 
 ## 3. 页面映射
@@ -63,6 +67,14 @@ flowchart TD
   L4a -->|无| L4d["跳转 /email-verification"]
   L4d --> L3
 
+  L4 --> F1["忘记密码（/reset-password）"]
+  F1 --> F2["发送 reset OTP"]
+  F2 --> F3["校验 OTP（/api/auth/password/reset/verify）"]
+  F3 --> F4["返回 resetToken（短时有效）"]
+  F4 --> F5["设置新密码（/reset-password/new-password）"]
+  F5 --> F6["提交 /api/auth/password/reset/complete"]
+  F6 --> F7["重置成功 -> /reset-password/success"]
+
   HOME --> P1["登录态进入 /reset-password/new-password"]
   P1 --> P2{"当前是否有密码"}
   P2 -->|无密码账号| P3["仅输入新密码"]
@@ -87,12 +99,14 @@ flowchart TD
 - `POST /api/auth/logout`：退出登录
 - `POST /api/auth/otp/send`：发送一次性验证码
 - `POST /api/auth/otp/verify`：校验一次性验证码并换取登录态或注册凭据
+- `POST /api/auth/password/reset/verify`：校验忘记密码验证码，换取 `resetToken`
+- `POST /api/auth/password/reset/complete`：使用 `resetToken` 完成新密码设置
 - `POST /api/users/me/password`：登录态修改密码
 
 ### 5.1 OTP 关键字段
 - `otp/send` 请求体：
   - `email`
-  - `purpose`：`signup_password | signup_otp | login_otp`
+  - `purpose`：`signup_password | signup_otp | login_otp | reset_password`
 - `otp/verify` 请求体：
   - `challengeId`
   - `email`
@@ -107,6 +121,9 @@ flowchart TD
 - `AUTH_OTP_CODE_EXPIRED`：验证码过期
 - `AUTH_OTP_SEND_RATE_LIMITED`：OTP 发送限流
 - `AUTH_OTP_VERIFY_RATE_LIMITED`：OTP 校验限流
+- `AUTH_PASSWORD_RESET_TOKEN_REQUIRED`：缺少 resetToken
+- `AUTH_PASSWORD_RESET_TOKEN_INVALID`：resetToken 无效或过期
+- `AUTH_PASSWORD_RESET_RATE_LIMITED`：忘记密码提交限流
 
 ## 6. 安全与风控要求
 - OTP 单次使用，建议 5 分钟有效期，成功后立即失效。

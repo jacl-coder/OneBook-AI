@@ -20,17 +20,21 @@ const (
 	otpPurposeSignupPassword = "signup_password"
 	otpPurposeSignupOTP      = "signup_otp"
 	otpPurposeLoginOTP       = "login_otp"
+	otpPurposeResetPassword  = "reset_password"
 )
 
 var (
-	errOTPSendRateLimited   = errors.New("too many verification code requests")
-	errOTPVerifyRateLimited = errors.New("too many verification attempts")
-	errOTPPurposeInvalid    = errors.New("invalid verification purpose")
-	errOTPChallengeInvalid  = errors.New("verification request is invalid")
-	errOTPCodeInvalid       = errors.New("incorrect verification code")
-	errOTPCodeExpired       = errors.New("verification code expired")
-	errOTPCodeRequired      = errors.New("verification code is required")
-	errOTPChallengeRequired = errors.New("verification session is required")
+	errOTPSendRateLimited             = errors.New("too many verification code requests")
+	errOTPVerifyRateLimited           = errors.New("too many verification attempts")
+	errPasswordResetVerifyRateLimited = errors.New("too many password reset verification attempts")
+	errOTPPurposeInvalid              = errors.New("invalid verification purpose")
+	errOTPChallengeInvalid            = errors.New("verification request is invalid")
+	errOTPCodeInvalid                 = errors.New("incorrect verification code")
+	errOTPCodeExpired                 = errors.New("verification code expired")
+	errOTPCodeRequired                = errors.New("verification code is required")
+	errOTPChallengeRequired           = errors.New("verification session is required")
+	errResetTokenInvalid              = errors.New("password reset session is invalid")
+	errResetTokenRequired             = errors.New("password reset session is required")
 )
 
 type otpStore struct {
@@ -39,6 +43,7 @@ type otpStore struct {
 	challengeTTL      time.Duration
 	challengePersist  time.Duration
 	resendAfter       time.Duration
+	resetTokenTTL     time.Duration
 	maxVerifyAttempts int
 }
 
@@ -67,6 +72,7 @@ func newOTPStore(addr, password string) (*otpStore, error) {
 		challengeTTL:      challengeTTL,
 		challengePersist:  challengeTTL + time.Minute,
 		resendAfter:       time.Minute,
+		resetTokenTTL:     10 * time.Minute,
 		maxVerifyAttempts: 5,
 	}, nil
 }
@@ -198,6 +204,74 @@ func (s *otpStore) resendKey(email, purpose string) string {
 	return fmt.Sprintf("%s:resend:%s:%s", s.keyPrefix, purpose, email)
 }
 
+func (s *otpStore) resetTokenKey(token string) string {
+	return fmt.Sprintf("%s:password-reset:%s", s.keyPrefix, token)
+}
+
+func (s *otpStore) CreateResetToken(email string) (string, int, error) {
+	if s == nil {
+		return "", 0, errors.New("otp store not configured")
+	}
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return "", 0, err
+	}
+	token := util.NewID()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.client.Set(ctx, s.resetTokenKey(token), email, s.resetTokenTTL).Err(); err != nil {
+		return "", 0, err
+	}
+	return token, int(s.resetTokenTTL.Seconds()), nil
+}
+
+func (s *otpStore) ValidateResetToken(token, email string) error {
+	if s == nil {
+		return errors.New("otp store not configured")
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return errResetTokenRequired
+	}
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	val, err := s.client.Get(ctx, s.resetTokenKey(token)).Result()
+	if errors.Is(err, redis.Nil) {
+		return errResetTokenInvalid
+	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(strings.ToLower(val)) != email {
+		return errResetTokenInvalid
+	}
+	return nil
+}
+
+func (s *otpStore) ConsumeResetToken(token string) error {
+	if s == nil {
+		return errors.New("otp store not configured")
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return errResetTokenRequired
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	deleted, err := s.client.Del(ctx, s.resetTokenKey(token)).Result()
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return errResetTokenInvalid
+	}
+	return nil
+}
+
 func normalizeEmail(email string) (string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
@@ -211,7 +285,7 @@ func normalizeEmail(email string) (string, error) {
 
 func isValidOTPPurpose(purpose string) bool {
 	switch strings.TrimSpace(strings.ToLower(purpose)) {
-	case otpPurposeSignupPassword, otpPurposeSignupOTP, otpPurposeLoginOTP:
+	case otpPurposeSignupPassword, otpPurposeSignupOTP, otpPurposeLoginOTP, otpPurposeResetPassword:
 		return true
 	default:
 		return false

@@ -138,6 +138,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/login/methods", s.handleLoginMethods)
 	s.mux.HandleFunc("/api/auth/otp/send", s.handleOTPSend)
 	s.mux.HandleFunc("/api/auth/otp/verify", s.handleOTPVerify)
+	s.mux.HandleFunc("/api/auth/password/reset/verify", s.handlePasswordResetVerify)
+	s.mux.HandleFunc("/api/auth/password/reset/complete", s.handlePasswordResetComplete)
 	s.mux.HandleFunc("/api/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("/api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("/api/auth/jwks", s.handleJWKS)
@@ -379,6 +381,65 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken,
 		User:         user,
 	})
+}
+
+func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if !s.allowRate(w, r, s.loginLimiter, "too many password reset verification attempts", "AUTH_PASSWORD_RESET_VERIFY_RATE_LIMITED") {
+		s.audit(r, "gateway.password.reset.verify", "rate_limited")
+		return
+	}
+	var req passwordResetVerifyRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "gateway.password.reset.verify", "fail", "reason", "invalid_json")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if strings.TrimSpace(req.ChallengeID) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Code) == "" {
+		s.audit(r, "gateway.password.reset.verify", "fail", "reason", "missing_fields")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "verification request is incomplete", "AUTH_INVALID_REQUEST")
+		return
+	}
+	resp, err := s.auth.PasswordResetVerify(requestIDFromRequest(r), req.ChallengeID, req.Email, req.Code)
+	if err != nil {
+		s.audit(r, "gateway.password.reset.verify", "fail", "reason", err.Error())
+		writeAuthError(w, r, err)
+		return
+	}
+	s.audit(r, "gateway.password.reset.verify", "success")
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	if !s.allowRate(w, r, s.passwordLimiter, "too many password reset attempts", "AUTH_PASSWORD_RESET_RATE_LIMITED") {
+		s.audit(r, "gateway.password.reset.complete", "rate_limited")
+		return
+	}
+	var req passwordResetCompleteRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "gateway.password.reset.complete", "fail", "reason", "invalid_json")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.ResetToken) == "" || strings.TrimSpace(req.NewPassword) == "" {
+		s.audit(r, "gateway.password.reset.complete", "fail", "reason", "missing_fields")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "email, reset token, and new password are required", "AUTH_INVALID_REQUEST")
+		return
+	}
+	if err := s.auth.PasswordResetComplete(requestIDFromRequest(r), req.Email, req.ResetToken, req.NewPassword); err != nil {
+		s.audit(r, "gateway.password.reset.complete", "fail", "reason", err.Error())
+		writeAuthError(w, r, err)
+		return
+	}
+	s.audit(r, "gateway.password.reset.complete", "success")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -792,6 +853,18 @@ type otpVerifyRequest struct {
 	Purpose     string `json:"purpose"`
 	Code        string `json:"code"`
 	Password    string `json:"password,omitempty"`
+}
+
+type passwordResetVerifyRequest struct {
+	ChallengeID string `json:"challengeId"`
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+}
+
+type passwordResetCompleteRequest struct {
+	Email       string `json:"email"`
+	ResetToken  string `json:"resetToken"`
+	NewPassword string `json:"newPassword"`
 }
 
 type authResponse struct {
