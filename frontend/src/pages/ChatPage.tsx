@@ -607,21 +607,6 @@ export function ChatPage() {
                   <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
                 </svg>
               </button>
-              <label className="chatgpt-app-book-picker" htmlFor="chat-book-selector">
-                <span>书籍</span>
-                <select
-                  id="chat-book-selector"
-                  value={selectedBookId}
-                  onChange={(event) => setSelectedBookId(event.target.value)}
-                >
-                  {!hasReadyBooks ? <option value="">暂无可提问书籍</option> : null}
-                  {books.map((book) => (
-                    <option key={book.id} value={book.id}>
-                      {book.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </div>
 
             <div className="chatgpt-app-main-actions">
