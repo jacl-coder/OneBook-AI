@@ -1405,10 +1405,16 @@ th {
   color: #1b1b1b;
 }
 
-.chatgpt-app-source-pill span:last-child {
+.chatgpt-app-source-pill span:nth-child(2) {
   font-size: 11px;
   line-height: 14px;
   color: #6f6f6f;
+}
+
+.chatgpt-app-source-pill span:nth-child(3) {
+  font-size: 11px;
+  line-height: 15px;
+  color: #7b7b7b;
 }
 
 .chatgpt-app-typing {
