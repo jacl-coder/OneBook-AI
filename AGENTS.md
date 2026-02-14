@@ -29,6 +29,11 @@ API and error semantics:
 
 Commit convention (Conventional Commits):
 - Use standard types only: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `build`, `ci`, `perf`.
+- Scope is required in every commit header: `<type>(<scope>): <subject>`.
+- Do not use generic scopes such as `core` or `misc`.
+- Scope should match the dominant changed module/path in that commit.
+- Recommended scopes: `frontend`, `auth`, `gateway`, `backend`, `api`, `docs`, `ci`, `infra`, `app`.
+- If a commit truly spans multiple modules equally, use `app`.
 - Type guidance:
   - `feat`: user-facing capability or API behavior addition/change.
   - `fix`: bug fix with behavior correction.
