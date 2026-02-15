@@ -53,8 +53,6 @@ type ChatThread = {
   errorText: string
 }
 
-type ThreadSectionKey = 'today' | 'yesterday' | 'earlier'
-
 type BookSummary = {
   id: string
   title: string
@@ -76,13 +74,6 @@ type ChatAnswer = {
     snippet: string
   }>
   createdAt: string
-}
-
-const sectionOrder: ThreadSectionKey[] = ['today', 'yesterday', 'earlier']
-const sectionLabel: Record<ThreadSectionKey, string> = {
-  today: '今天',
-  yesterday: '昨天',
-  earlier: '更早',
 }
 
 function nowTimestamp(): number {
@@ -125,15 +116,6 @@ function getRelativeTimeLabel(timestamp: number): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   const day = `${date.getDate()}`.padStart(2, '0')
   return `${month}-${day}`
-}
-
-function getThreadSection(timestamp: number): ThreadSectionKey {
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const startOfYesterday = startOfToday - 86_400_000
-  if (timestamp >= startOfToday) return 'today'
-  if (timestamp >= startOfYesterday) return 'yesterday'
-  return 'earlier'
 }
 
 function createEmptyThread(): ChatThread {
@@ -188,6 +170,8 @@ export function ChatPage() {
   const [activeThreadId, setActiveThreadId] = useState<string>('')
   const [threadSearch, setThreadSearch] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
   const [books, setBooks] = useState<BookSummary[]>([])
   const [selectedBookId, setSelectedBookId] = useState('')
   const [bookListErrorText, setBookListErrorText] = useState('')
@@ -214,18 +198,6 @@ export function ChatPage() {
     })
   }, [threads, threadSearch])
 
-  const groupedThreads = useMemo(() => {
-    const groups: Record<ThreadSectionKey, ChatThread[]> = {
-      today: [],
-      yesterday: [],
-      earlier: [],
-    }
-    filteredThreads.forEach((thread) => {
-      groups[getThreadSection(thread.updatedAt)].push(thread)
-    })
-    return groups
-  }, [filteredThreads])
-
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
   const selectedBook = useMemo(
@@ -234,6 +206,27 @@ export function ChatPage() {
   )
   const hasReadyBooks = books.length > 0
   const canAsk = hasReadyBooks && selectedBookId !== ''
+
+  const isMobileSidebarViewport = useCallback(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 767px)').matches
+  }, [])
+
+  const handleCloseSidebar = useCallback(() => {
+    if (isMobileSidebarViewport()) {
+      setIsSidebarOpen(false)
+      return
+    }
+    setIsDesktopSidebarCollapsed(true)
+  }, [isMobileSidebarViewport])
+
+  const handleOpenSidebar = useCallback(() => {
+    if (isMobileSidebarViewport()) {
+      setIsSidebarOpen(true)
+      return
+    }
+    setIsDesktopSidebarCollapsed(false)
+  }, [isMobileSidebarViewport])
 
   const loadReadyBooks = useCallback(async () => {
     try {
@@ -494,9 +487,10 @@ export function ChatPage() {
 
   if (sessionUser) {
     const avatarLetter = sessionUser.email.slice(0, 1).toUpperCase()
+    const isSidebarExpanded = isMobileSidebarViewport() ? isSidebarOpen : !isDesktopSidebarCollapsed
 
     return (
-      <div className="chatgpt-app-shell">
+      <div className={`chatgpt-app-shell ${isDesktopSidebarCollapsed ? 'chatgpt-app-shell-sidebar-collapsed' : ''}`}>
         <button
           type="button"
           className={`chatgpt-app-sidebar-backdrop ${isSidebarOpen ? 'is-open' : ''}`}
@@ -505,68 +499,136 @@ export function ChatPage() {
           onClick={() => setIsSidebarOpen(false)}
         />
 
-        <aside className={`chatgpt-app-sidebar ${isSidebarOpen ? 'is-open' : ''}`} aria-label="会话侧边栏">
+        <aside
+          id="stage-slideover-sidebar"
+          className={`chatgpt-app-sidebar ${isSidebarOpen ? 'is-open' : ''}`}
+          aria-label="会话侧边栏"
+        >
           <div className="chatgpt-app-sidebar-top">
             <div className="chatgpt-app-sidebar-brand">
               <Link to="/chat" className="chatgpt-app-logo-link" aria-label="OneBook AI">
                 <img src={onebookLogoMark} alt="" aria-hidden="true" />
               </Link>
-              <button type="button" className="chatgpt-app-collapse-btn" onClick={() => setIsSidebarOpen(false)}>
-                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M6 5L14 10L6 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              <button
+                type="button"
+                className="chatgpt-app-collapse-btn"
+                aria-expanded={isSidebarExpanded}
+                aria-controls="stage-slideover-sidebar"
+                aria-label="关闭边栏"
+                data-testid="close-sidebar-button"
+                data-state={isSidebarExpanded ? 'open' : 'closed'}
+                onClick={handleCloseSidebar}
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  data-rtl-flip=""
+                  className="chatgpt-app-collapse-icon-desktop"
+                >
+                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-sidebar-close-desktop`} fill="currentColor" />
+                </svg>
+                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="chatgpt-app-collapse-icon-mobile">
+                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-sidebar-close-mobile`} fill="currentColor" />
                 </svg>
               </button>
             </div>
 
-            <button type="button" className="chatgpt-app-new-chat" onClick={handleCreateConversation}>
-              <span className="chatgpt-app-new-chat-plus">+</span>
-              <span>新建对话</span>
+            <button type="button" className="chatgpt-app-menu-item" onClick={handleCreateConversation}>
+              <span className="chatgpt-app-menu-item-leading">
+                <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-new-chat`} fill="currentColor" />
+                  </svg>
+                </span>
+                <span className="chatgpt-app-menu-item-content">
+                  <span className="chatgpt-app-menu-item-title">新聊天</span>
+                </span>
+              </span>
+              <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
+                <span className="chatgpt-app-menu-item-kbd">⇧</span>
+                <span className="chatgpt-app-menu-item-kbd">⌘</span>
+                <span className="chatgpt-app-menu-item-kbd">O</span>
+              </span>
             </button>
 
-            <label className="chatgpt-app-search-wrap" htmlFor="chat-thread-search">
-              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
-              </svg>
-              <input
-                id="chat-thread-search"
-                type="search"
-                placeholder="搜索对话"
-                value={threadSearch}
-                onChange={(event) => setThreadSearch(event.target.value)}
-              />
+            <label className="chatgpt-app-menu-item chatgpt-app-menu-item-search" htmlFor="chat-thread-search">
+              <span className="chatgpt-app-menu-item-leading">
+                <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
+                  </svg>
+                </span>
+                <span className="chatgpt-app-menu-item-content">
+                  <input
+                    id="chat-thread-search"
+                    className="chatgpt-app-search-input"
+                    type="search"
+                    placeholder="搜索聊天"
+                    value={threadSearch}
+                    onChange={(event) => setThreadSearch(event.target.value)}
+                  />
+                </span>
+              </span>
+              <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
+                <span className="chatgpt-app-menu-item-kbd">⌘</span>
+                <span className="chatgpt-app-menu-item-kbd">K</span>
+              </span>
             </label>
           </div>
 
           <div className="chatgpt-app-sidebar-content" role="listbox" aria-label="会话列表">
-            {sectionOrder.map((section) => {
-              const items = groupedThreads[section]
-              if (!items.length) return null
-              return (
-                <section key={section} className="chatgpt-app-thread-group">
-                  <h2>{sectionLabel[section]}</h2>
-                  <div className="chatgpt-app-thread-list">
-                    {items.map((thread) => {
-                      const isActive = thread.id === activeThreadId
-                      return (
-                        <button
-                          key={thread.id}
-                          type="button"
-                          className={`chatgpt-app-thread-item ${isActive ? 'is-active' : ''}`}
-                          onClick={() => handleThreadSelect(thread.id)}
-                        >
-                          <span className="chatgpt-app-thread-title">{thread.title}</span>
-                          <span className="chatgpt-app-thread-preview">{getThreadPreview(thread)}</span>
-                          <span className="chatgpt-app-thread-time">{getRelativeTimeLabel(thread.updatedAt)}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </section>
-              )
-            })}
+            <div className={`chatgpt-app-sidebar-expando-section ${isHistoryExpanded ? 'is-expanded' : ''}`}>
+              <button
+                type="button"
+                aria-expanded={isHistoryExpanded}
+                className="chatgpt-app-sidebar-expando-btn"
+                onClick={() => setIsHistoryExpanded((prev) => !prev)}
+              >
+                <h2 className="chatgpt-app-menu-label" data-no-spacing="true">你的聊天</h2>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                  className="chatgpt-app-sidebar-expando-icon"
+                >
+                  {isHistoryExpanded ? (
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
+                  ) : (
+                    <path d="M7 6.2L10.8 10L7 13.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  )}
+                </svg>
+              </button>
+            </div>
 
-            {!filteredThreads.length ? (
-              <div className="chatgpt-app-thread-empty">没有匹配的会话</div>
+            {isHistoryExpanded ? (
+              <>
+                <div className="chatgpt-app-thread-list">
+                  {filteredThreads.map((thread) => {
+                    const isActive = thread.id === activeThreadId
+                    return (
+                      <button
+                        key={thread.id}
+                        type="button"
+                        className={`chatgpt-app-thread-item ${isActive ? 'is-active' : ''}`}
+                        onClick={() => handleThreadSelect(thread.id)}
+                      >
+                        <span className="chatgpt-app-thread-title">{thread.title}</span>
+                        <span className="chatgpt-app-thread-more" aria-hidden="true">
+                          <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5 10a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 5 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 10 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 15 10Z" fill="currentColor" />
+                          </svg>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {!filteredThreads.length ? (
+                  <div className="chatgpt-app-thread-empty">没有匹配的会话</div>
+                ) : null}
+              </>
             ) : null}
           </div>
 
@@ -593,7 +655,7 @@ export function ChatPage() {
                 type="button"
                 className="chatgpt-app-menu-btn"
                 aria-label="打开会话侧栏"
-                onClick={() => setIsSidebarOpen(true)}
+                onClick={handleOpenSidebar}
               >
                 <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M4 5.5H16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
@@ -612,9 +674,6 @@ export function ChatPage() {
             <div className="chatgpt-app-main-actions">
               <button type="button" className="chatgpt-app-head-action">临时</button>
               <button type="button" className="chatgpt-app-head-action">分享</button>
-              <button type="button" className="chatgpt-app-profile-btn" aria-label="账户菜单">
-                <span>{avatarLetter}</span>
-              </button>
             </div>
           </header>
 
