@@ -919,6 +919,7 @@ th {
 }
 
 .chatgpt-app-sidebar {
+  --sidebar-section-margin-top: 14px;
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -929,9 +930,8 @@ th {
 }
 
 .chatgpt-app-sidebar-top {
-  display: grid;
-  gap: 8px;
-  padding: 8px 8px 10px;
+  display: block;
+  padding: 8px 16px 0;
 }
 
 .chatgpt-app-sidebar-brand {
@@ -941,12 +941,16 @@ th {
 }
 
 .chatgpt-app-logo-link {
+  margin: 0;
+  padding: 0;
   width: 36px;
   height: 36px;
+  flex: 0 0 36px;
   border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;
 }
 
 .chatgpt-app-logo-link img {
@@ -958,6 +962,7 @@ th {
 .chatgpt-app-collapse-btn {
   width: 36px;
   height: 36px;
+  margin-right: -8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -1024,7 +1029,7 @@ th {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   cursor: pointer;
   text-align: left;
   letter-spacing: 0;
@@ -1089,6 +1094,25 @@ th {
   gap: 0;
   flex-shrink: 0;
   pointer-events: none;
+  font-size: 14px;
+  line-height: 20px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.chatgpt-app-menu-item-kbd-row {
+  display: inline-flex;
+  white-space: pre;
+}
+
+.chatgpt-app-menu-item-kbd-row kbd {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  display: inline-flex;
 }
 
 .chatgpt-app-menu-item-kbd {
@@ -1096,9 +1120,9 @@ th {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: inherit;
-  line-height: inherit;
-  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-family: ui-sans-serif, -apple-system, system-ui, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
 .chatgpt-app-menu-item-search {
@@ -1126,6 +1150,18 @@ th {
   .chatgpt-app-menu-item {
     min-height: 40px;
   }
+
+  .chatgpt-app-menu-item-trailing {
+    display: none;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chatgpt-app-menu-item:hover .chatgpt-app-menu-item-trailing,
+  .chatgpt-app-menu-item:focus-visible .chatgpt-app-menu-item-trailing,
+  .chatgpt-app-menu-item:focus-within .chatgpt-app-menu-item-trailing {
+    opacity: 1;
+  }
 }
 
 .chatgpt-app-sidebar-content {
@@ -1135,6 +1171,26 @@ th {
   gap: 0;
   padding: 0;
   align-content: start;
+}
+
+.chatgpt-app-sidebar-first-section {
+  padding-top: 0;
+}
+
+.chatgpt-app-sidebar-quick-actions {
+  margin-top: 14px;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.chatgpt-app-sidebar-quick-actions .chatgpt-app-menu-item {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.chatgpt-app-sidebar-section-spacer {
+  padding-bottom: var(--sidebar-section-margin-top);
 }
 
 .chatgpt-app-sidebar-expando-section {
@@ -1166,10 +1222,11 @@ th {
 
 .chatgpt-app-menu-label {
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 16px;
   font-weight: 500;
   letter-spacing: 0;
+  font-family: inherit;
 }
 
 .chatgpt-app-sidebar-expando-icon {
@@ -1178,12 +1235,24 @@ th {
   flex-shrink: 0;
   display: block;
   visibility: hidden;
+  opacity: 0;
   color: #7a7a7a;
-  transition: opacity 120ms ease;
+  transform: rotate(0deg);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.chatgpt-app-sidebar-expando-icon.is-collapsed {
+  transform: rotate(-90deg);
 }
 
 .chatgpt-app-sidebar-expando-section:hover .chatgpt-app-sidebar-expando-icon {
   visibility: visible;
+  opacity: 1;
+}
+
+.chatgpt-app-sidebar-expando-btn:focus-visible .chatgpt-app-sidebar-expando-icon {
+  visibility: visible;
+  opacity: 1;
 }
 
 .chatgpt-app-thread-list {
@@ -1200,7 +1269,7 @@ th {
   text-align: left;
   cursor: pointer;
   min-height: 34px;
-  padding: 0 30px 0 8px;
+  padding: 0 30px 0 9px;
   display: block;
   position: relative;
   color: #0d0d0d;
@@ -1216,7 +1285,7 @@ th {
 
 .chatgpt-app-thread-title {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 34px;
   font-weight: 400;
   white-space: nowrap;

@@ -150,6 +150,7 @@ export function ChatPage() {
   const guestEditorRef = useRef<HTMLDivElement>(null)
   const authEditorRef = useRef<HTMLDivElement>(null)
   const authInputRef = useRef<HTMLInputElement>(null)
+  const threadSearchInputRef = useRef<HTMLInputElement>(null)
   const uploadGuestInputRef = useRef<HTMLInputElement>(null)
   const uploadAuthInputRef = useRef<HTMLInputElement>(null)
   const pendingAskIdRef = useRef(0)
@@ -200,6 +201,28 @@ export function ChatPage() {
 
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
+  const isApplePlatform = useMemo(() => {
+    if (typeof navigator === 'undefined') return false
+    const uaData = navigator as Navigator & { userAgentData?: { platform?: string } }
+    const platform = uaData.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent ?? ''
+    return /mac|iphone|ipad|ipod/i.test(platform)
+  }, [])
+  const newChatShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⇧', '⌘', 'O'] : ['Ctrl', 'Shift', 'O']),
+    [isApplePlatform],
+  )
+  const searchShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⌘', 'K'] : ['Ctrl', 'K']),
+    [isApplePlatform],
+  )
+
+  const getShortcutAriaLabel = useCallback((key: string) => {
+    if (key === '⌘') return '命令'
+    if (key === 'Ctrl') return 'Control'
+    if (key === 'Shift' || key === '⇧') return 'Shift'
+    return undefined
+  }, [])
+
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId) ?? null,
     [books, selectedBookId],
@@ -453,13 +476,13 @@ export function ChatPage() {
     navigate(`${targetPath}?email=${encodeURIComponent(authEmail.trim())}`)
   }
 
-  const handleCreateConversation = () => {
+  const handleCreateConversation = useCallback(() => {
     const newThread = createEmptyThread()
     setThreads((previous) => [newThread, ...previous])
     setActiveThreadId(newThread.id)
     setIsSidebarOpen(false)
     requestAnimationFrame(() => authEditorRef.current?.focus())
-  }
+  }, [])
 
   const handleThreadSelect = (threadId: string) => {
     setActiveThreadId(threadId)
@@ -484,6 +507,41 @@ export function ChatPage() {
       uploadAuthInputRef.current?.click()
     }
   }
+
+  useEffect(() => {
+    if (!sessionUser) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      const modifierPressed = isApplePlatform ? event.metaKey : event.ctrlKey
+      if (!modifierPressed || event.altKey) return
+
+      const target = event.target as HTMLElement | null
+      const tagName = target?.tagName ?? ''
+      const isTypingTarget =
+        !!target &&
+        (target.isContentEditable ||
+          target.closest('[contenteditable="true"]') !== null ||
+          tagName === 'INPUT' ||
+          tagName === 'TEXTAREA' ||
+          tagName === 'SELECT')
+
+      if (key === 'k' && !event.shiftKey) {
+        event.preventDefault()
+        threadSearchInputRef.current?.focus()
+        threadSearchInputRef.current?.select()
+        return
+      }
+
+      if (key === 'o' && event.shiftKey) {
+        if (isTypingTarget) return
+        event.preventDefault()
+        handleCreateConversation()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [sessionUser, isApplePlatform, handleCreateConversation])
 
   if (sessionUser) {
     const avatarLetter = sessionUser.email.slice(0, 1).toUpperCase()
@@ -533,51 +591,66 @@ export function ChatPage() {
                 </svg>
               </button>
             </div>
-
-            <button type="button" className="chatgpt-app-menu-item" onClick={handleCreateConversation}>
-              <span className="chatgpt-app-menu-item-leading">
-                <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
-                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-new-chat`} fill="currentColor" />
-                  </svg>
-                </span>
-                <span className="chatgpt-app-menu-item-content">
-                  <span className="chatgpt-app-menu-item-title">新聊天</span>
-                </span>
-              </span>
-              <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
-                <span className="chatgpt-app-menu-item-kbd">⇧</span>
-                <span className="chatgpt-app-menu-item-kbd">⌘</span>
-                <span className="chatgpt-app-menu-item-kbd">O</span>
-              </span>
-            </button>
-
-            <label className="chatgpt-app-menu-item chatgpt-app-menu-item-search" htmlFor="chat-thread-search">
-              <span className="chatgpt-app-menu-item-leading">
-                <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
-                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
-                  </svg>
-                </span>
-                <span className="chatgpt-app-menu-item-content">
-                  <input
-                    id="chat-thread-search"
-                    className="chatgpt-app-search-input"
-                    type="search"
-                    placeholder="搜索聊天"
-                    value={threadSearch}
-                    onChange={(event) => setThreadSearch(event.target.value)}
-                  />
-                </span>
-              </span>
-              <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
-                <span className="chatgpt-app-menu-item-kbd">⌘</span>
-                <span className="chatgpt-app-menu-item-kbd">K</span>
-              </span>
-            </label>
           </div>
 
           <div className="chatgpt-app-sidebar-content" role="listbox" aria-label="会话列表">
+            <aside className="chatgpt-app-sidebar-first-section">
+              <div className="chatgpt-app-sidebar-quick-actions">
+                <button type="button" className="chatgpt-app-menu-item" onClick={handleCreateConversation}>
+                  <span className="chatgpt-app-menu-item-leading">
+                    <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <use href={`${CHAT_ICON_SPRITE_URL}#chat-new-chat`} fill="currentColor" />
+                      </svg>
+                    </span>
+                    <span className="chatgpt-app-menu-item-content">
+                      <span className="chatgpt-app-menu-item-title">新聊天</span>
+                    </span>
+                  </span>
+                  <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
+                    <span className="chatgpt-app-menu-item-kbd-row">
+                      {newChatShortcutKeys.map((key) => (
+                        <kbd key={`new-chat-shortcut-${key}`} aria-label={getShortcutAriaLabel(key)}>
+                          <span className="chatgpt-app-menu-item-kbd">{key}</span>
+                        </kbd>
+                      ))}
+                    </span>
+                  </span>
+                </button>
+
+                <label className="chatgpt-app-menu-item chatgpt-app-menu-item-search" htmlFor="chat-thread-search">
+                  <span className="chatgpt-app-menu-item-leading">
+                    <span className="chatgpt-app-menu-item-icon" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
+                      </svg>
+                    </span>
+                    <span className="chatgpt-app-menu-item-content">
+                      <input
+                        id="chat-thread-search"
+                        ref={threadSearchInputRef}
+                        className="chatgpt-app-search-input"
+                        type="search"
+                        placeholder="搜索聊天"
+                        value={threadSearch}
+                        onChange={(event) => setThreadSearch(event.target.value)}
+                      />
+                    </span>
+                  </span>
+                  <span className="chatgpt-app-menu-item-trailing" aria-hidden="true">
+                    <span className="chatgpt-app-menu-item-kbd-row">
+                      {searchShortcutKeys.map((key) => (
+                        <kbd key={`search-shortcut-${key}`} aria-label={getShortcutAriaLabel(key)}>
+                          <span className="chatgpt-app-menu-item-kbd">{key}</span>
+                        </kbd>
+                      ))}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </aside>
+            <div className="chatgpt-app-sidebar-section-spacer" aria-hidden="true" />
+
             <div className={`chatgpt-app-sidebar-expando-section ${isHistoryExpanded ? 'is-expanded' : ''}`}>
               <button
                 type="button"
@@ -591,13 +664,9 @@ export function ChatPage() {
                   width="16"
                   height="16"
                   aria-hidden="true"
-                  className="chatgpt-app-sidebar-expando-icon"
+                  className={`chatgpt-app-sidebar-expando-icon ${isHistoryExpanded ? '' : 'is-collapsed'}`}
                 >
-                  {isHistoryExpanded ? (
-                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
-                  ) : (
-                    <path d="M7 6.2L10.8 10L7 13.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  )}
+                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
                 </svg>
               </button>
             </div>
