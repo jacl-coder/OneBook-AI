@@ -33,7 +33,7 @@ func NewGeminiClient(apiKey string) (*GeminiClient, error) {
 }
 
 // EmbedText generates an embedding for the input text.
-func (c *GeminiClient) EmbedText(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+func (c *GeminiClient) EmbedText(ctx context.Context, model string, text string, taskType string, dimensions int) ([]float32, error) {
 	reqBody := embedRequest{
 		Content: content{
 			Parts: []part{{Text: text}},
@@ -41,6 +41,9 @@ func (c *GeminiClient) EmbedText(ctx context.Context, model string, text string,
 	}
 	if taskType != "" {
 		reqBody.TaskType = taskType
+	}
+	if dimensions > 0 {
+		reqBody.OutputDimensionality = dimensions
 	}
 	var resp embedResponse
 	if err := c.doJSON(ctx, fmt.Sprintf("%s/models/%s:embedContent?key=%s", c.baseURL, normalizeModel(model), c.apiKey), reqBody, &resp); err != nil {
@@ -122,8 +125,9 @@ type content struct {
 }
 
 type embedRequest struct {
-	Content  content `json:"content"`
-	TaskType string  `json:"taskType,omitempty"`
+	Content              content `json:"content"`
+	TaskType             string  `json:"taskType,omitempty"`
+	OutputDimensionality int     `json:"outputDimensionality,omitempty"`
 }
 
 type embedResponse struct {

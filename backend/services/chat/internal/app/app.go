@@ -44,7 +44,7 @@ func New(cfg Config) (*App, error) {
 			return nil, fmt.Errorf("database URL required")
 		}
 		var err error
-		dataStore, err = store.NewGormStore(cfg.DatabaseURL)
+		dataStore, err = store.NewGormStore(cfg.DatabaseURL, store.WithEmbeddingDim(cfg.EmbeddingDim))
 		if err != nil {
 			return nil, fmt.Errorf("init postgres store: %w", err)
 		}
@@ -73,7 +73,10 @@ func New(cfg Config) (*App, error) {
 		ollama := ai.NewOllamaClient(cfg.EmbeddingBaseURL)
 		embedder = ai.NewOllamaEmbedder(ollama, cfg.EmbeddingModel, cfg.EmbeddingDim)
 	case "gemini":
-		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel)
+		if cfg.EmbeddingDim <= 0 {
+			return nil, fmt.Errorf("embedding dim required for gemini")
+		}
+		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel, cfg.EmbeddingDim)
 	default:
 		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
 	}

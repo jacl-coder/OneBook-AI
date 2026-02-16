@@ -60,6 +60,11 @@ if [ -f "$ROOT_DIR/.env" ]; then
   set +a
 fi
 
+if [[ -z "${ONEBOOK_EMBEDDING_DIM:-}" ]]; then
+  export ONEBOOK_EMBEDDING_DIM="3072"
+  echo "ONEBOOK_EMBEDDING_DIM not set, defaulting to ${ONEBOOK_EMBEDDING_DIM}"
+fi
+
 if [[ -z "${CORS_ALLOWED_ORIGINS:-}" ]]; then
   # Default allow local Swagger UI and Vite dev server.
   export CORS_ALLOWED_ORIGINS="http://localhost:8086,http://localhost:5173"
