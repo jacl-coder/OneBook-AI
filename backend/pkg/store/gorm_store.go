@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pgvector/pgvector-go"
@@ -19,13 +21,43 @@ import (
 
 const migrateLockID int64 = 73217321
 
+const (
+	defaultEmbeddingDim      = 3072
+	canonicalEmbeddingDimEnv = "ONEBOOK_EMBEDDING_DIM"
+)
+
+type GormStoreOptions struct {
+	EmbeddingDim int
+}
+
+type GormStoreOption func(*GormStoreOptions)
+
+// WithEmbeddingDim sets the canonical embedding dimension used by storage.
+func WithEmbeddingDim(dim int) GormStoreOption {
+	return func(opts *GormStoreOptions) {
+		opts.EmbeddingDim = dim
+	}
+}
+
 // GormStore implements Store using GORM + Postgres.
 type GormStore struct {
-	db *gorm.DB
+	db           *gorm.DB
+	embeddingDim int
 }
 
 // NewGormStore opens the DB and runs auto-migrations.
-func NewGormStore(dsn string) (*GormStore, error) {
+func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
+	opts := GormStoreOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
+	embeddingDim, err := resolveEmbeddingDim(opts.EmbeddingDim)
+	if err != nil {
+		return nil, err
+	}
+
 	gormLog := gormlogger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		gormlogger.Config{
@@ -46,17 +78,17 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
-		if err := tx.Exec(`
+		if err := tx.Exec(fmt.Sprintf(`
 			DO $$
 			BEGIN
 			IF EXISTS (
 				SELECT 1 FROM information_schema.columns
 				WHERE table_name = 'chunk_models' AND column_name = 'embedding'
 			) THEN
-				ALTER TABLE chunk_models ALTER COLUMN embedding TYPE vector(3072);
+				ALTER TABLE chunk_models ALTER COLUMN embedding TYPE vector(%d);
 			END IF;
 			END $$;
-		`).Error; err != nil {
+		`, embeddingDim)).Error; err != nil {
 			return fmt.Errorf("alter chunk embedding type: %w", err)
 		}
 		if err := tx.Exec(`
@@ -124,7 +156,22 @@ func NewGormStore(dsn string) (*GormStore, error) {
 	}); err != nil {
 		return nil, err
 	}
-	return &GormStore{db: db}, nil
+	return &GormStore{db: db, embeddingDim: embeddingDim}, nil
+}
+
+func resolveEmbeddingDim(configValue int) (int, error) {
+	if configValue > 0 {
+		return configValue, nil
+	}
+	raw := strings.TrimSpace(os.Getenv(canonicalEmbeddingDimEnv))
+	if raw == "" {
+		return defaultEmbeddingDim, nil
+	}
+	dim, err := strconv.Atoi(raw)
+	if err != nil || dim <= 0 {
+		return 0, fmt.Errorf("invalid %s: %q", canonicalEmbeddingDimEnv, raw)
+	}
+	return dim, nil
 }
 
 func withMigrationLock(db *gorm.DB, fn func(*gorm.DB) error) error {
@@ -348,6 +395,9 @@ func (s *GormStore) ListChunksByBook(bookID string) ([]domain.Chunk, error) {
 
 // SetChunkEmbedding updates the embedding vector for a chunk.
 func (s *GormStore) SetChunkEmbedding(id string, embedding []float32) error {
+	if err := s.validateEmbeddingDim(embedding); err != nil {
+		return err
+	}
 	return s.db.Model(&ChunkModel{}).Where("id = ?", id).
 		Update("embedding", pgvector.NewVector(embedding)).Error
 }
@@ -356,6 +406,9 @@ func (s *GormStore) SetChunkEmbedding(id string, embedding []float32) error {
 func (s *GormStore) SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error) {
 	if limit <= 0 {
 		return []domain.Chunk{}, nil
+	}
+	if err := s.validateEmbeddingDim(embedding); err != nil {
+		return nil, err
 	}
 	vec := pgvector.NewVector(embedding)
 	var models []ChunkModel
@@ -371,6 +424,16 @@ func (s *GormStore) SearchChunks(bookID string, embedding []float32, limit int) 
 		chunks = append(chunks, chunkFromModel(model))
 	}
 	return chunks, nil
+}
+
+func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
+	if len(embedding) == 0 {
+		return fmt.Errorf("embedding vector is empty")
+	}
+	if s.embeddingDim > 0 && len(embedding) != s.embeddingDim {
+		return fmt.Errorf("embedding dimension mismatch: got %d, want %d", len(embedding), s.embeddingDim)
+	}
+	return nil
 }
 
 func userToModel(u domain.User) UserModel {

@@ -23,73 +23,24 @@ import {
   verifyOtp,
 } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-const AUTH_EMAIL_STORAGE_KEY = 'auth:email'
-const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
-const AUTH_OTP_CHALLENGE_STORAGE_KEY = 'auth:otp:challenge-id'
-const AUTH_OTP_PURPOSE_STORAGE_KEY = 'auth:otp:purpose'
-const AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY = 'auth:otp:pending-password'
-const AUTH_OTP_EMAIL_STORAGE_KEY = 'auth:otp:email'
-const AUTH_RESET_TOKEN_STORAGE_KEY = 'auth:reset:token'
-const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
-
-type AuthNavigationState = {
-  email?: string
-  errorMessage?: string
-  challengeId?: string
-  purpose?: OtpPurpose
-  pendingPassword?: string
-  otpEmail?: string
-  resetToken?: string
-}
-
-type Step = 'entry' | 'password' | 'verify' | 'reset' | 'resetNew' | 'resetSuccess' | 'error'
-
-function getStep(pathname: string): Step {
-  if (pathname === '/log-in/password' || pathname === '/create-account/password') return 'password'
-  if (pathname === '/log-in/verify' || pathname === '/email-verification') return 'verify'
-  if (pathname === '/reset-password') return 'reset'
-  if (pathname === '/reset-password/new-password') return 'resetNew'
-  if (pathname === '/reset-password/success') return 'resetSuccess'
-  if (pathname === '/log-in/error') return 'error'
-  return 'entry'
-}
-
-function normalizeText(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function normalizeOtpPurpose(value: unknown): OtpPurpose | '' {
-  const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'signup_password') return 'signup_password'
-  if (normalized === 'signup_otp') return 'signup_otp'
-  if (normalized === 'login_otp') return 'login_otp'
-  if (normalized === 'reset_password') return 'reset_password'
-  return ''
-}
-
-function readSessionValue(key: string) {
-  if (typeof window === 'undefined') return ''
-  return normalizeText(window.sessionStorage.getItem(key))
-}
-
-function writeSessionValue(key: string, value: string) {
-  if (typeof window === 'undefined') return
-  if (value) {
-    window.sessionStorage.setItem(key, value)
-    return
-  }
-  window.sessionStorage.removeItem(key)
-}
-
-function schedule(fn: () => void) {
-  if (typeof queueMicrotask === 'function') {
-    queueMicrotask(fn)
-    return
-  }
-  setTimeout(fn, 0)
-}
+import {
+  AUTH_EMAIL_STORAGE_KEY,
+  AUTH_ERROR_MESSAGE_STORAGE_KEY,
+  AUTH_OTP_CHALLENGE_STORAGE_KEY,
+  AUTH_OTP_EMAIL_STORAGE_KEY,
+  AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY,
+  AUTH_OTP_PURPOSE_STORAGE_KEY,
+  AUTH_RESET_TOKEN_STORAGE_KEY,
+  DEFAULT_AUTH_ERROR_MESSAGE,
+  EMAIL_PATTERN,
+  type AuthNavigationState,
+  getStep,
+  normalizeOtpPurpose,
+  normalizeText,
+  readSessionValue,
+  schedule,
+  writeSessionValue,
+} from '@/pages/login/shared'
 
 export function LoginPage() {
   const navigate = useNavigate()
