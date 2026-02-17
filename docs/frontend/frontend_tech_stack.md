@@ -44,13 +44,15 @@
 ## 5. 测试与验证
 - 代码检查：`npm run lint`
 - 生产构建：`npm run build`
+- 单元测试：`npm run test:unit`
 - E2E：`npm run test:e2e`
 - 主链路用例：`frontend/tests/e2e/chat-main-flow.spec.ts`
+- 会话刷新用例：`frontend/tests/unit/http-client-refresh-single-flight.test.ts`
 
 ## 6. 当前未采用（避免误解）
 - 未引入 `shadcn/ui`。
 - 未采用 `React Hook Form` 作为统一表单层（当前登录页为自管理表单状态）。
-- `zod` 目前在依赖中存在，但不是当前页面表单主路径的必需项。
+- `zod` 已从当前依赖移除，避免未使用依赖噪音。
 
 ## 7. 实践约定
 - 以“薄 CSS + 厚 utilities”为默认策略。
