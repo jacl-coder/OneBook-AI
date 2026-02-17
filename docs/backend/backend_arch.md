@@ -23,7 +23,7 @@
 4) Chat：问题向量检索 TopK → 拼装上下文与历史 → Gemini 回答 → 保存消息。
 
 ## 安全与权限
-- 对外接口通过 Gateway 统一鉴权（Bearer Token）。
+- 对外接口通过 Gateway 统一鉴权（浏览器会话 Cookie；前端不注入 Bearer）。
 - 内部服务接口通过短时效服务 JWT（Bearer）保护，并校验 `iss/aud/exp`。
 - 用户 Access Token 由业务服务通过 JWKS 本地验签。
 - 管理员角色可查看全量用户/书籍数据。

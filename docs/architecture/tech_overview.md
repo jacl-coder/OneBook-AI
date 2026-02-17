@@ -8,6 +8,7 @@
 - LLM：Gemini（回答生成）。
 - Embedding：Gemini 或 Ollama（本地模型）。
 - 解析：PDF 优先 `pdftotext`（可选），失败则使用 Go PDF 库；EPUB/HTML 解析；TXT 直接分块。
+- 前端：React 19 + TypeScript + Vite 7 + React Router 7 + Axios + TanStack Query + Zustand + Tailwind v4。
 
 ## 核心流程
 1) **上传**：Gateway → Book 服务；校验扩展名/大小后写入 MinIO，并写入书籍元数据。
@@ -35,4 +36,5 @@
 
 ## 前端联调入口
 - 联调统一走 Gateway：`http://localhost:8080`
+- 鉴权机制：浏览器会话 Cookie（`withCredentials`），401 走 refresh 单飞重试。
 - 联调约定与错误语义：`docs/backend/backend_handoff.md`

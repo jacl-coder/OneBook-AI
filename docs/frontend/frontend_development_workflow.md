@@ -1,157 +1,80 @@
-# OneBook AI 前端开发流程（最佳实践版）
+# OneBook AI 前端开发流程（当前实践）
 
-本文档用于指导本项目前端实现，目标是以最小返工完成可答辩、可演示、可扩展的交付。
+本文档聚焦“当前仓库如何开发与验收”，不再描述通用方法论。
 
-## 1. 项目目标与范围
-- 目标：完成核心闭环 `登录 -> 上传书籍 -> 状态轮询 -> 对话问答 -> 历史查看`。
-- 接口边界：前端仅调用 Gateway（`http://localhost:8080`），不直接访问内部服务。
-- 联调基线：以 `docs/backend/backend_handoff.md` 和 OpenAPI 为准。
+## 1. 联调边界
+- 前端只调用 Gateway：`http://localhost:8080`
+- API 语义以 `docs/backend/backend_handoff.md` 与 OpenAPI 为准
+- 不直接请求内部服务端口
 
-## 2. 开发总原则（行业通用）
-- 先定契约再写页面：先锁定接口、错误码、状态机，再实现 UI。
-- 先主流程后增强项：优先打通核心闭环，再做动画/细节优化。
-- 可观测优先：每个关键请求都有 loading、empty、error 三态。
-- 安全默认开启：会话 cookie 管理、401 自动刷新、最小权限、输入校验。
-- 小步迭代：每个阶段都可独立演示与验收。
+## 2. 本地启动
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## 3. 分阶段实施
+默认开发地址：`http://localhost:5173`
 
-## 阶段 0：契约冻结（必须先做）
-- 工作内容：
-  - 确认核心接口：`/api/auth/*`、`/api/books*`、`/api/chats`、`/api/users/me`。
-  - 确认书籍状态机：`queued -> processing -> ready | failed`。
-  - 确认会话机制：`401 -> refresh -> retry`。
-- 产出物：
-  - 一份前端 API 清单（请求、响应、错误码）。
-  - 一份状态流转图（上传与问答）。
-- DoD：
-  - 团队对接口语义无歧义。
-  - 前端不再依赖“猜测后端行为”。
+## 3. 环境变量
+文件：`frontend/.env.example`
 
-## 阶段 1：工程脚手架与质量门禁
-- 工作内容：
-  - 建立前端工程（推荐：React + TypeScript + Vite）。
-  - 配置基础规范：ESLint、Prettier、路径别名、环境变量。
-  - 建立网络层与统一错误处理中间件。
-  - 建立路由守卫与鉴权态管理。
-- 产出物：
-  - 可运行基础项目与目录结构。
-  - CI 最低校验：`lint + type-check + test`。
-- DoD：
-  - 新页面接入成本低。
-  - 出错能在开发阶段被快速发现。
+```env
+VITE_API_BASE_URL=http://localhost:8080
+VITE_API_TIMEOUT_MS=15000
+```
 
-## 阶段 2：设计系统与信息架构
-- 工作内容：
-  - 定义设计 token（颜色、间距、圆角、阴影、字体、状态色）。
-  - 统一组件规范：按钮、输入框、卡片、表格、弹窗、Toast、Skeleton。
-  - 统一交互规范：loading/empty/error/success。
-- 产出物：
-  - `UI Foundation` 页面（展示基础组件状态）。
-  - 页面结构草图：登录页、书库页、上传流程、对话页。
-- DoD：
-  - 组件可复用，避免每页重复造轮子。
-  - 所有异步操作都具备明确反馈。
+## 4. 当前目录约定
+- `frontend/src/app/`：应用级路由与 provider
+- `frontend/src/pages/`：页面级实现（`HomePage`、`ChatPage`、`LoginPage`）
+- `frontend/src/shared/lib/http/`：HTTP 客户端与拦截器
+- `frontend/src/styles/`：保留的少量全局样式（`base.css`、`animations.css`）
 
-## 阶段 3：API 层与认证闭环
-- 工作内容：
-  - 实现 `auth` 模块：登录/注册/登出/刷新。
-  - 统一请求配置：`withCredentials: true`，由浏览器自动携带会话 Cookie。
-  - 实现响应拦截器：遇 `401` 自动 refresh，一次失败后跳登录。
-  - 处理 refresh 失效场景：清空本地会话并提示重新登录。
-- 产出物：
-  - 稳定的 API Client 与认证状态管理。
-- DoD：
-  - 会话短 token 过期时用户无感恢复（在可刷新前提下）。
-  - refresh 失败时行为一致、可预期。
+## 5. 请求与会话约定
+- 统一客户端：`frontend/src/shared/lib/http/client.ts`
+- 必须启用 `withCredentials: true`
+- 401 刷新策略：
+  - 非 refresh 请求遇到 `401` 时进入刷新流程
+  - 并发请求共享单个 refresh Promise（single-flight）
+  - refresh 成功后自动重放原请求
+  - refresh 失败时透传原错误，由上层做登录态回收
 
-## 阶段 4：核心业务页面（MVP）
-- 工作内容：
-  - 登录/注册页。
-  - 书库页：列表、上传、状态展示、删除、下载。
-  - 上传后轮询状态，直到 `ready/failed`。
-  - 对话页：提问、回答、出处（sources）展示、历史回显。
-- 产出物：
-  - 可完整演示主流程的前端版本。
-- DoD：
-  - 主流程可从头到尾完成，无手工干预。
-  - 关键异常场景可处理（文件类型错误、429、409、502）。
+## 6. 页面实现约定
+- 默认采用 Tailwind v4 utilities 组织样式
+- 页面中重复 class 允许收敛为常量对象（例如 `homeTw`、`loginTw`、`chatTw`）
+- 新增样式前优先判断是否可复用现有 utilities
+- 只有全局基础样式与动画进入 CSS 文件
 
-## 阶段 5：稳定性与体验优化
-- 工作内容：
-  - 可用性：空状态、失败重试、操作回执（Toast/Inline Alert）。
-  - 性能：懒加载、路由分包、图片延迟加载。
-  - 可访问性：键盘导航、可见 focus、语义化标签、对比度检查。
-  - 监控：前端错误日志与关键行为埋点（可接 Sentry）。
-- 产出物：
-  - 发布候选版本（Release Candidate）。
-- DoD：
-  - 常见交互无卡顿、无明显视觉跳变。
-  - 核心页面通过基础可访问性检查。
+## 7. 测试与质量门禁
+按 AGENTS.md 约定，前端改动需执行：
 
-## 4. 本项目强相关实现约定
-- 上传接口字段名固定为 `file`（multipart/form-data）。
-- `POST /api/chats` 仅在书籍 `ready` 后调用。
-- 书籍状态建议轮询间隔 2~3 秒，超时给用户明确提示。
-- 错误结构统一按 `{ "error": "..." }` 处理。
-- 遇 `429` 必须提示“稍后重试”，并做按钮短暂禁用。
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
-## 4.1 401 刷新策略（必须按此实现）
-- 采用“单飞刷新（single-flight）+ 请求队列重放”：
-  - 同一时刻只允许一个 refresh 请求在飞行。
-  - 其余因 `401` 失败的请求进入等待队列。
-  - refresh 成功后，队列请求使用新会话状态重放。
-- refresh 失败处理：
-  - 立即清空本地会话（用户状态）。
-  - 跳转登录页，并提示“会话已失效，请重新登录”。
-- 与后端语义对齐：
-  - refresh cookie 轮换是一次性语义。
-  - 旧 refresh cookie 重放会触发 family 撤销，后续 refresh 会持续失败，必须重新登录。
+E2E 主链路：
 
-## 4.2 会话 Cookie 与安全约束（必须落实）
-- 会话 Cookie（access + refresh）：
-  - 仅用于 API 鉴权与续期，不参与业务参数传递。
-  - 必须由后端设置为 `HttpOnly`，前端 JS 不直接读取。
-- 安全约束：
-  - 任何日志、埋点、错误上报中禁止输出完整 cookie 值。
-  - 对富文本输入统一做转义/白名单渲染，降低 XSS 风险。
-  - 前端不信任任何客户端可编辑字段（角色、状态等），权限以后端返回为准。
+```bash
+cd frontend
+npm run test:e2e
+```
 
-## 4.3 重试与幂等边界（必须明确）
-- 自动重试只用于“读请求或明确幂等请求”：
-  - 可自动重试：`GET /api/books`、`GET /api/books/{id}`、`GET /api/users/me`。
-  - 谨慎重试：`POST /api/chats`（建议只在明确网络失败且用户可感知时手动重试）。
-  - 不自动重试：`POST /api/books`、`DELETE /api/books/{id}`、`POST /api/auth/*`。
-- 上传与删除操作：
-  - 失败时给用户显式二次确认，不做静默重放。
-- 轮询边界：
-  - 状态轮询设置总超时（如 2~5 分钟）与最大重试次数，超时后进入人工重试路径。
+当前主链路用例：`frontend/tests/e2e/chat-main-flow.spec.ts`
 
-## 5. 测试策略（前端）
-- 单元测试：工具函数、鉴权状态机、API 适配层。
-- 组件测试：表单校验、上传交互、错误态渲染。
-- E2E 测试（建议 Playwright）：
-  - 登录成功与失败。
-  - 上传到 ready 的完整链路。
-  - 对话提问与出处展示。
-  - 会话过期后的自动刷新流程。
-  - 并发 `401` 下仅一次 refresh 请求（防 refresh 风暴）。
+## 8. 提交流程建议
+1. 完成单一目标改动（避免混杂重构）
+2. 本地运行 `lint`、`build`（必要时补跑 E2E）
+3. 更新对应文档（若行为/结构变化）
+4. 使用 Conventional Commits 提交，scope 必填（如 `frontend`、`docs`、`app`）
 
-## 6. 分支与交付节奏
-- 分支策略：`main` 保护，功能分支小步 PR。
-- PR 规则：
-  - 只做单一目标。
-  - 包含“改动说明 + 测试说明 + 风险点”。
-- 里程碑建议：
-  - M1：认证 + API 层。
-  - M2：书库与上传链路。
-  - M3：对话与历史。
-  - M4：优化与答辩演示版本。
-
-## 7. 验收清单（答辩向）
-1. 用户可注册/登录并保持会话。
-2. 用户可上传 `pdf/epub/txt`，并看到处理状态变化。
-3. 书籍 `ready` 后可发起问答并看到出处。
-4. 会话过期可自动刷新；刷新失效可回登录页。
-5. 常见错误（400/401/409/429/502）有可理解提示。
-6. UI 在桌面与移动端均可用。
+## 9. 常见问题排查
+- 页面样式偏差：
+  - 先比对 TSX utilities 常量是否回归
+  - 再检查 `index.css` 的导入顺序是否变化
+- 登录态异常：
+  - 检查浏览器是否携带 `onebook_access` / `onebook_refresh` Cookie
+  - 检查 refresh 请求是否被错误拦截或重复触发
+- E2E 不稳定：
+  - 检查 `frontend/playwright.config.ts` 的 `baseURL/webServer` 是否匹配本机环境

@@ -1,73 +1,60 @@
-# React + TypeScript + Vite
+# OneBook AI Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 1. 技术栈（当前）
+- React 19 + TypeScript
+- Vite 7
+- React Router 7
+- Axios + `withCredentials`
+- TanStack Query
+- Zustand
+- Tailwind CSS v4
+- Playwright（E2E）
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 2. 启动方式
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+默认地址：`http://localhost:5173`
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 3. 环境变量
+复制并修改 `frontend/.env.example`：
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_API_BASE_URL=http://localhost:8080
+VITE_API_TIMEOUT_MS=15000
 ```
+
+## 4. 常用命令
+```bash
+# 代码检查
+npm run lint
+
+# 生产构建
+npm run build
+
+# 本地预览打包产物
+npm run preview
+
+# E2E
+npm run test:e2e
+```
+
+## 5. 目录说明
+- `src/app/`：路由、Provider
+- `src/pages/`：页面实现
+- `src/shared/`：共享配置与 HTTP 客户端
+- `src/styles/`：全局基础样式与动画
+- `tests/e2e/`：Playwright 用例
+
+## 6. 认证与请求约定
+- 受保护接口走 Cookie 会话，不在前端拼接 Bearer token
+- axios 拦截器支持 `401 -> refresh -> retry`
+- refresh 使用 single-flight，避免并发风暴
+
+## 7. 参考文档
+- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/frontend/frontend_tech_stack.md`
+- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/frontend/frontend_development_workflow.md`
+- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/backend/backend_handoff.md`
