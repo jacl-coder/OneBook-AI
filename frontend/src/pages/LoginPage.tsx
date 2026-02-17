@@ -42,6 +42,134 @@ import {
   writeSessionValue,
 } from '@/pages/login/shared'
 
+const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
+
+type FloatingInputOptions = {
+  isActive: boolean
+  hasValue: boolean
+  isFocused: boolean
+  isInvalid: boolean
+  isSubmitting: boolean
+  withEnd?: boolean
+  isReadonly?: boolean
+}
+
+const focusRingClass =
+  'focus-visible:outline-0 focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_4px_rgb(155,155,155)]'
+
+const loginTw = {
+  page:
+    'mx-auto flex h-dvh w-full items-center justify-center bg-white pt-10 text-[#0d0d0d] tracking-[-0.01em] [color-scheme:light] min-[450px]:h-auto min-[450px]:justify-start min-[450px]:pt-[15vh]',
+  main: 'contents',
+  cardBase:
+    'flex h-full w-full flex-col items-stretch px-4 text-center min-[450px]:mx-auto min-[450px]:max-w-[calc(21.25rem+2rem)]',
+  cardWide: 'min-[450px]:max-w-[calc(28.125rem+2rem)]',
+  titleBlock: 'mb-8',
+  wordmark: 'text-inherit visited:text-inherit',
+  wordmarkImg:
+    'mx-auto mb-2 block h-8 w-auto min-[450px]:h-12 min-[800px]:fixed min-[800px]:left-2 min-[800px]:top-2',
+  heading: 'm-0',
+  headingText: 'm-0 inline-block text-[2rem] leading-10 font-medium tracking-[-0.02em] text-[#0d0d0d]',
+  fieldset: 'm-0 contents min-w-0 border-0 p-0',
+  form: 'm-0 flex flex-col items-stretch',
+  sectionCtas: 'flex flex-col gap-6 py-6',
+  sectionFields: 'flex grow flex-col gap-6',
+  stack: 'flex flex-col items-stretch gap-3',
+  buttonRow: 'flex flex-col gap-1',
+  textPrimary: 'text-[1rem] leading-6 font-normal text-[#0d0d0d]',
+  textSecondary: 'text-[1rem] leading-6 font-normal text-[#5d5d5d]',
+  hintLink: 'ml-[2px] text-[#3e68ff] no-underline hover:underline',
+  socialGroup: 'mt-[-1.5rem] flex flex-col items-stretch gap-3',
+  socialButton:
+    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-start rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-left text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+  socialIcon: 'mr-4 inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center',
+  socialIconImg: 'block h-auto max-h-full w-auto max-w-full',
+  divider: 'grid grid-cols-[1fr_max-content_1fr] items-center',
+  dividerLine: 'h-px bg-[#ececec]',
+  dividerName: 'mx-4 text-[13px] font-[510] uppercase text-[#5d5d5d]',
+  inlineErrorContainer: 'inline',
+  errorList: 'm-0 p-0',
+  errorItem: 'mb-3 mt-1 flex items-center gap-2 text-left text-[0.75rem] leading-[1.4] text-[#d00e17] [&>*]:shrink-0',
+  otpErrorItem: 'mb-0 mt-2 flex items-center gap-2 text-left text-[0.75rem] leading-[1.4] text-[#d00e17] [&>*]:shrink-0',
+  errorIcon: 'inline-flex items-center justify-center',
+  errorIconImg: 'block h-4 w-4',
+  primaryBtn:
+    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border-0 bg-[#131313] px-6 text-[1rem] leading-6 font-normal text-white transition-colors duration-100 hover:bg-[#333333] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+  outlineBtn:
+    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-[1rem] leading-6 font-normal text-[#0d0d0d] no-underline transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+  linkBtn:
+    'inline-flex h-auto w-fit items-center justify-center self-center rounded-none border-0 bg-transparent p-0 text-[#0d0d0d] no-underline transition-colors duration-100 hover:text-[#555555] active:opacity-80',
+  transparentBtn:
+    'mx-auto my-2 inline-flex h-auto w-fit cursor-pointer items-center justify-center rounded-none border-0 bg-transparent p-0 text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:text-[#555555] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+  forgotWrap: 'pl-3 text-left text-[0.875rem] leading-5 text-[#0d0d0d]',
+  forgotLink: 'text-[#3e68ff] no-underline hover:underline',
+  toggleBtn:
+    "relative isolate inline-flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-inherit before:absolute before:inset-[-0.5rem] before:-z-[1] before:rounded-[99999px] before:content-[''] hover:before:bg-[#ececec] focus-visible:before:bg-[#ececec] active:opacity-80",
+  eyeIcon: 'block h-5 w-5',
+  subtitle: 'mt-3',
+  fieldContainer: 'w-full',
+  relative: 'relative',
+  noWrap: 'whitespace-nowrap',
+  editLink: 'text-[1rem] leading-6 text-[#3e68ff] no-underline hover:underline',
+  stackTight: 'flex flex-col gap-3',
+  otpWrap: 'flex w-full flex-col items-start gap-2',
+  otpGrid: 'grid w-full max-w-[336px] grid-cols-6 gap-2',
+  otpInput:
+    'h-[3.25rem] rounded-xl border bg-white text-center text-[1.25rem] font-medium text-[#0d0d0d] outline-none transition-[border-color,background-color,box-shadow] duration-150 max-[450px]:h-[clamp(2.5rem,20vw,3.5rem)] max-[450px]:w-[clamp(1.75rem,18vw,2.75rem)] max-[450px]:text-[clamp(1.2rem,7vw,1.7rem)]',
+  otpInputInvalid: 'border-[#d00e17] focus:border-[#d00e17] focus:shadow-[0_0_0_1px_#d00e17]',
+  otpInputNormal: 'border-[#cdcdcd] focus:border-[#3e68ff] focus:shadow-[0_0_0_1px_#3e68ff]',
+  inputEndDecoration: "flex shrink-0 before:block before:w-2 before:content-['']",
+  successIcon: 'mb-6',
+  underlineLink: 'underline',
+  footer: 'mb-4 mt-auto text-center min-[450px]:mt-6',
+  footerMeta: 'text-[0.875rem] leading-5 font-normal text-[#5d5d5d]',
+  footerSep: 'px-2 text-[1rem] leading-6',
+  logoLinkError: 'text-inherit no-underline visited:text-inherit',
+  logoMarkError: 'mx-auto mb-6 block h-12 w-12',
+  subtitleErrorCard: 'mt-4 whitespace-pre-wrap rounded-[8px] bg-[#f5f5f5] p-4 text-left',
+} as const
+
+function getFloatingInputClasses(options: FloatingInputOptions) {
+  const shouldFloat = options.isActive || options.hasValue || options.isInvalid || Boolean(options.isReadonly)
+  const borderColor = options.isInvalid
+    ? 'border-[#d00e17]'
+    : options.isFocused
+      ? 'border-[#3e68ff]'
+      : options.isSubmitting
+        ? 'border-[#b4b4b4]'
+        : 'border-[rgb(0_0_0/0.15)]'
+  const labelColor = options.isInvalid
+    ? 'text-[#d00e17]'
+    : options.isFocused
+      ? 'text-[#3e68ff]'
+      : 'text-[#b4b4b4]'
+
+  return {
+    wrap: cx(
+      'relative flex h-[3.25rem] w-full items-center justify-stretch rounded-[99999px] border px-5 text-[1rem] leading-6 text-[#0d0d0d]',
+      borderColor,
+      options.withEnd && 'pr-5',
+    ),
+    label: cx(
+      'absolute inset-0 cursor-text',
+      shouldFloat && 'pointer-events-none',
+      "before:absolute before:inset-0 before:block before:rounded-[99999px] before:bg-white before:content-['']",
+      shouldFloat && 'before:hidden',
+    ),
+    labelPos: cx('absolute inset-0 flex items-center px-5 transition-transform duration-100 ease-in-out', shouldFloat && '-translate-y-1/2'),
+    labelText: cx(
+      'bg-white px-[6px] py-px text-[1rem] leading-none transition-transform duration-100 ease-in-out',
+      labelColor,
+      'translate-x-[-6px]',
+      shouldFloat && 'translate-x-[-12px] scale-[0.88]',
+    ),
+    input: cx(
+      'w-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[inherit] text-[#0d0d0d] outline-none placeholder:opacity-0',
+      options.isReadonly && 'text-[#0d0d0d] [-webkit-text-fill-color:#0d0d0d]',
+    ),
+  }
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -181,28 +309,22 @@ export function LoginPage() {
   const isPasswordInvalid = passwordErrorText.length > 0
   const isPasswordActive = isPasswordFocused || hasPasswordValue
 
-  const emailWrapClassName = [
-    'auth-input-wrap',
-    isEmailActive ? 'is-active' : '',
-    isEmailFocused ? 'is-focused' : '',
-    hasEmailValue ? 'has-value' : '',
-    isEmailInvalid ? 'is-invalid' : '',
-    isEntrySubmitting ? 'is-submitting' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const emailInputClasses = getFloatingInputClasses({
+    isActive: isEmailActive,
+    hasValue: hasEmailValue,
+    isFocused: isEmailFocused,
+    isInvalid: isEmailInvalid,
+    isSubmitting: isEntrySubmitting,
+  })
 
-  const passwordWrapClassName = [
-    'auth-input-wrap',
-    isPasswordActive ? 'is-active' : '',
-    isPasswordFocused ? 'is-focused' : '',
-    hasPasswordValue ? 'has-value' : '',
-    isPasswordInvalid ? 'is-invalid' : '',
-    isPasswordSubmitting ? 'is-submitting' : '',
-    'auth-input-wrap-with-end',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const passwordInputClasses = getFloatingInputClasses({
+    isActive: isPasswordActive,
+    hasValue: hasPasswordValue,
+    isFocused: isPasswordFocused,
+    isInvalid: isPasswordInvalid,
+    isSubmitting: isPasswordSubmitting,
+    withEnd: true,
+  })
 
   const hasNewPasswordValue = newPassword.trim().length > 0
   const isNewPasswordInvalid = newPasswordErrorText.length > 0
@@ -215,29 +337,33 @@ export function LoginPage() {
   const passwordContinuePath =
     otpPurpose === 'signup_password' || otpPurpose === 'signup_otp' ? '/create-account/password' : '/log-in/password'
 
-  const newPasswordWrapClassName = [
-    'auth-input-wrap',
-    isNewPasswordActive ? 'is-active' : '',
-    isNewPasswordFocused ? 'is-focused' : '',
-    hasNewPasswordValue ? 'has-value' : '',
-    isNewPasswordInvalid ? 'is-invalid' : '',
-    isResetNewSubmitting ? 'is-submitting' : '',
-    'auth-input-wrap-with-end',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const newPasswordInputClasses = getFloatingInputClasses({
+    isActive: isNewPasswordActive,
+    hasValue: hasNewPasswordValue,
+    isFocused: isNewPasswordFocused,
+    isInvalid: isNewPasswordInvalid,
+    isSubmitting: isResetNewSubmitting,
+    withEnd: true,
+  })
 
-  const confirmPasswordWrapClassName = [
-    'auth-input-wrap',
-    isConfirmPasswordActive ? 'is-active' : '',
-    isConfirmPasswordFocused ? 'is-focused' : '',
-    hasConfirmPasswordValue ? 'has-value' : '',
-    isConfirmPasswordInvalid ? 'is-invalid' : '',
-    isResetNewSubmitting ? 'is-submitting' : '',
-    'auth-input-wrap-with-end',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const confirmPasswordInputClasses = getFloatingInputClasses({
+    isActive: isConfirmPasswordActive,
+    hasValue: hasConfirmPasswordValue,
+    isFocused: isConfirmPasswordFocused,
+    isInvalid: isConfirmPasswordInvalid,
+    isSubmitting: isResetNewSubmitting,
+    withEnd: true,
+  })
+  const readonlyEmailInputClasses = getFloatingInputClasses({
+    isActive: true,
+    hasValue: true,
+    isFocused: false,
+    isInvalid: false,
+    isSubmitting: false,
+    withEnd: true,
+    isReadonly: true,
+  })
+  const authCardClassName = cx(loginTw.cardBase, step === 'error' && loginTw.cardWide)
 
   const getAuthState = (
     emailValue: string,
@@ -848,28 +974,28 @@ export function LoginPage() {
   }
 
   const renderSocialButtons = () => (
-    <div className="auth-social-group" role="group" aria-label="选择登录选项">
-      <button type="button" className="auth-social-btn">
-        <span className="auth-social-icon">
-          <img src={googleIconSvg} alt="" aria-hidden="true" />
+    <div className={loginTw.socialGroup} role="group" aria-label="选择登录选项">
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+        <span className={loginTw.socialIcon}>
+          <img src={googleIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>继续使用 Google 登录</span>
       </button>
-      <button type="button" className="auth-social-btn">
-        <span className="auth-social-icon">
-          <img src={appleIconSvg} alt="" aria-hidden="true" />
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+        <span className={loginTw.socialIcon}>
+          <img src={appleIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>继续使用 Apple 登录</span>
       </button>
-      <button type="button" className="auth-social-btn">
-        <span className="auth-social-icon">
-          <img src={microsoftIconSvg} alt="" aria-hidden="true" />
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+        <span className={loginTw.socialIcon}>
+          <img src={microsoftIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>继续使用 Microsoft 登录</span>
       </button>
-      <button type="button" className="auth-social-btn">
-        <span className="auth-social-icon">
-          <img src={phoneIconSvg} alt="" aria-hidden="true" />
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+        <span className={loginTw.socialIcon}>
+          <img src={phoneIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>继续使用手机登录</span>
       </button>
@@ -877,43 +1003,46 @@ export function LoginPage() {
   )
 
   return (
-    <div className="auth-page">
-      <main className="auth-main">
-        <section className={`auth-card${step === 'error' ? ' auth-card-wide' : ''}`} aria-label="登录卡片">
+    <div
+      className={loginTw.page}
+      style={{ fontFamily: "'OpenAI Sans', 'SF Pro', -apple-system, system-ui, Helvetica, Arial, sans-serif" }}
+    >
+      <main className={loginTw.main}>
+        <section className={authCardClassName} aria-label="登录卡片">
           {step === 'entry' ? (
             <>
-              <div className="auth-title-block">
-                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
-                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+              <div className={loginTw.titleBlock}>
+                <Link to={logoLinkTarget} className={loginTw.wordmark} aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">{isCreateAccountEntry ? '创建帐户' : '欢迎回来'}</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>{isCreateAccountEntry ? '创建帐户' : '欢迎回来'}</span>
                 </h1>
               </div>
 
-              <fieldset className="auth-fieldset">
-                <form className="auth-form" onSubmit={handleEntrySubmit} noValidate>
-                  <div className="auth-section auth-section-ctas">
+              <fieldset className={loginTw.fieldset}>
+                <form className={loginTw.form} onSubmit={handleEntrySubmit} noValidate>
+                  <div className={loginTw.sectionCtas}>
                     {renderSocialButtons()}
-                    <div className="auth-divider">
-                      <div className="auth-divider-line" />
-                      <div className="auth-divider-name">或</div>
-                      <div className="auth-divider-line" />
+                    <div className={loginTw.divider}>
+                      <div className={loginTw.dividerLine} />
+                      <div className={loginTw.dividerName}>或</div>
+                      <div className={loginTw.dividerLine} />
                     </div>
                   </div>
 
-                  <div className="auth-section auth-section-fields">
-                    <div className="auth-textfield" data-rac="" data-invalid={isEmailInvalid || undefined}>
-                      <div className="auth-textfield-root">
-                        <div className={emailWrapClassName}>
-                          <label className="auth-input-label" htmlFor={emailId} id={emailLabelId}>
-                            <div className="auth-input-label-pos">
-                              <div className="auth-input-label-text">电子邮件地址</div>
+                  <div className={loginTw.sectionFields}>
+                    <div className={loginTw.fieldContainer} data-rac="" data-invalid={isEmailInvalid || undefined}>
+                      <div className={loginTw.relative}>
+                        <div className={emailInputClasses.wrap}>
+                          <label className={emailInputClasses.label} htmlFor={emailId} id={emailLabelId}>
+                            <div className={emailInputClasses.labelPos}>
+                              <div className={emailInputClasses.labelText}>电子邮件地址</div>
                             </div>
                           </label>
                           <input
                             ref={entryInputRef}
-                            className="auth-input-target"
+                            className={emailInputClasses.input}
                             id={emailId}
                             name="email"
                             type="email"
@@ -932,13 +1061,13 @@ export function LoginPage() {
                             }}
                           />
                         </div>
-                        <span className="auth-input-live" aria-live="polite" aria-atomic="true">
+                        <span className={loginTw.inlineErrorContainer} aria-live="polite" aria-atomic="true">
                           {isEmailInvalid ? (
-                            <span className="auth-field-error-slot" id={emailErrorId}>
-                              <ul className="auth-field-errors">
-                                <li className="auth-field-error">
-                                  <span className="auth-field-error-icon">
-                                    <img src={errorIconSvg} alt="" aria-hidden="true" />
+                            <span className={loginTw.inlineErrorContainer} id={emailErrorId}>
+                              <ul className={loginTw.errorList}>
+                                <li className={loginTw.errorItem}>
+                                  <span className={loginTw.errorIcon}>
+                                    <img src={errorIconSvg} alt="" aria-hidden="true" className={loginTw.errorIconImg} />
                                   </span>
                                   <span>{emailErrorText}</span>
                                 </li>
@@ -950,21 +1079,21 @@ export function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="auth-section auth-section-ctas">
-                    <button type="submit" className="auth-continue-btn" disabled={isEntrySubmitting}>
+                  <div className={loginTw.sectionCtas}>
+                    <button type="submit" className={cx(loginTw.primaryBtn, focusRingClass)} disabled={isEntrySubmitting}>
                       继续
                     </button>
                     {isCreateAccountEntry ? (
-                      <span className="auth-signup-hint">
+                      <span className={loginTw.textPrimary}>
                         已经有帐户？请
-                        <Link to="/log-in" state={getAuthState(email)}>
+                        <Link to="/log-in" state={getAuthState(email)} className={loginTw.hintLink}>
                           登录
                         </Link>
                       </span>
                     ) : (
-                      <span className="auth-signup-hint">
+                      <span className={loginTw.textPrimary}>
                         还没有帐户？请
-                        <Link to="/create-account">注册</Link>
+                        <Link to="/create-account" className={loginTw.hintLink}>注册</Link>
                       </span>
                     )}
                   </div>
@@ -975,49 +1104,49 @@ export function LoginPage() {
 
           {step === 'password' ? (
             <>
-              <div className="auth-title-block">
-                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
-                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+              <div className={loginTw.titleBlock}>
+                <Link to={logoLinkTarget} className={loginTw.wordmark} aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">{isCreateAccountPassword ? '创建密码' : '输入密码'}</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>{isCreateAccountPassword ? '创建密码' : '输入密码'}</span>
                 </h1>
               </div>
 
-              <fieldset className="auth-fieldset">
+              <fieldset className={loginTw.fieldset}>
                 <form
-                  className="auth-form auth-form-password"
+                  className={loginTw.form}
                   method="post"
                   action={isCreateAccountPassword ? '/create-account/password' : '/log-in/password'}
                   autoComplete="on"
                   onSubmit={handlePasswordSubmit}
                   noValidate
                 >
-                  <div className="auth-section auth-section-fields">
+                  <div className={loginTw.sectionFields}>
                     <input type="hidden" name="username" value={stepEmail} />
-                    <div className="auth-field-stack">
-                      <div className="auth-textfield-root">
-                        <div className="auth-input-wrap has-value is-active auth-input-wrap-with-end auth-input-wrap-readonly">
-                          <label className="auth-input-label" htmlFor="readonly-email" id={readonlyEmailLabelId}>
-                            <div className="auth-input-label-pos">
-                              <div className="auth-input-label-text">电子邮件地址</div>
+                    <div className={loginTw.stack}>
+                      <div className={loginTw.relative}>
+                        <div className={readonlyEmailInputClasses.wrap}>
+                          <label className={readonlyEmailInputClasses.label} htmlFor="readonly-email" id={readonlyEmailLabelId}>
+                            <div className={readonlyEmailInputClasses.labelPos}>
+                              <div className={readonlyEmailInputClasses.labelText}>电子邮件地址</div>
                             </div>
                           </label>
                           <input
                             id="readonly-email"
-                            className="auth-input-target"
+                            className={readonlyEmailInputClasses.input}
                             type="text"
                             value={stepEmail}
                             readOnly
                             placeholder="电子邮件地址"
                             aria-labelledby={readonlyEmailLabelId}
                           />
-                          <div className="auth-input-end-decoration">
-                            <div className="auth-link-nowrap">
+                          <div className={loginTw.inputEndDecoration}>
+                            <div className={loginTw.noWrap}>
                               <Link
                                 to="/log-in"
                                 state={getAuthState(stepEmail)}
-                                className="auth-link-inline"
+                                className={loginTw.editLink}
                                 aria-label="编辑电子邮件"
                               >
                                 编辑
@@ -1027,17 +1156,17 @@ export function LoginPage() {
                         </div>
                       </div>
 
-                      <div className="auth-textfield-root">
-                        <div className={passwordWrapClassName}>
-                          <label className="auth-input-label" htmlFor={passwordId} id={passwordLabelId}>
-                            <div className="auth-input-label-pos">
-                              <div className="auth-input-label-text">密码</div>
+                      <div className={loginTw.relative}>
+                        <div className={passwordInputClasses.wrap}>
+                          <label className={passwordInputClasses.label} htmlFor={passwordId} id={passwordLabelId}>
+                            <div className={passwordInputClasses.labelPos}>
+                              <div className={passwordInputClasses.labelText}>密码</div>
                             </div>
                           </label>
                           <input
                             ref={passwordInputRef}
                             id={passwordId}
-                            className="auth-input-target"
+                            className={passwordInputClasses.input}
                             type={passwordVisible ? 'text' : 'password'}
                             value={password}
                             name="current-password"
@@ -1056,24 +1185,24 @@ export function LoginPage() {
                           />
                           <button
                             type="button"
-                            className="auth-password-toggle"
+                            className={loginTw.toggleBtn}
                             aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
                             aria-controls={passwordId}
                             aria-pressed={passwordVisible}
                             onClick={() => setPasswordVisible((prev) => !prev)}
                           >
                             {passwordVisible ? (
-                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             ) : (
-                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             )}
                           </button>
                         </div>
                         {isPasswordInvalid ? (
-                          <ul className="auth-field-errors" id={passwordErrorId}>
-                            <li className="auth-field-error">
-                              <span className="auth-field-error-icon">
-                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                          <ul className={loginTw.errorList} id={passwordErrorId}>
+                            <li className={loginTw.errorItem}>
+                              <span className={loginTw.errorIcon}>
+                                <img src={errorIconSvg} alt="" aria-hidden="true" className={loginTw.errorIconImg} />
                               </span>
                               <span>{passwordErrorText}</span>
                             </li>
@@ -1082,8 +1211,8 @@ export function LoginPage() {
                       </div>
 
                       {!isCreateAccountPassword ? (
-                        <span className="auth-forgot-password">
-                          <Link to="/reset-password" state={getAuthState(stepEmail)}>
+                        <span className={loginTw.forgotWrap}>
+                          <Link to="/reset-password" state={getAuthState(stepEmail)} className={loginTw.forgotLink}>
                             忘记了密码？
                           </Link>
                         </span>
@@ -1091,31 +1220,31 @@ export function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="auth-section auth-section-ctas auth-section-password-ctas">
-                    <div className="auth-button-wrapper">
-                      <button type="submit" className="auth-continue-btn" disabled={isPasswordSubmitting || isOtpSending}>
+                  <div className={loginTw.sectionCtas}>
+                    <div className={loginTw.buttonRow}>
+                      <button type="submit" className={cx(loginTw.primaryBtn, focusRingClass)} disabled={isPasswordSubmitting || isOtpSending}>
                         继续
                       </button>
                     </div>
 
                     {!isCreateAccountPassword ? (
-                      <span className="auth-signup-hint">
+                      <span className={loginTw.textPrimary}>
                         还没有帐户？请
-                        <Link to="/create-account">注册</Link>
+                        <Link to="/create-account" className={loginTw.hintLink}>注册</Link>
                       </span>
                     ) : null}
 
-                    <div className="auth-divider auth-divider-password">
-                      <div className="auth-divider-line" />
-                      <div className="auth-divider-name">或</div>
-                      <div className="auth-divider-line" />
+                    <div className={loginTw.divider}>
+                      <div className={loginTw.dividerLine} />
+                      <div className={loginTw.dividerName}>或</div>
+                      <div className={loginTw.dividerLine} />
                     </div>
 
-                    <div className="auth-passwordless-group">
-                      <div className="auth-button-wrapper">
+                    <div className={loginTw.stack}>
+                      <div className={loginTw.buttonRow}>
                         <button
                           type="button"
-                          className="auth-outline-btn auth-inline-passwordless-login"
+                          className={cx(loginTw.outlineBtn, focusRingClass)}
                           disabled={isPasswordSubmitting || isOtpSending}
                           onClick={handlePasswordlessOtpAction}
                         >
@@ -1125,9 +1254,9 @@ export function LoginPage() {
                     </div>
 
                     {isCreateAccountPassword ? (
-                      <span className="auth-signup-hint">
+                      <span className={loginTw.textPrimary}>
                         已经有帐户了？请
-                        <Link to="/log-in" state={getAuthState(stepEmail)}>
+                        <Link to="/log-in" state={getAuthState(stepEmail)} className={loginTw.hintLink}>
                           登录
                         </Link>
                       </span>
@@ -1140,26 +1269,26 @@ export function LoginPage() {
 
           {step === 'verify' ? (
             <>
-              <div className="auth-title-block">
-                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
-                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+              <div className={loginTw.titleBlock}>
+                <Link to={logoLinkTarget} className={loginTw.wordmark} aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">检查您的收件箱</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>检查您的收件箱</span>
                 </h1>
-                <div className="auth-subtitle auth-subtitle-verify">
-                  <span className="auth-subtitle-text" id={verifySubtitleId}>
+                <div className={loginTw.subtitle}>
+                  <span className={loginTw.textSecondary} id={verifySubtitleId}>
                     输入我们刚刚向 {stepEmail || '你的邮箱'} 发送的验证码
                   </span>
                 </div>
               </div>
 
-              <fieldset className="auth-fieldset">
-                <form className="auth-form auth-form-verify" noValidate onSubmit={handleVerifySubmit}>
-                  <div className="auth-section auth-section-fields">
-                    <div className="auth-otp-wrap">
+              <fieldset className={loginTw.fieldset}>
+                <form className={loginTw.form} noValidate onSubmit={handleVerifySubmit}>
+                  <div className={loginTw.sectionFields}>
+                    <div className={loginTw.otpWrap}>
                       <div
-                        className="auth-otp-group"
+                        className={loginTw.otpGrid}
                         role="group"
                         aria-label="验证码"
                         aria-describedby={verifyDescribedBy}
@@ -1172,7 +1301,10 @@ export function LoginPage() {
                             ref={(node) => {
                               otpRefs.current[index] = node
                             }}
-                            className="auth-otp-input"
+                            className={cx(
+                              loginTw.otpInput,
+                              verifyErrorText ? loginTw.otpInputInvalid : loginTw.otpInputNormal,
+                            )}
                             type="text"
                             inputMode="numeric"
                             autoComplete={index === 0 ? 'one-time-code' : 'off'}
@@ -1189,10 +1321,10 @@ export function LoginPage() {
                       </div>
                       <input type="hidden" readOnly value={otp.join('')} name="code" />
                       {verifyErrorText ? (
-                        <ul className="auth-field-errors" id={verifyErrorId}>
-                          <li className="auth-field-error">
-                            <span className="auth-field-error-icon">
-                              <img src={errorIconSvg} alt="" aria-hidden="true" />
+                        <ul className={loginTw.errorList} id={verifyErrorId}>
+                          <li className={loginTw.otpErrorItem}>
+                            <span className={loginTw.errorIcon}>
+                              <img src={errorIconSvg} alt="" aria-hidden="true" className={loginTw.errorIconImg} />
                             </span>
                             <span>{verifyErrorText}</span>
                           </li>
@@ -1201,14 +1333,14 @@ export function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="auth-section auth-section-ctas auth-section-verify-ctas">
-                    <div className="auth-button-wrapper">
-                      <button type="button" className="auth-outline-btn" disabled={isVerifySubmitting || isOtpSending} onClick={resendEmail}>
+                  <div className={loginTw.sectionCtas}>
+                    <div className={loginTw.buttonRow}>
+                      <button type="button" className={cx(loginTw.outlineBtn, focusRingClass)} disabled={isVerifySubmitting || isOtpSending} onClick={resendEmail}>
                         重新发送电子邮件
                       </button>
                     </div>
-                    <div className="auth-button-wrapper">
-                      <Link className="auth-link-btn" to={passwordContinuePath} state={getAuthState(stepEmail)}>
+                    <div className={loginTw.buttonRow}>
+                      <Link className={cx(loginTw.linkBtn, focusRingClass)} to={passwordContinuePath} state={getAuthState(stepEmail)}>
                         使用密码继续
                       </Link>
                     </div>
@@ -1220,38 +1352,38 @@ export function LoginPage() {
 
           {step === 'reset' ? (
             <>
-              <div className="auth-title-block">
-                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
-                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+              <div className={loginTw.titleBlock}>
+                <Link to={logoLinkTarget} className={loginTw.wordmark} aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">重置密码</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>重置密码</span>
                 </h1>
-                <div className="auth-subtitle">
-                  <span className="auth-subtitle-text">
+                <div className={loginTw.subtitle}>
+                  <span className={loginTw.textSecondary}>
                     点击“继续”以重置 {stepEmail || '你的邮箱'} 的密码
                   </span>
                 </div>
               </div>
 
-              <fieldset className="auth-fieldset">
+              <fieldset className={loginTw.fieldset}>
                 <form
-                  className="auth-form auth-form-reset"
+                  className={loginTw.form}
                   method="post"
                   action="/reset-password"
                   onSubmit={handleResetPasswordSubmit}
                 >
-                  <div className="auth-section auth-section-fields">
-                    <div className="auth-reset-actions">
-                      <div className="auth-button-wrapper">
-                        <button type="submit" className="auth-continue-btn" disabled={isResetSubmitting}>
+                  <div className={loginTw.sectionFields}>
+                    <div className={loginTw.stackTight}>
+                      <div className={loginTw.buttonRow}>
+                        <button type="submit" className={cx(loginTw.primaryBtn, focusRingClass)} disabled={isResetSubmitting}>
                           继续
                         </button>
                       </div>
-                      <div className="auth-button-wrapper">
+                      <div className={loginTw.buttonRow}>
                         <button
                           type="button"
-                          className="auth-transparent-btn"
+                          className={cx(loginTw.transparentBtn, focusRingClass)}
                           onClick={() => navigate('/log-in', { state: getAuthState(stepEmail) })}
                         >
                           返回登录
@@ -1266,40 +1398,40 @@ export function LoginPage() {
 
           {step === 'resetNew' ? (
             <>
-              <div className="auth-title-block">
-                <Link to={logoLinkTarget} className="auth-wordmark" aria-label="OneBook AI home">
-                  <img src={onebookWordmark} alt="OneBook AI" className="auth-wordmark-img" />
+              <div className={loginTw.titleBlock}>
+                <Link to={logoLinkTarget} className={loginTw.wordmark} aria-label="OneBook AI home">
+                  <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">重置密码</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>重置密码</span>
                 </h1>
-                <div className="auth-subtitle">
-                  <span className="auth-subtitle-text">请在下面输入新密码以更改密码</span>
+                <div className={loginTw.subtitle}>
+                  <span className={loginTw.textSecondary}>请在下面输入新密码以更改密码</span>
                 </div>
               </div>
 
-              <fieldset className="auth-fieldset">
+              <fieldset className={loginTw.fieldset}>
                 <form
-                  className="auth-form"
+                  className={loginTw.form}
                   method="post"
                   action="/reset-password/new-password"
                   autoComplete="on"
                   noValidate
                   onSubmit={handleResetNewPasswordSubmit}
                 >
-                  <div className="auth-section auth-section-fields">
+                  <div className={loginTw.sectionFields}>
                     <input type="hidden" name="username" value={stepEmail} autoComplete="username" />
-                    <div className="auth-field-stack">
-                      <div className="auth-textfield-root">
-                        <div className={newPasswordWrapClassName}>
-                          <label className="auth-input-label" htmlFor={newPasswordId} id={newPasswordLabelId}>
-                            <div className="auth-input-label-pos">
-                              <div className="auth-input-label-text">新密码</div>
+                    <div className={loginTw.stack}>
+                      <div className={loginTw.relative}>
+                        <div className={newPasswordInputClasses.wrap}>
+                          <label className={newPasswordInputClasses.label} htmlFor={newPasswordId} id={newPasswordLabelId}>
+                            <div className={newPasswordInputClasses.labelPos}>
+                              <div className={newPasswordInputClasses.labelText}>新密码</div>
                             </div>
                           </label>
                           <input
                             id={newPasswordId}
-                            className="auth-input-target"
+                            className={newPasswordInputClasses.input}
                             type={isNewPasswordVisible ? 'text' : 'password'}
                             value={newPassword}
                             name="new-password"
@@ -1320,24 +1452,24 @@ export function LoginPage() {
                           />
                           <button
                             type="button"
-                            className="auth-password-toggle"
+                            className={loginTw.toggleBtn}
                             aria-label={isNewPasswordVisible ? '隐藏密码' : '显示密码'}
                             aria-controls={newPasswordId}
                             aria-pressed={isNewPasswordVisible}
                             onClick={() => setIsNewPasswordVisible((prev) => !prev)}
                           >
                             {isNewPasswordVisible ? (
-                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             ) : (
-                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             )}
                           </button>
                         </div>
                         {isNewPasswordInvalid ? (
-                          <ul className="auth-field-errors" id={newPasswordErrorId}>
-                            <li className="auth-field-error">
-                              <span className="auth-field-error-icon">
-                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                          <ul className={loginTw.errorList} id={newPasswordErrorId}>
+                            <li className={loginTw.errorItem}>
+                              <span className={loginTw.errorIcon}>
+                                <img src={errorIconSvg} alt="" aria-hidden="true" className={loginTw.errorIconImg} />
                               </span>
                               <span>{newPasswordErrorText}</span>
                             </li>
@@ -1345,16 +1477,16 @@ export function LoginPage() {
                         ) : null}
                       </div>
 
-                      <div className="auth-textfield-root">
-                        <div className={confirmPasswordWrapClassName}>
-                          <label className="auth-input-label" htmlFor={confirmPasswordId} id={confirmPasswordLabelId}>
-                            <div className="auth-input-label-pos">
-                              <div className="auth-input-label-text">重新输入新密码</div>
+                      <div className={loginTw.relative}>
+                        <div className={confirmPasswordInputClasses.wrap}>
+                          <label className={confirmPasswordInputClasses.label} htmlFor={confirmPasswordId} id={confirmPasswordLabelId}>
+                            <div className={confirmPasswordInputClasses.labelPos}>
+                              <div className={confirmPasswordInputClasses.labelText}>重新输入新密码</div>
                             </div>
                           </label>
                           <input
                             id={confirmPasswordId}
-                            className="auth-input-target"
+                            className={confirmPasswordInputClasses.input}
                             type={isConfirmPasswordVisible ? 'text' : 'password'}
                             value={confirmPassword}
                             name="confirm-password"
@@ -1374,24 +1506,24 @@ export function LoginPage() {
                           />
                           <button
                             type="button"
-                            className="auth-password-toggle"
+                            className={loginTw.toggleBtn}
                             aria-label={isConfirmPasswordVisible ? '隐藏密码' : '显示密码'}
                             aria-controls={confirmPasswordId}
                             aria-pressed={isConfirmPasswordVisible}
                             onClick={() => setIsConfirmPasswordVisible((prev) => !prev)}
                           >
                             {isConfirmPasswordVisible ? (
-                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeOffIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             ) : (
-                              <img src={eyeIconSvg} alt="" aria-hidden="true" />
+                              <img src={eyeIconSvg} alt="" aria-hidden="true" className={loginTw.eyeIcon} />
                             )}
                           </button>
                         </div>
                         {isConfirmPasswordInvalid ? (
-                          <ul className="auth-field-errors" id={confirmPasswordErrorId}>
-                            <li className="auth-field-error">
-                              <span className="auth-field-error-icon">
-                                <img src={errorIconSvg} alt="" aria-hidden="true" />
+                          <ul className={loginTw.errorList} id={confirmPasswordErrorId}>
+                            <li className={loginTw.errorItem}>
+                              <span className={loginTw.errorIcon}>
+                                <img src={errorIconSvg} alt="" aria-hidden="true" className={loginTw.errorIconImg} />
                               </span>
                               <span>{confirmPasswordErrorText}</span>
                             </li>
@@ -1401,9 +1533,9 @@ export function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="auth-section auth-section-ctas">
-                    <div className="auth-button-wrapper">
-                      <button type="submit" className="auth-continue-btn" disabled={isResetNewSubmitting}>
+                  <div className={loginTw.sectionCtas}>
+                    <div className={loginTw.buttonRow}>
+                      <button type="submit" className={cx(loginTw.primaryBtn, focusRingClass)} disabled={isResetNewSubmitting}>
                         继续
                       </button>
                     </div>
@@ -1415,29 +1547,29 @@ export function LoginPage() {
 
           {step === 'resetSuccess' ? (
             <>
-              <div className="auth-title-block">
+              <div className={loginTw.titleBlock}>
                 <img
                   src={successCheckmarkCircleSvg}
                   alt=""
                   aria-hidden="true"
                   width={60}
                   height={60}
-                  className="auth-success-mark"
+                  className={loginTw.successIcon}
                 />
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">密码已更改</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>密码已更改</span>
                 </h1>
-                <div className="auth-subtitle">
-                  <span className="auth-subtitle-text">你的密码已成功更改</span>
+                <div className={loginTw.subtitle}>
+                  <span className={loginTw.textSecondary}>你的密码已成功更改</span>
                 </div>
               </div>
 
-              <fieldset className="auth-fieldset">
-                <form method="get" action="/reset-password/success" className="auth-form">
-                  <div className="auth-section auth-section-fields" />
-                  <div className="auth-section auth-section-ctas">
-                    <div className="auth-button-wrapper">
-                      <Link to="/log-in/password" className="auth-continue-btn">
+              <fieldset className={loginTw.fieldset}>
+                <form method="get" action="/reset-password/success" className={loginTw.form}>
+                  <div className={loginTw.sectionFields} />
+                  <div className={loginTw.sectionCtas}>
+                    <div className={loginTw.buttonRow}>
+                      <Link to="/log-in/password" className={cx(loginTw.primaryBtn, focusRingClass)}>
                         登录
                       </Link>
                     </div>
@@ -1449,27 +1581,27 @@ export function LoginPage() {
 
           {step === 'error' ? (
             <>
-              <div className="auth-title-block">
-                <a href="https://chatgpt.com" aria-label="OpenAI 主页面" className="auth-logo-link">
+              <div className={loginTw.titleBlock}>
+                <a href="https://chatgpt.com" aria-label="OpenAI 主页面" className={loginTw.logoLinkError}>
                   <img
                     src={onebookLogoMarkSvg}
                     alt="OneBook 徽标"
                     width={48}
                     height={48}
-                    className="auth-logo-mark"
+                    className={loginTw.logoMarkError}
                   />
                 </a>
-                <h1 className="auth-heading">
-                  <span className="auth-heading-text">糟糕，出错了！</span>
+                <h1 className={loginTw.heading}>
+                  <span className={loginTw.headingText}>糟糕，出错了！</span>
                 </h1>
-                <div className="auth-subtitle">
-                  <div className="auth-subtitle-error-card">{authErrorMessage}</div>
+                <div className={loginTw.subtitle}>
+                  <div className={loginTw.subtitleErrorCard}>{authErrorMessage}</div>
                 </div>
               </div>
-              <div className="auth-button-wrapper">
+              <div className={loginTw.buttonRow}>
                 <button
                   type="button"
-                  className="auth-outline-btn"
+                  className={cx(loginTw.outlineBtn, focusRingClass)}
                   data-dd-action-name="Try again"
                   onClick={() => {
                     writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, '')
@@ -1482,13 +1614,13 @@ export function LoginPage() {
             </>
           ) : null}
 
-          <div className="auth-footer">
-            <span className="auth-footer-meta">
-              <a href="https://openai.com/policies/terms-of-use">
+          <div className={loginTw.footer}>
+            <span className={loginTw.footerMeta}>
+              <a href="https://openai.com/policies/terms-of-use" className={loginTw.underlineLink}>
                 使用条款
               </a>
-              <span className="auth-footer-separator" aria-hidden="true" />
-              <a href="https://openai.com/policies/privacy-policy">
+              <span className={loginTw.footerSep} aria-hidden="true">|</span>
+              <a href="https://openai.com/policies/privacy-policy" className={loginTw.underlineLink}>
                 隐私政策
               </a>
             </span>

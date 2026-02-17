@@ -6,6 +6,30 @@
 }
 
 @font-face {
+  font-family: 'OpenAI Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.openai.com/common/fonts/openai-sans/v3/OpenAISans-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'OpenAI Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://cdn.openai.com/common/fonts/openai-sans/v3/OpenAISans-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'OpenAI Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('https://cdn.openai.com/common/fonts/openai-sans/v3/OpenAISans-Semibold.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'TeXGyreAdventor';
   font-style: normal;
   font-weight: 700;
