@@ -1,7 +1,7 @@
 import { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { http } from '@/shared/lib/http/client'
+import { http } from '../../src/shared/lib/http/client'
 
 const REFRESH_PATH = '/api/auth/refresh'
 
@@ -53,7 +53,7 @@ describe('http refresh single-flight', () => {
     let usersMeCalls = 0
     let booksCalls = 0
 
-    http.defaults.adapter = async (config) => {
+    http.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
       if (config.url?.includes(REFRESH_PATH)) {
         refreshCalls += 1
         await new Promise((resolve) => setTimeout(resolve, 20))
@@ -96,7 +96,7 @@ describe('http refresh single-flight', () => {
     let usersMeCalls = 0
     let booksCalls = 0
 
-    http.defaults.adapter = async (config) => {
+    http.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
       if (config.url?.includes(REFRESH_PATH)) {
         refreshCalls += 1
         return rejectWith401(config)
