@@ -1,6 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom'
 
-import { AppLayout } from '@/app/ui/AppLayout'
 import { ChatPage } from '@/pages/ChatPage'
 import { HomePage } from '@/pages/HomePage'
 import { LoginPage } from '@/pages/LoginPage'
@@ -53,8 +52,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/chat',
-    element: <AppLayout />,
-    children: [{ index: true, element: <ChatPage /> }],
+    element: <ChatPage />,
   },
   {
     path: '*',
