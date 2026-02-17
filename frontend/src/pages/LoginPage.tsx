@@ -81,7 +81,7 @@ const loginTw = {
   hintLink: 'ml-[2px] text-[#3e68ff] no-underline hover:underline',
   socialGroup: 'mt-[-1.5rem] flex flex-col items-stretch gap-3',
   socialButton:
-    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-start rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-left text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+    'appearance-none inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-start rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-left text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
   socialIcon: 'mr-4 inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center',
   socialIconImg: 'block h-auto max-h-full w-auto max-w-full',
   divider: 'grid grid-cols-[1fr_max-content_1fr] items-center',
@@ -94,13 +94,13 @@ const loginTw = {
   errorIcon: 'inline-flex items-center justify-center',
   errorIconImg: 'block h-4 w-4',
   primaryBtn:
-    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border-0 bg-[#131313] px-6 text-[1rem] leading-6 font-normal text-white transition-colors duration-100 hover:bg-[#333333] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+    'appearance-none inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border-0 bg-[#131313] px-6 text-[1rem] leading-6 font-normal text-white transition-colors duration-100 hover:bg-[#333333] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
   outlineBtn:
-    'inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-[1rem] leading-6 font-normal text-[#0d0d0d] no-underline transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+    'appearance-none inline-flex h-[3.25rem] w-full cursor-pointer items-center justify-center rounded-[99999px] border border-[rgb(0_0_0/0.15)] bg-transparent px-6 text-[1rem] leading-6 font-normal text-[#0d0d0d] no-underline transition-colors duration-100 hover:bg-[#ececec] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
   linkBtn:
     'inline-flex h-auto w-fit items-center justify-center self-center rounded-none border-0 bg-transparent p-0 text-[#0d0d0d] no-underline transition-colors duration-100 hover:text-[#555555] active:opacity-80',
   transparentBtn:
-    'mx-auto my-2 inline-flex h-auto w-fit cursor-pointer items-center justify-center rounded-none border-0 bg-transparent p-0 text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:text-[#555555] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
+    'appearance-none mx-auto my-2 inline-flex h-auto w-fit cursor-pointer items-center justify-center rounded-none border-0 bg-transparent p-0 text-[1rem] leading-6 font-normal text-[#0d0d0d] transition-colors duration-100 hover:text-[#555555] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50',
   forgotWrap: 'pl-3 text-left text-[0.875rem] leading-5 text-[#0d0d0d]',
   forgotLink: 'text-[#3e68ff] no-underline hover:underline',
   toggleBtn:
@@ -156,15 +156,15 @@ function getFloatingInputClasses(options: FloatingInputOptions) {
       "before:absolute before:inset-0 before:block before:rounded-[99999px] before:bg-white before:content-['']",
       shouldFloat && 'before:hidden',
     ),
-    labelPos: cx('absolute inset-0 flex items-center px-5 transition-transform duration-100 ease-in-out', shouldFloat && '-translate-y-1/2'),
+    labelPos: cx('absolute inset-0 flex items-center px-5 transition-transform duration-[80ms] ease-in-out', shouldFloat && '-translate-y-1/2'),
     labelText: cx(
-      'bg-white px-[6px] py-px text-[1rem] leading-none transition-transform duration-100 ease-in-out',
+      'bg-white px-[6px] py-px text-[1rem] leading-none transition-transform duration-[80ms] ease-in-out',
       labelColor,
       'translate-x-[-6px]',
       shouldFloat && 'translate-x-[-12px] scale-[0.88]',
     ),
     input: cx(
-      'w-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[inherit] text-[#0d0d0d] outline-none placeholder:opacity-0',
+      'w-full min-w-0 flex-1 border-0 bg-transparent p-0 [font:inherit] text-[#0d0d0d] outline-none placeholder:opacity-0',
       options.isReadonly && 'text-[#0d0d0d] [-webkit-text-fill-color:#0d0d0d]',
     ),
   }
