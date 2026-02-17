@@ -29,6 +29,7 @@
 - 接口：`POST /api/auth/refresh`
 - 不传请求体，依赖浏览器自动携带 `HttpOnly refresh cookie`。
 - 成功会轮换更新 `onebook_access` / `onebook_refresh` cookie。
+- 前端建议采用 single-flight：并发 `401` 仅发起一次 refresh，请求成功后重放原请求。
 - 安全语义：
   - refresh token 采用轮换（rotation）。
   - 旧 token 被重放时，会撤销该 family，后续 refresh 会失败，需要重新登录。

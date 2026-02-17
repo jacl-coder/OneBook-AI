@@ -35,7 +35,7 @@
 ## 后端服务与 API
 - 服务目录：`backend/services/`（Gateway + 多服务）
 - 默认端口：Gateway 8080、Auth 8081、Book 8082、Chat 8083、Ingest 8084、Indexer 8085
-- 公共路由（均需 Bearer token，除认证与健康检查）：
+- 公共路由（除认证与健康检查外均需登录态）：
   - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/refresh`，`POST /api/auth/logout`，`GET /api/auth/jwks`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
   - 对话：`POST /api/chats`（body: bookId + question）
@@ -121,10 +121,10 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 ## 前端联调（建议先看）
 - 统一只请求 Gateway：`http://localhost:8080`
-- 令牌使用：
-  - 登录/注册返回 `token` + `refreshToken`
-  - 业务请求带 `Authorization: Bearer <token>`
-  - `401` 时调用 `POST /api/auth/refresh`，成功后覆盖本地 token 对
+- 会话使用：
+  - 登录/注册成功后由网关设置 `HttpOnly` Cookie（`onebook_access` + `onebook_refresh`）
+  - 业务请求通过 `withCredentials` 自动携带 Cookie
+  - `401` 时前端触发 `POST /api/auth/refresh`，成功后自动重放原请求（单飞刷新）
 - 书籍状态建议轮询：上传后轮询 `GET /api/books/{id}`，直到 `status` 为 `ready` 或 `failed`
 - 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`
 - 详细请求/错误语义与联调清单：`docs/backend/backend_handoff.md`

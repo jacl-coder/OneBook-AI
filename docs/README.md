@@ -7,10 +7,10 @@
 - `docs/backend/backend_arch.md`：后端架构说明
 
 ## frontend
-- `docs/frontend/frontend_development_workflow.md`：前端开发流程与联调建议
-- `docs/frontend/frontend_tech_stack.md`：前端技术栈说明
-- `docs/frontend/frontend_ui_design_conclusion.md`：前端 UI 设计结论
+- `docs/frontend/frontend_development_workflow.md`：前端开发流程与当前实现约定
+- `docs/frontend/frontend_tech_stack.md`：前端技术栈（当前已落地）
 - `docs/frontend/svg_usage_guideline.md`：SVG 使用规范（img 与 sprite 选型、样式与可访问性约定）
+- `frontend/README.md`：前端本地开发与测试命令
 
 ## product
 - `docs/product/requirements.md`：需求说明
