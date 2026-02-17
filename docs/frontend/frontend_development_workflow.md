@@ -52,6 +52,7 @@ VITE_API_TIMEOUT_MS=15000
 cd frontend
 npm run lint
 npm run build
+npm run test:unit
 ```
 
 E2E 主链路：

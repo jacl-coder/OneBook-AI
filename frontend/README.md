@@ -35,6 +35,9 @@ npm run lint
 # 生产构建
 npm run build
 
+# 单元测试
+npm run test:unit
+
 # 本地预览打包产物
 npm run preview
 
