@@ -42,6 +42,13 @@ export type ChatThread = {
   errorText: string
 }
 
+export type ChatThreadSummary = {
+  id: string
+  title: string
+  updatedAt: number
+  preview: string
+}
+
 export type BookSummary = {
   id: string
   title: string
@@ -129,4 +136,53 @@ export function updateThreadAndMoveTop(
   const updated = updater(threads[index])
   const rest = [...threads.slice(0, index), ...threads.slice(index + 1)]
   return [updated, ...rest]
+}
+
+const CHAT_THREAD_SUMMARIES_STORAGE_KEY = 'onebook:chat:thread-summaries'
+
+export function summarizeThreads(threads: ChatThread[]): ChatThreadSummary[] {
+  return threads
+    .filter((thread) => thread.messages.length > 0)
+    .map((thread) => ({
+      id: thread.id,
+      title: thread.title,
+      updatedAt: thread.updatedAt,
+      preview: getThreadPreview(thread),
+    }))
+}
+
+export function readStoredChatThreadSummaries(): ChatThreadSummary[] {
+  if (typeof window === 'undefined') return []
+  const raw = window.sessionStorage.getItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const result: ChatThreadSummary[] = []
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as Partial<ChatThreadSummary>
+      if (typeof record.id !== 'string' || !record.id.trim()) continue
+      if (typeof record.title !== 'string') continue
+      if (typeof record.updatedAt !== 'number' || Number.isNaN(record.updatedAt)) continue
+      if (typeof record.preview !== 'string') continue
+      result.push({
+        id: record.id,
+        title: record.title,
+        updatedAt: record.updatedAt,
+        preview: record.preview,
+      })
+    }
+    return result
+  } catch {
+    return []
+  }
+}
+
+export function writeStoredChatThreadSummaries(summaries: ChatThreadSummary[]) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(
+    CHAT_THREAD_SUMMARIES_STORAGE_KEY,
+    JSON.stringify(summaries),
+  )
 }
