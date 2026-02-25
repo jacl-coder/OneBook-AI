@@ -121,7 +121,8 @@ Content-Type: application/json
 ```
 - 若前端本地跨域访问网关，确保设置：
 ```bash
-CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8086
+CORS_ALLOW_CREDENTIALS=true
 ```
 （可与 Swagger 地址并存，逗号分隔）
 

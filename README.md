@@ -52,10 +52,9 @@ export REDIS_ADDR=localhost:6379
 export GATEWAY_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
 export BOOK_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
 export CHAT_AUTH_JWKS_URL=http://localhost:8081/auth/jwks
-# 如从 Swagger UI 调试跨域请求：
-export CORS_ALLOWED_ORIGINS=http://localhost:8086
-# 如从 Vite 开发服务器调试跨域请求：
-# export CORS_ALLOWED_ORIGINS=http://localhost:8086,http://localhost:5173
+# 本地 CORS（Vite + Swagger UI）
+export CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8086
+export CORS_ALLOW_CREDENTIALS=true
 # 如部署在反向代理后（仅当你能信任代理注入的真实源 IP）：
 # export AUTH_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16
 # export GATEWAY_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16
