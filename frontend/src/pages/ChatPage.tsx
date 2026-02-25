@@ -22,10 +22,13 @@ import {
   headingPool,
   nowTimestamp,
   quickActions,
+  summarizeThreads,
   truncateThreadTitle,
   type ListBooksResponse,
   updateThreadAndMoveTop,
+  writeStoredChatThreadSummaries,
 } from '@/pages/chat/shared'
+import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
 import { http } from '@/shared/lib/http/client'
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
@@ -247,6 +250,15 @@ export function ChatPage() {
       return title.includes(keyword) || preview.includes(keyword)
     })
   }, [threads, threadSearch])
+  const sidebarThreads = useMemo<SidebarThreadItem[]>(
+    () =>
+      filteredThreads.map((thread) => ({
+        id: thread.id,
+        title: thread.title,
+        active: thread.id === activeThreadId,
+      })),
+    [filteredThreads, activeThreadId],
+  )
 
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
@@ -262,6 +274,10 @@ export function ChatPage() {
   )
   const searchShortcutKeys = useMemo(
     () => (isApplePlatform ? ['⌘', 'K'] : ['Ctrl', 'K']),
+    [isApplePlatform],
+  )
+  const libraryShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⌘', 'B'] : ['Ctrl', 'B']),
     [isApplePlatform],
   )
 
@@ -331,6 +347,11 @@ export function ChatPage() {
     if (!sessionUser) return
     void loadReadyBooks()
   }, [sessionUser, loadReadyBooks])
+
+  useEffect(() => {
+    if (!sessionUser) return
+    writeStoredChatThreadSummaries(summarizeThreads(threads))
+  }, [sessionUser, threads])
 
   function closeAuthModal() {
     setIsAuthOpen(false)
@@ -568,6 +589,10 @@ export function ChatPage() {
     }
   }
 
+  const handleOpenLibraryManagement = useCallback(() => {
+    navigate('/library')
+  }, [navigate])
+
   useEffect(() => {
     if (!sessionUser) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -596,12 +621,19 @@ export function ChatPage() {
         if (isTypingTarget) return
         event.preventDefault()
         handleCreateConversation()
+        return
+      }
+
+      if (key === 'b' && !event.shiftKey) {
+        if (isTypingTarget) return
+        event.preventDefault()
+        handleOpenLibraryManagement()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sessionUser, isApplePlatform, handleCreateConversation])
+  }, [sessionUser, isApplePlatform, handleCreateConversation, handleOpenLibraryManagement])
 
   const hasActiveConversation = Boolean(activeThread && activeThread.messages.length > 0)
   const renderAuthComposer = (threadMaxWrapperClass: string) => (
@@ -708,7 +740,6 @@ export function ChatPage() {
   )
 
   if (sessionUser) {
-    const avatarLetter = sessionUser.email.slice(0, 1).toUpperCase()
     const isSidebarExpanded = isMobileSidebarViewport() ? isSidebarOpen : !isDesktopSidebarCollapsed
 
     return (
@@ -719,193 +750,33 @@ export function ChatPage() {
         )}
         style={chatUiSansStyle}
       >
-        <button
-          type="button"
-          className={cx(
-            'fixed inset-0 z-[38] border-0 bg-[rgba(0,0,0,0.42)] transition-opacity duration-180',
-            isSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-          )}
-          aria-hidden={!isSidebarOpen}
-          tabIndex={-1}
-          onClick={() => setIsSidebarOpen(false)}
+        <ChatSidebar
+          isSidebarOpen={isSidebarOpen}
+          isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
+          isSidebarExpanded={isSidebarExpanded}
+          onCloseSidebar={handleCloseSidebar}
+          onMaskClick={() => setIsSidebarOpen(false)}
+          searchInputId="chat-thread-search"
+          searchInputRef={threadSearchInputRef}
+          searchValue={threadSearch}
+          onSearchChange={setThreadSearch}
+          isHistoryExpanded={isHistoryExpanded}
+          onToggleHistoryExpanded={() => setIsHistoryExpanded((prev) => !prev)}
+          threads={sidebarThreads}
+          onThreadClick={handleThreadSelect}
+          onNewChatClick={handleCreateConversation}
+          onLibraryClick={handleOpenLibraryManagement}
+          newChatShortcutKeys={newChatShortcutKeys}
+          searchShortcutKeys={searchShortcutKeys}
+          libraryShortcutKeys={libraryShortcutKeys}
+          getShortcutAriaLabel={getShortcutAriaLabel}
+          accountEmail={sessionUser.email}
+          accountRoleLabel={sessionUser.role === 'admin' ? '管理员' : '普通用户'}
+          onLogout={() => void handleLogout()}
+          closeButtonTestId="close-sidebar-button"
+          scrollAreaRole="listbox"
+          scrollAreaLabel="会话列表"
         />
-
-        <aside
-          id="stage-slideover-sidebar"
-          className={cx(
-            'min-h-screen grid grid-rows-[auto_minmax(0,1fr)_auto] bg-[#f7f7f7] p-0 max-[767px]:fixed max-[767px]:bottom-0 max-[767px]:left-0 max-[767px]:top-0 max-[767px]:z-[39] max-[767px]:w-[min(82vw,300px)] max-[767px]:-translate-x-[104%] max-[767px]:shadow-[6px_0_30px_rgba(0,0,0,0.15)] max-[767px]:transition-transform max-[767px]:duration-180',
-            isSidebarOpen && 'max-[767px]:translate-x-0',
-            isDesktopSidebarCollapsed && 'md:hidden',
-          )}
-          aria-label="会话侧边栏"
-        >
-          <div className={chatTw.sidebarHeader}>
-            <div className={chatTw.sidebarHeaderRow}>
-              <Link to="/chat" className={chatTw.sidebarHomeLink} aria-label="OneBook AI">
-                <img src={onebookLogoMark} alt="" aria-hidden="true" className={chatTw.sidebarHomeLogo} />
-              </Link>
-              <button
-                type="button"
-                className={chatTw.sidebarCloseButton}
-                aria-expanded={isSidebarExpanded}
-                aria-controls="stage-slideover-sidebar"
-                aria-label="关闭边栏"
-                data-testid="close-sidebar-button"
-                data-state={isSidebarExpanded ? 'open' : 'closed'}
-                onClick={handleCloseSidebar}
-              >
-                <svg
-                  viewBox="0 0 20 20"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                  data-rtl-flip=""
-                  className={chatTw.sidebarCloseDesktopIcon}
-                >
-                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-sidebar-close-desktop`} fill="currentColor" />
-                </svg>
-                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={chatTw.sidebarCloseMobileIcon}>
-                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-sidebar-close-mobile`} fill="currentColor" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div className={chatTw.sidebarScrollArea} role="listbox" aria-label="会话列表">
-            <aside className={chatTw.sidebarListAside}>
-              <div className={chatTw.sidebarMenuList}>
-                <button
-                  type="button"
-                  className={chatTw.sidebarNewChatButton}
-                  onClick={handleCreateConversation}
-                >
-                  <span className={chatTw.menuMainIconWrap}>
-                    <span className={chatTw.menuMainIcon} aria-hidden="true">
-                      <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={chatTw.iconBlockH5W5}>
-                        <use href={`${CHAT_ICON_SPRITE_URL}#chat-new-chat`} fill="currentColor" />
-                      </svg>
-                    </span>
-                    <span className={chatTw.menuMainTextWrap}>
-                      <span className={chatTw.sidebarNewChatText}>新聊天</span>
-                    </span>
-                  </span>
-                  <span className={chatTw.shortcutLabel} aria-hidden="true">
-                    <span className={chatTw.shortcutRow}>
-                      {newChatShortcutKeys.map((key) => (
-                        <kbd key={`new-chat-shortcut-${key}`} aria-label={getShortcutAriaLabel(key)} className={chatTw.shortcutKeyWrap}>
-                          <span className={chatTw.shortcutKey}>{key}</span>
-                        </kbd>
-                      ))}
-                    </span>
-                  </span>
-                </button>
-
-                <label className={chatTw.sidebarSearchLabel} htmlFor="chat-thread-search">
-                  <span className={chatTw.menuMainIconWrap}>
-                    <span className={chatTw.menuMainIcon} aria-hidden="true">
-                      <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={chatTw.iconBlockH5W5}>
-                        <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
-                      </svg>
-                    </span>
-                    <span className={chatTw.menuMainTextWrap}>
-                      <input
-                        id="chat-thread-search"
-                        ref={threadSearchInputRef}
-                        className={chatTw.sidebarSearchInput}
-                        type="search"
-                        placeholder="搜索聊天"
-                        value={threadSearch}
-                        onChange={(event) => setThreadSearch(event.target.value)}
-                      />
-                    </span>
-                  </span>
-                  <span className={chatTw.shortcutLabel} aria-hidden="true">
-                    <span className={chatTw.shortcutRow}>
-                      {searchShortcutKeys.map((key) => (
-                        <kbd key={`search-shortcut-${key}`} aria-label={getShortcutAriaLabel(key)} className={chatTw.shortcutKeyWrap}>
-                          <span className={chatTw.shortcutKey}>{key}</span>
-                        </kbd>
-                      ))}
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </aside>
-            <div className={chatTw.sidebarMenuSpacer} aria-hidden="true" />
-
-            <div className={cx('group/expando mb-[6px]', isHistoryExpanded && 'mb-2')}>
-              <button
-                type="button"
-                aria-expanded={isHistoryExpanded}
-                className={chatTw.sidebarHistoryToggle}
-                onClick={() => setIsHistoryExpanded((prev) => !prev)}
-              >
-                <h2 className={chatTw.sidebarHistoryTitle}>你的聊天</h2>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                  className={cx(
-                    'h-3 w-3 shrink-0 text-[#7a7a7a] opacity-0 transition-[transform,opacity] duration-120 group-hover/expando:opacity-100 group-focus-within/expando:opacity-100',
-                    !isHistoryExpanded && 'opacity-100',
-                    isHistoryExpanded ? 'rotate-0' : '-rotate-90',
-                  )}
-                >
-                  <use href={`${CHAT_ICON_SPRITE_URL}#chat-chevron-down`} fill="currentColor" />
-                </svg>
-              </button>
-            </div>
-
-            {isHistoryExpanded ? (
-              <>
-                <div className={chatTw.sidebarThreadList}>
-                  {filteredThreads.map((thread) => {
-                    const isActive = thread.id === activeThreadId
-                    return (
-                      <button
-                        key={thread.id}
-                        type="button"
-                        className={cx(
-                          'group/thread relative block min-h-[34px] cursor-pointer rounded-[8px] border-0 bg-transparent px-[9px] pr-[30px] text-left text-[#0d0d0d] hover:bg-[#ececec] focus:outline-none',
-                          isActive && 'bg-[#e7e7e7]',
-                        )}
-                        onClick={() => handleThreadSelect(thread.id)}
-                      >
-                        <span className={chatTw.sidebarThreadTitle}>{thread.title}</span>
-                        <span
-                          className={cx(
-                            'pointer-events-none absolute right-[6px] top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-[6px] text-[#8c8c8c] opacity-0 transition-opacity duration-140 group-hover/thread:opacity-100',
-                            isActive && 'opacity-100',
-                          )}
-                          aria-hidden="true"
-                        >
-                          <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={chatTw.iconBlockH14W14}>
-                            <path d="M5 10a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 5 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 10 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 15 10Z" fill="currentColor" />
-                          </svg>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </>
-            ) : null}
-          </div>
-
-          <div className={chatTw.sidebarAccountPanel}>
-            <div className={chatTw.sidebarAccountCard}>
-              <span className={chatTw.sidebarAvatar} aria-hidden="true">
-                {avatarLetter}
-              </span>
-              <div className={chatTw.sidebarAccountMeta}>
-                <span className={chatTw.sidebarAccountEmail}>{sessionUser.email}</span>
-                <span className={chatTw.roleMuted}>{sessionUser.role === 'admin' ? '管理员' : '普通用户'}</span>
-              </div>
-              <button type="button" className={chatTw.sidebarLogoutButton} onClick={() => void handleLogout()}>
-                退出
-              </button>
-            </div>
-          </div>
-        </aside>
 
         <main className={chatTw.chatMainLayout}>
           <header className={chatTw.chatTopBar}>

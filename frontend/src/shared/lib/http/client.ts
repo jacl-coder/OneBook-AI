@@ -21,6 +21,15 @@ type RetriableRequestConfig = AxiosRequestConfig & {
 
 let refreshRequest: Promise<void> | null = null
 
+http.interceptors.request.use((config) => {
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    const headers = axios.AxiosHeaders.from(config.headers)
+    headers.delete('Content-Type')
+    config.headers = headers
+  }
+  return config
+})
+
 function shouldSkipRefresh(config: RetriableRequestConfig | undefined): boolean {
   if (!config) return true
   if (config._skipAuthRefresh) return true
