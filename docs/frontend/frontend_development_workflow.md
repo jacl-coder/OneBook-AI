@@ -77,5 +77,6 @@ npm run test:e2e
 - 登录态异常：
   - 检查浏览器是否携带 `onebook_access` / `onebook_refresh` Cookie
   - 检查 refresh 请求是否被错误拦截或重复触发
+  - 检查后端 `.env`：`CORS_ALLOWED_ORIGINS` 包含 `http://localhost:5173,http://localhost:8086`，且 `CORS_ALLOW_CREDENTIALS=true`
 - E2E 不稳定：
   - 检查 `frontend/playwright.config.ts` 的 `baseURL/webServer` 是否匹配本机环境
