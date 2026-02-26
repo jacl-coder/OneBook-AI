@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/ledongthuc/pdf"
 	"golang.org/x/net/html"
@@ -190,6 +191,7 @@ func normalizeTextPreserveNewlines(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 	text = strings.ReplaceAll(text, "\t", " ")
+	text = sanitizeTextRunes(text)
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
@@ -204,6 +206,29 @@ func normalizeTextPreserveNewlines(text string) string {
 		return ""
 	}
 	return text
+}
+
+func sanitizeTextRunes(text string) string {
+	if text == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch r {
+		case '\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u00ad':
+			// Remove zero-width chars and soft hyphen noise from OCR/PDF extraction.
+			continue
+		case '\u00a0':
+			b.WriteRune(' ')
+			continue
+		}
+		if unicode.IsControl(r) && r != '\n' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 type sentenceUnit struct {
