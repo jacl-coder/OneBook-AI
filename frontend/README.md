@@ -8,7 +8,6 @@
 - TanStack Query
 - Zustand
 - Tailwind CSS v4
-- Playwright（E2E）
 
 ## 2. 启动方式
 ```bash
@@ -40,9 +39,6 @@ npm run test:unit
 
 # 本地预览打包产物
 npm run preview
-
-# E2E
-npm run test:e2e
 ```
 
 ## 5. 目录说明
@@ -50,7 +46,6 @@ npm run test:e2e
 - `src/pages/`：页面实现
 - `src/shared/`：共享配置与 HTTP 客户端
 - `src/styles/`：全局基础样式与动画
-- `tests/e2e/`：Playwright 用例
 
 ## 6. 认证与请求约定
 - 受保护接口走 Cookie 会话，不在前端拼接 Bearer token
