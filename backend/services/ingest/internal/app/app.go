@@ -57,6 +57,13 @@ type Config struct {
 	QueueRetryDelaySeconds    int
 	ChunkSize                 int
 	ChunkOverlap              int
+	OCREnabled                bool
+	OCRCommand                string
+	OCRDevice                 string
+	OCRTimeoutSeconds         int
+	PDFMinPageRunes           int
+	PDFMinPageScore           float64
+	PDFOCRMinScoreDelta       float64
 }
 
 // App processes ingest jobs.
@@ -67,6 +74,13 @@ type App struct {
 	queue        *queue.RedisJobQueue
 	chunkSize    int
 	chunkOverlap int
+	ocrEnabled   bool
+	ocrCommand   string
+	ocrDevice    string
+	ocrTimeout   time.Duration
+	pdfMinRunes  int
+	pdfMinScore  float64
+	pdfScoreDiff float64
 	httpClient   *http.Client
 }
 
@@ -106,6 +120,30 @@ func New(cfg Config) (*App, error) {
 	if chunkOverlap < 0 {
 		chunkOverlap = 0
 	}
+	ocrCommand := strings.TrimSpace(cfg.OCRCommand)
+	if ocrCommand == "" {
+		ocrCommand = "paddleocr"
+	}
+	ocrDevice := strings.TrimSpace(cfg.OCRDevice)
+	if ocrDevice == "" {
+		ocrDevice = "cpu"
+	}
+	ocrTimeoutSeconds := cfg.OCRTimeoutSeconds
+	if ocrTimeoutSeconds <= 0 {
+		ocrTimeoutSeconds = 120
+	}
+	pdfMinRunes := cfg.PDFMinPageRunes
+	if pdfMinRunes <= 0 {
+		pdfMinRunes = 80
+	}
+	pdfMinScore := cfg.PDFMinPageScore
+	if pdfMinScore <= 0 {
+		pdfMinScore = 0.45
+	}
+	pdfScoreDiff := cfg.PDFOCRMinScoreDelta
+	if pdfScoreDiff < 0 {
+		pdfScoreDiff = 0
+	}
 	q, err := queue.NewRedisJobQueue(queue.RedisQueueConfig{
 		Addr:       cfg.RedisAddr,
 		Password:   cfg.RedisPassword,
@@ -125,6 +163,13 @@ func New(cfg Config) (*App, error) {
 		queue:        q,
 		chunkSize:    chunkSize,
 		chunkOverlap: chunkOverlap,
+		ocrEnabled:   cfg.OCREnabled,
+		ocrCommand:   ocrCommand,
+		ocrDevice:    ocrDevice,
+		ocrTimeout:   time.Duration(ocrTimeoutSeconds) * time.Second,
+		pdfMinRunes:  pdfMinRunes,
+		pdfMinScore:  pdfMinScore,
+		pdfScoreDiff: pdfScoreDiff,
 		httpClient:   &http.Client{Timeout: 60 * time.Second},
 	}
 	app.startWorkers(cfg.QueueConcurrency)
