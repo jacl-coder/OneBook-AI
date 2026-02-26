@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -185,12 +188,12 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 	}
 	now := time.Now().UTC()
 	domainChunks := make([]domain.Chunk, 0, len(chunks))
-	for _, chunk := range chunks {
+	for idx, chunk := range chunks {
 		domainChunks = append(domainChunks, domain.Chunk{
 			ID:        util.NewID(),
 			BookID:    job.BookID,
 			Content:   chunk.Content,
-			Metadata:  chunk.Metadata,
+			Metadata:  enrichChunkMetadata(chunk.Metadata, job.BookID, idx, len(chunks), chunk.Content),
 			CreatedAt: now,
 		})
 	}
@@ -258,4 +261,22 @@ func (a *App) downloadFile(ctx context.Context, url string, filename string) (st
 		return "", err
 	}
 	return tmpFile.Name(), nil
+}
+
+func enrichChunkMetadata(base map[string]string, bookID string, chunkIndex, chunkCount int, content string) map[string]string {
+	out := make(map[string]string, len(base)+6)
+	for k, v := range base {
+		out[k] = v
+	}
+	out["document_id"] = strings.TrimSpace(bookID)
+	out["chunk_index"] = strconv.Itoa(chunkIndex)
+	out["chunk_count"] = strconv.Itoa(chunkCount)
+	out["content_runes"] = strconv.Itoa(len([]rune(content)))
+	out["content_sha256"] = sha256Hex(content)
+	return out
+}
+
+func sha256Hex(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }

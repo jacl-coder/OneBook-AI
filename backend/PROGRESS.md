@@ -6,7 +6,7 @@
 - Auth：注册/登录/登出、用户自助、管理员用户管理；JWT 或 Redis 会话；撤销列表生效。
 - Book：上传/列表/查询/删除；MinIO 存储；下载预签名 URL（文件名为原始文件名）。
 - Ingest：PDF/EPUB/TXT 解析；PDF 优先 `pdftotext`，失败回退 Go PDF；语义分块。
-- Chunk metadata 统一：`source_type/source_ref`，并保留 `page/section/chunk`。
+- Chunk metadata 统一：`source_type/source_ref`，并保留 `page/section/chunk`；新增 `document_id/chunk_index/chunk_count/content_sha256/content_runes` 用于检索前治理与追溯。
 - Indexer：Embedding 可选 Gemini/Ollama；支持批量/并发写入 pgvector；状态更新。
 - Chat：向量检索 + Gemini 生成回答，附出处；消息入库并拼接最近 N 轮历史。
 - 任务队列：Redis Streams 持久队列，支持重试与失败回写。

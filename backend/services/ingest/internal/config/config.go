@@ -88,6 +88,16 @@ func Load(path string) (FileConfig, error) {
 			cfg.QueueRetryDelaySeconds = n
 		}
 	}
+	if v := os.Getenv("INGEST_CHUNK_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.ChunkSize = n
+		}
+	}
+	if v := os.Getenv("INGEST_CHUNK_OVERLAP"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.ChunkOverlap = n
+		}
+	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
 	}
@@ -112,6 +122,15 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.RedisAddr == "" {
 		return errors.New("config: redisAddr is required (set in config.yaml or REDIS_ADDR)")
+	}
+	if cfg.ChunkSize <= 0 {
+		return errors.New("config: chunkSize must be > 0 (set in config.yaml or INGEST_CHUNK_SIZE)")
+	}
+	if cfg.ChunkOverlap < 0 {
+		return errors.New("config: chunkOverlap must be >= 0 (set in config.yaml or INGEST_CHUNK_OVERLAP)")
+	}
+	if cfg.ChunkOverlap >= cfg.ChunkSize {
+		return errors.New("config: chunkOverlap must be smaller than chunkSize")
 	}
 	return nil
 }

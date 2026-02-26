@@ -5,6 +5,7 @@
 ## 当前状态
 - 需求与功能规格：见 `docs/product/requirements.md` 与 `docs/product/functional_spec.md`
 - 技术框架概览：见 `docs/architecture/tech_overview.md` 与 `docs/backend/backend_arch.md`
+- RAG 演进目标：见 `docs/architecture/advanced_rag_plan.md`（后续检索优化默认按该基线推进）
 - 前端联调说明：见 `docs/backend/backend_handoff.md`
 - 前端开发流程：见 `docs/frontend/frontend_development_workflow.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答

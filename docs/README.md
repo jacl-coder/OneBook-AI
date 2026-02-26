@@ -18,6 +18,7 @@
 
 ## architecture
 - `docs/architecture/tech_overview.md`：技术总览
+- `docs/architecture/advanced_rag_plan.md`：Advanced RAG 目标与执行基线
 
 ## migration
 - `docs/migration/migration_plan.md`：迁移方案

@@ -38,3 +38,7 @@
 - 联调统一走 Gateway：`http://localhost:8080`
 - 鉴权机制：浏览器会话 Cookie（`withCredentials`），401 走 refresh 单飞重试。
 - 联调约定与错误语义：`docs/backend/backend_handoff.md`
+
+## RAG 演进目标
+- 统一目标文档：`docs/architecture/advanced_rag_plan.md`
+- 后续检索与问答质量优化，默认围绕该文档的 Advanced RAG 基线推进。
