@@ -55,18 +55,9 @@ npm run build
 npm run test:unit
 ```
 
-E2E 主链路：
-
-```bash
-cd frontend
-npm run test:e2e
-```
-
-当前主链路用例：`frontend/tests/e2e/chat-main-flow.spec.ts`
-
 ## 8. 提交流程建议
 1. 完成单一目标改动（避免混杂重构）
-2. 本地运行 `lint`、`build`（必要时补跑 E2E）
+2. 本地运行 `lint`、`build`、`test:unit`
 3. 更新对应文档（若行为/结构变化）
 4. 使用 Conventional Commits 提交，scope 必填（如 `frontend`、`docs`、`app`）
 
@@ -78,5 +69,3 @@ npm run test:e2e
   - 检查浏览器是否携带 `onebook_access` / `onebook_refresh` Cookie
   - 检查 refresh 请求是否被错误拦截或重复触发
   - 检查后端 `.env`：`CORS_ALLOWED_ORIGINS` 包含 `http://localhost:5173,http://localhost:8086`，且 `CORS_ALLOW_CREDENTIALS=true`
-- E2E 不稳定：
-  - 检查 `frontend/playwright.config.ts` 的 `baseURL/webServer` 是否匹配本机环境

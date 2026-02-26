@@ -10,7 +10,6 @@
 - 服务端状态：`@tanstack/react-query`
 - 客户端会话状态：`zustand`
 - 样式：`Tailwind CSS v4`（utilities 为主）+ 少量全局 CSS
-- E2E：`Playwright`
 
 ## 2. 当前路由与页面
 - `/`：`HomePage`
@@ -45,8 +44,6 @@
 - 代码检查：`npm run lint`
 - 生产构建：`npm run build`
 - 单元测试：`npm run test:unit`
-- E2E：`npm run test:e2e`
-- 主链路用例：`frontend/tests/e2e/chat-main-flow.spec.ts`
 - 会话刷新用例：`frontend/tests/unit/http-client-refresh-single-flight.test.ts`
 
 ## 6. 当前未采用（避免误解）
