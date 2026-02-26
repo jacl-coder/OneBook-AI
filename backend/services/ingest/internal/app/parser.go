@@ -3,11 +3,14 @@ package app
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -19,6 +22,20 @@ import (
 type chunkPayload struct {
 	Content  string
 	Metadata map[string]string
+}
+
+type pageExtraction struct {
+	Page        int
+	Text        string
+	Method      string
+	OCRAvgScore float64
+}
+
+type pageQuality struct {
+	Runes         int
+	NonEmptyLines int
+	AlphaNumRatio float64
+	Score         float64
 }
 
 func (a *App) parseAndChunk(filename, path string) ([]chunkPayload, error) {
@@ -34,65 +51,92 @@ func (a *App) parseAndChunk(filename, path string) ([]chunkPayload, error) {
 }
 
 func (a *App) parsePDF(path string) ([]chunkPayload, error) {
-	// Try pdftotext first (better support for complex/Chinese PDFs)
-	chunks, err := a.parsePDFWithPdftotext(path)
-	if err == nil && len(chunks) > 0 {
-		return chunks, nil
+	nativePages, nativeErr := a.parsePDFNativePages(path)
+	if len(nativePages) == 0 && !a.ocrEnabled {
+		return nil, fmt.Errorf("no text extracted from PDF; native=%v", nativeErr)
 	}
-	// Fallback to Go library
-	return a.parsePDFWithGoLib(path)
+
+	selectedPages := nativePages
+	needsOCR := false
+	if a.ocrEnabled {
+		if len(nativePages) == 0 {
+			needsOCR = true
+		} else {
+			for _, page := range nativePages {
+				if isLowQualityPage(evaluatePageQuality(page.Text), a.pdfMinRunes, a.pdfMinScore) {
+					needsOCR = true
+					break
+				}
+			}
+		}
+	}
+	if needsOCR {
+		ocrPages, ocrErr := a.parsePDFWithPaddleOCR(path)
+		if ocrErr != nil && len(nativePages) == 0 {
+			return nil, fmt.Errorf("no text extracted from PDF; native=%v; paddleocr=%v", nativeErr, ocrErr)
+		}
+		if ocrErr == nil {
+			selectedPages = a.mergePDFPages(nativePages, ocrPages)
+		}
+	}
+	if len(selectedPages) == 0 {
+		return nil, fmt.Errorf("no text extracted from PDF")
+	}
+	return a.buildPDFChunks(selectedPages), nil
 }
 
-// parsePDFWithPdftotext uses the system pdftotext tool (poppler-utils)
-func (a *App) parsePDFWithPdftotext(path string) ([]chunkPayload, error) {
-	// Check if pdftotext is available
+func (a *App) parsePDFNativePages(path string) ([]pageExtraction, error) {
+	pdftotextPages, pdftotextErr := a.parsePDFPagesWithPdftotext(path)
+	if len(pdftotextPages) > 0 {
+		return pdftotextPages, nil
+	}
+	goLibPages, goLibErr := a.parsePDFPagesWithGoLib(path)
+	if len(goLibPages) == 0 {
+		return nil, fmt.Errorf("pdftotext=%v; golib=%v", pdftotextErr, goLibErr)
+	}
+	return goLibPages, nil
+}
+
+// parsePDFPagesWithPdftotext uses the system pdftotext tool (poppler-utils).
+func (a *App) parsePDFPagesWithPdftotext(path string) ([]pageExtraction, error) {
 	if _, err := exec.LookPath("pdftotext"); err != nil {
 		return nil, fmt.Errorf("pdftotext not found: %w", err)
 	}
-
-	// Run pdftotext to extract text
 	cmd := exec.Command("pdftotext", "-layout", "-enc", "UTF-8", path, "-")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("pdftotext failed: %w", err)
 	}
-
-	var chunks []chunkPayload
 	raw := strings.ReplaceAll(string(output), "\x00", " ")
 	raw = strings.ToValidUTF8(raw, "")
 	pages := strings.Split(raw, "\f")
+	out := make([]pageExtraction, 0, len(pages))
 	for pageIdx, pageText := range pages {
 		pageText = normalizeTextPreserveNewlines(pageText)
 		if pageText == "" {
 			continue
 		}
-		for idx, part := range chunkTextSemantic(pageText, a.chunkSize, a.chunkOverlap) {
-			chunks = append(chunks, chunkPayload{
-				Content: part,
-				Metadata: map[string]string{
-					"source_type": "pdf",
-					"source_ref":  fmt.Sprintf("page:%d", pageIdx+1),
-					"page":        strconv.Itoa(pageIdx + 1),
-					"chunk":       strconv.Itoa(idx),
-				},
-			})
-		}
+		out = append(out, pageExtraction{
+			Page:   pageIdx + 1,
+			Text:   pageText,
+			Method: "pdftotext",
+		})
 	}
-	if len(chunks) == 0 {
+	if len(out) == 0 {
 		return nil, fmt.Errorf("no text extracted from PDF")
 	}
-	return chunks, nil
+	return out, nil
 }
 
-// parsePDFWithGoLib uses the Go PDF library (fallback)
-func (a *App) parsePDFWithGoLib(path string) ([]chunkPayload, error) {
+// parsePDFPagesWithGoLib uses the Go PDF library (fallback).
+func (a *App) parsePDFPagesWithGoLib(path string) ([]pageExtraction, error) {
 	file, reader, err := pdf.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open pdf: %w", err)
 	}
 	defer file.Close()
 	totalPages := reader.NumPage()
-	var chunks []chunkPayload
+	out := make([]pageExtraction, 0, totalPages)
 	for i := 1; i <= totalPages; i++ {
 		page := reader.Page(i)
 		if page.V.IsNull() {
@@ -104,22 +148,68 @@ func (a *App) parsePDFWithGoLib(path string) ([]chunkPayload, error) {
 			continue
 		}
 		text = normalizeTextPreserveNewlines(text)
-		for idx, part := range chunkTextSemantic(text, a.chunkSize, a.chunkOverlap) {
-			chunks = append(chunks, chunkPayload{
-				Content: part,
-				Metadata: map[string]string{
-					"source_type": "pdf",
-					"source_ref":  fmt.Sprintf("page:%d", i),
-					"page":        strconv.Itoa(i),
-					"chunk":       strconv.Itoa(idx),
-				},
-			})
+		if text == "" {
+			continue
 		}
+		out = append(out, pageExtraction{
+			Page:   i,
+			Text:   text,
+			Method: "golib",
+		})
 	}
-	if len(chunks) == 0 {
+	if len(out) == 0 {
 		return nil, fmt.Errorf("no text extracted from PDF")
 	}
-	return chunks, nil
+	return out, nil
+}
+
+func (a *App) parsePDFWithPaddleOCR(path string) ([]pageExtraction, error) {
+	if _, err := exec.LookPath(a.ocrCommand); err != nil {
+		return nil, fmt.Errorf("paddleocr command not found: %w", err)
+	}
+	savePath, err := os.MkdirTemp("", "onebook-paddleocr-*")
+	if err != nil {
+		return nil, fmt.Errorf("create paddleocr temp dir: %w", err)
+	}
+	defer os.RemoveAll(savePath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), a.ocrTimeout)
+	defer cancel()
+	args := []string{
+		"ocr",
+		"-i", path,
+		"--save_path", savePath,
+		"--device", a.ocrDevice,
+		"--use_doc_orientation_classify", "False",
+		"--use_doc_unwarping", "False",
+		"--use_textline_orientation", "False",
+	}
+	cmd := exec.CommandContext(ctx, a.ocrCommand, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("run paddleocr failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
+	}
+	pages, err := readPaddleOCRPages(savePath)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pageExtraction, 0, len(pages))
+	for _, page := range pages {
+		text := normalizeTextPreserveNewlines(page.Text)
+		if text == "" {
+			continue
+		}
+		out = append(out, pageExtraction{
+			Page:        page.Page,
+			Text:        text,
+			Method:      "paddleocr",
+			OCRAvgScore: page.AvgScore,
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("paddleocr extracted no usable text")
+	}
+	return out, nil
 }
 
 func (a *App) parseEPUB(path string) ([]chunkPayload, error) {
@@ -183,6 +273,332 @@ func (a *App) parseText(path string) ([]chunkPayload, error) {
 		})
 	}
 	return chunks, nil
+}
+
+func (a *App) mergePDFPages(nativePages []pageExtraction, ocrPages []pageExtraction) []pageExtraction {
+	native := make(map[int]pageExtraction, len(nativePages))
+	for _, page := range nativePages {
+		native[page.Page] = page
+	}
+	ocr := make(map[int]pageExtraction, len(ocrPages))
+	for _, page := range ocrPages {
+		ocr[page.Page] = page
+	}
+	allPages := make(map[int]struct{}, len(native)+len(ocr))
+	for page := range native {
+		allPages[page] = struct{}{}
+	}
+	for page := range ocr {
+		allPages[page] = struct{}{}
+	}
+	result := make([]pageExtraction, 0, len(allPages))
+	for pageNo := range allPages {
+		nativePage, hasNative := native[pageNo]
+		ocrPage, hasOCR := ocr[pageNo]
+		switch {
+		case hasNative && !hasOCR:
+			result = append(result, nativePage)
+		case !hasNative && hasOCR:
+			result = append(result, ocrPage)
+		case hasNative && hasOCR:
+			nativeQuality := evaluatePageQuality(nativePage.Text)
+			ocrQuality := evaluatePageQuality(ocrPage.Text)
+			ocrScore := ocrQuality.Score
+			if ocrPage.OCRAvgScore > 0 {
+				ocrScore = (ocrScore * 0.8) + (ocrPage.OCRAvgScore * 0.2)
+			}
+			if isLowQualityPage(nativeQuality, a.pdfMinRunes, a.pdfMinScore) && ocrScore >= nativeQuality.Score+a.pdfScoreDiff {
+				result = append(result, ocrPage)
+				continue
+			}
+			result = append(result, nativePage)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].Page < result[j].Page
+	})
+	return result
+}
+
+func (a *App) buildPDFChunks(pages []pageExtraction) []chunkPayload {
+	chunks := make([]chunkPayload, 0, len(pages))
+	for _, page := range pages {
+		quality := evaluatePageQuality(page.Text)
+		for idx, part := range chunkTextSemantic(page.Text, a.chunkSize, a.chunkOverlap) {
+			meta := map[string]string{
+				"source_type":        "pdf",
+				"source_ref":         fmt.Sprintf("page:%d", page.Page),
+				"page":               strconv.Itoa(page.Page),
+				"chunk":              strconv.Itoa(idx),
+				"extract_method":     page.Method,
+				"page_quality_score": fmt.Sprintf("%.3f", quality.Score),
+				"page_runes":         strconv.Itoa(quality.Runes),
+			}
+			if page.OCRAvgScore > 0 {
+				meta["ocr_avg_score"] = fmt.Sprintf("%.3f", page.OCRAvgScore)
+			}
+			chunks = append(chunks, chunkPayload{
+				Content:  part,
+				Metadata: meta,
+			})
+		}
+	}
+	return chunks
+}
+
+func evaluatePageQuality(text string) pageQuality {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) == 0 {
+		return pageQuality{}
+	}
+	alphaNum := 0
+	for _, r := range runes {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			alphaNum++
+		}
+	}
+	lines := strings.Split(string(runes), "\n")
+	nonEmpty := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			nonEmpty++
+		}
+	}
+	alphaNumRatio := float64(alphaNum) / float64(len(runes))
+	lineCount := nonEmpty
+	if lineCount <= 0 {
+		lineCount = 1
+	}
+	avgLineLen := float64(len(runes)) / float64(lineCount)
+	lengthScore := clamp01(float64(len(runes)) / 300.0)
+	densityScore := clamp01(avgLineLen / 24.0)
+	score := (0.45 * lengthScore) + (0.30 * alphaNumRatio) + (0.25 * densityScore)
+	return pageQuality{
+		Runes:         len(runes),
+		NonEmptyLines: nonEmpty,
+		AlphaNumRatio: alphaNumRatio,
+		Score:         score,
+	}
+}
+
+func isLowQualityPage(q pageQuality, minRunes int, minScore float64) bool {
+	if q.Runes == 0 {
+		return true
+	}
+	if minRunes > 0 && q.Runes < minRunes {
+		return true
+	}
+	return q.Score < minScore
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+type ocrPage struct {
+	Page     int
+	Text     string
+	AvgScore float64
+}
+
+func readPaddleOCRPages(savePath string) ([]ocrPage, error) {
+	files, err := filepath.Glob(filepath.Join(savePath, "*.json"))
+	if err != nil {
+		return nil, fmt.Errorf("scan paddleocr json files: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("paddleocr output missing json in %s", savePath)
+	}
+	sort.Strings(files)
+	var pages []ocrPage
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("read paddleocr json: %w", err)
+		}
+		pageSet, err := parsePaddleOCRJSON(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse paddleocr json %s: %w", filepath.Base(file), err)
+		}
+		pages = append(pages, pageSet...)
+	}
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("paddleocr json has no page text")
+	}
+	sort.SliceStable(pages, func(i, j int) bool {
+		return pages[i].Page < pages[j].Page
+	})
+	return pages, nil
+}
+
+func parsePaddleOCRJSON(raw []byte) ([]ocrPage, error) {
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+
+	items := findPageItems(payload)
+	if len(items) == 0 {
+		entries := collectRecEntries(payload)
+		if len(entries) == 0 {
+			return nil, fmt.Errorf("no rec_texts found")
+		}
+		return []ocrPage{buildOCRPage(1, entries)}, nil
+	}
+
+	pages := make([]ocrPage, 0, len(items))
+	for i, item := range items {
+		entries := collectRecEntries(item)
+		if len(entries) == 0 {
+			continue
+		}
+		pageNum := i + 1
+		if m, ok := item.(map[string]any); ok {
+			if v, ok := m["page_index"]; ok {
+				pageNum = toInt(v) + 1
+			} else if v, ok := m["page"]; ok {
+				pageNum = toInt(v)
+				if pageNum <= 0 {
+					pageNum = i + 1
+				}
+			}
+		}
+		pages = append(pages, buildOCRPage(pageNum, entries))
+	}
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("no page texts found")
+	}
+	return pages, nil
+}
+
+type ocrEntry struct {
+	Text  string
+	Score float64
+}
+
+func buildOCRPage(pageNum int, entries []ocrEntry) ocrPage {
+	texts := make([]string, 0, len(entries))
+	scoreTotal := 0.0
+	scoreCount := 0
+	for _, entry := range entries {
+		if entry.Text == "" {
+			continue
+		}
+		texts = append(texts, entry.Text)
+		if entry.Score > 0 {
+			scoreTotal += entry.Score
+			scoreCount++
+		}
+	}
+	avgScore := 0.0
+	if scoreCount > 0 {
+		avgScore = scoreTotal / float64(scoreCount)
+	}
+	return ocrPage{
+		Page:     pageNum,
+		Text:     strings.Join(texts, "\n"),
+		AvgScore: avgScore,
+	}
+}
+
+func findPageItems(payload any) []any {
+	switch v := payload.(type) {
+	case []any:
+		return v
+	case map[string]any:
+		if out, ok := v["ocrResults"]; ok {
+			if items, ok := out.([]any); ok {
+				return items
+			}
+		}
+	}
+	return nil
+}
+
+func collectRecEntries(payload any) []ocrEntry {
+	var out []ocrEntry
+	var walk func(any)
+	walk = func(node any) {
+		switch v := node.(type) {
+		case map[string]any:
+			if raw, ok := v["rec_texts"]; ok {
+				if arr, ok := raw.([]any); ok {
+					scores := make([]float64, 0, len(arr))
+					if rawScores, ok := v["rec_scores"]; ok {
+						if scoreArr, ok := rawScores.([]any); ok {
+							for _, item := range scoreArr {
+								scores = append(scores, toFloat(item))
+							}
+						}
+					}
+					for i, item := range arr {
+						if text, ok := item.(string); ok {
+							text = strings.TrimSpace(text)
+							if text == "" {
+								continue
+							}
+							score := 0.0
+							if len(scores) > 0 && i < len(scores) {
+								score = scores[i]
+							}
+							out = append(out, ocrEntry{Text: text, Score: score})
+						}
+					}
+				}
+			}
+			for _, value := range v {
+				walk(value)
+			}
+		case []any:
+			for _, item := range v {
+				walk(item)
+			}
+		}
+	}
+	walk(payload)
+	return out
+}
+
+func toInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(n))
+		if err == nil {
+			return i
+		}
+	}
+	return 0
+}
+
+func toFloat(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err == nil {
+			return f
+		}
+	}
+	return 0
 }
 
 func normalizeTextPreserveNewlines(text string) string {

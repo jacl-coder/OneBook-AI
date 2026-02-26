@@ -40,6 +40,13 @@ func main() {
 		QueueRetryDelaySeconds:    cfg.QueueRetryDelaySeconds,
 		ChunkSize:                 cfg.ChunkSize,
 		ChunkOverlap:              cfg.ChunkOverlap,
+		OCREnabled:                cfg.OCREnabled,
+		OCRCommand:                cfg.OCRCommand,
+		OCRDevice:                 cfg.OCRDevice,
+		OCRTimeoutSeconds:         cfg.OCRTimeoutSeconds,
+		PDFMinPageRunes:           cfg.PDFMinPageRunes,
+		PDFMinPageScore:           cfg.PDFMinPageScore,
+		PDFOCRMinScoreDelta:       cfg.PDFOCRMinScoreDelta,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)

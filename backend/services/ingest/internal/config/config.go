@@ -12,24 +12,31 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                        string `yaml:"port"`
-	LogLevel                    string `yaml:"logLevel"`
-	DatabaseURL                 string `yaml:"databaseURL"`
-	BookServiceURL              string `yaml:"bookServiceURL"`
-	IndexerURL                  string `yaml:"indexerURL"`
-	InternalJWTPrivateKeyPath   string `yaml:"internalJwtPrivateKeyPath"`
-	InternalJWTPublicKeyPath    string `yaml:"internalJwtPublicKeyPath"`
-	InternalJWTVerifyPublicKeys string `yaml:"internalJwtVerifyPublicKeys"`
-	InternalJWTKeyID            string `yaml:"internalJwtKeyId"`
-	RedisAddr                   string `yaml:"redisAddr"`
-	RedisPassword               string `yaml:"redisPassword"`
-	QueueName                   string `yaml:"queueName"`
-	QueueGroup                  string `yaml:"queueGroup"`
-	QueueConcurrency            int    `yaml:"queueConcurrency"`
-	QueueMaxRetries             int    `yaml:"queueMaxRetries"`
-	QueueRetryDelaySeconds      int    `yaml:"queueRetryDelaySeconds"`
-	ChunkSize                   int    `yaml:"chunkSize"`
-	ChunkOverlap                int    `yaml:"chunkOverlap"`
+	Port                        string  `yaml:"port"`
+	LogLevel                    string  `yaml:"logLevel"`
+	DatabaseURL                 string  `yaml:"databaseURL"`
+	BookServiceURL              string  `yaml:"bookServiceURL"`
+	IndexerURL                  string  `yaml:"indexerURL"`
+	InternalJWTPrivateKeyPath   string  `yaml:"internalJwtPrivateKeyPath"`
+	InternalJWTPublicKeyPath    string  `yaml:"internalJwtPublicKeyPath"`
+	InternalJWTVerifyPublicKeys string  `yaml:"internalJwtVerifyPublicKeys"`
+	InternalJWTKeyID            string  `yaml:"internalJwtKeyId"`
+	RedisAddr                   string  `yaml:"redisAddr"`
+	RedisPassword               string  `yaml:"redisPassword"`
+	QueueName                   string  `yaml:"queueName"`
+	QueueGroup                  string  `yaml:"queueGroup"`
+	QueueConcurrency            int     `yaml:"queueConcurrency"`
+	QueueMaxRetries             int     `yaml:"queueMaxRetries"`
+	QueueRetryDelaySeconds      int     `yaml:"queueRetryDelaySeconds"`
+	ChunkSize                   int     `yaml:"chunkSize"`
+	ChunkOverlap                int     `yaml:"chunkOverlap"`
+	OCREnabled                  bool    `yaml:"ocrEnabled"`
+	OCRCommand                  string  `yaml:"ocrCommand"`
+	OCRDevice                   string  `yaml:"ocrDevice"`
+	OCRTimeoutSeconds           int     `yaml:"ocrTimeoutSeconds"`
+	PDFMinPageRunes             int     `yaml:"pdfMinPageRunes"`
+	PDFMinPageScore             float64 `yaml:"pdfMinPageScore"`
+	PDFOCRMinScoreDelta         float64 `yaml:"pdfOcrMinScoreDelta"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -98,6 +105,37 @@ func Load(path string) (FileConfig, error) {
 			cfg.ChunkOverlap = n
 		}
 	}
+	if v := os.Getenv("INGEST_OCR_ENABLED"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.OCREnabled = enabled
+		}
+	}
+	if v := os.Getenv("INGEST_OCR_COMMAND"); v != "" {
+		cfg.OCRCommand = v
+	}
+	if v := os.Getenv("INGEST_OCR_DEVICE"); v != "" {
+		cfg.OCRDevice = v
+	}
+	if v := os.Getenv("INGEST_OCR_TIMEOUT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.OCRTimeoutSeconds = n
+		}
+	}
+	if v := os.Getenv("INGEST_PDF_MIN_PAGE_RUNES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.PDFMinPageRunes = n
+		}
+	}
+	if v := os.Getenv("INGEST_PDF_MIN_PAGE_SCORE"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.PDFMinPageScore = n
+		}
+	}
+	if v := os.Getenv("INGEST_PDF_OCR_MIN_SCORE_DELTA"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.PDFOCRMinScoreDelta = n
+		}
+	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
 	}
@@ -131,6 +169,21 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.ChunkOverlap >= cfg.ChunkSize {
 		return errors.New("config: chunkOverlap must be smaller than chunkSize")
+	}
+	if cfg.OCREnabled && strings.TrimSpace(cfg.OCRCommand) == "" {
+		return errors.New("config: ocrCommand is required when ocrEnabled=true")
+	}
+	if cfg.OCRTimeoutSeconds < 0 {
+		return errors.New("config: ocrTimeoutSeconds must be >= 0")
+	}
+	if cfg.PDFMinPageRunes < 0 {
+		return errors.New("config: pdfMinPageRunes must be >= 0")
+	}
+	if cfg.PDFMinPageScore < 0 || cfg.PDFMinPageScore > 1 {
+		return errors.New("config: pdfMinPageScore must be between 0 and 1")
+	}
+	if cfg.PDFOCRMinScoreDelta < 0 || cfg.PDFOCRMinScoreDelta > 1 {
+		return errors.New("config: pdfOcrMinScoreDelta must be between 0 and 1")
 	}
 	return nil
 }

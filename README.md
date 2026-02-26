@@ -132,6 +132,10 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 ## 开发与测试
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
+- 可选 OCR（扫描版 PDF）：
+  - 安装官方 PaddleOCR CLI（参考官方仓库文档）：`python -m pip install paddleocr`
+  - 打开 `INGEST_OCR_ENABLED=true`，并按需设置 `INGEST_OCR_COMMAND`/`INGEST_OCR_DEVICE`
+  - 当前策略：按页质量触发与融合（native 提取低质量页优先采用 OCR 结果）
 
 ## 后续步骤（建议）
 1) 可观测性：指标/追踪、队列与索引处理监控。
