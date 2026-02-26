@@ -328,14 +328,18 @@ export function LibraryPage() {
   )
 
   const refreshChatThreadSummaries = useCallback(() => {
-    const summaries = readStoredChatThreadSummaries()
+    if (!sessionUser) {
+      setChatThreadSummaries([])
+      return
+    }
+    const summaries = readStoredChatThreadSummaries(sessionUser.id)
     setChatThreadSummaries(
       [...summaries].sort((a, b) => {
         if (a.updatedAt === b.updatedAt) return 0
         return b.updatedAt - a.updatedAt
       }),
     )
-  }, [])
+  }, [sessionUser])
 
   useEffect(() => {
     if (!hasPendingBooks) return undefined

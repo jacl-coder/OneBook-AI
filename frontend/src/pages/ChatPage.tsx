@@ -17,15 +17,19 @@ import {
   type ChatThread,
   createEmptyThread,
   createMessageId,
+  generateSmartThreadTitle,
   getRelativeTimeLabel,
   getThreadPreview,
   headingPool,
   nowTimestamp,
   quickActions,
+  readStoredActiveThreadID,
+  readStoredChatThreads,
   summarizeThreads,
-  truncateThreadTitle,
   type ListBooksResponse,
   updateThreadAndMoveTop,
+  writeStoredActiveThreadID,
+  writeStoredChatThreads,
   writeStoredChatThreadSummaries,
 } from '@/pages/chat/shared'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
@@ -84,9 +88,12 @@ const chatTw = {
   alertBox:
     'flex items-center justify-between gap-[10px] rounded-[12px] border border-[#f4b0b4] bg-[#fff5f6] px-3 py-[10px] text-[13px] text-[#9f1820]',
   alertAction: 'cursor-pointer rounded-[9999px] border-0 bg-[#9f1820] px-[10px] py-1 text-[12px] text-white',
-  assistantBadge:
-    'mt-[2px] inline-flex h-[26px] w-[26px] items-center justify-center rounded-[9999px] bg-[#0d0d0d] text-[11px] font-semibold text-white max-[767px]:hidden',
-  messageGrid: 'grid w-full gap-2',
+  messageUserRow: 'flex w-full justify-end',
+  messageUserBubble:
+    'max-w-[min(72%,560px)] whitespace-pre-wrap rounded-[20px] bg-[#e9e9eb] px-[14px] py-[10px] text-[15px] leading-[23px] text-[#0d0d0d] max-[767px]:max-w-[86%] max-[767px]:text-[14px] max-[767px]:leading-[21px]',
+  messageAssistantRow: 'grid w-full items-start gap-3',
+  messageAssistantBody: 'grid w-full max-w-[780px] gap-3',
+  messageAssistantText: 'whitespace-pre-wrap text-[17px] leading-[31px] text-[#171717] max-[767px]:text-[15px] max-[767px]:leading-[26px]',
   heroShell:
     'relative flex min-h-[calc(42svh-52px)] basis-auto shrink-0 flex-col justify-end max-[760px]:min-h-auto max-[760px]:justify-start',
   heroCenter: 'flex justify-center',
@@ -134,18 +141,19 @@ const chatTw = {
   chatSidebarOpenIcon: 'block h-[18px] w-[18px]',
   chatModelButton: 'inline-flex h-[34px] cursor-pointer items-center gap-1 rounded-[8px] border-0 bg-transparent px-2 text-[16px] leading-6 font-medium text-[#0d0d0d] hover:bg-[#f4f4f4] max-[767px]:text-[15px]',
   chatTopBarRight: 'inline-flex items-center gap-2',
-  chatConversationSection: 'flex min-h-0 justify-center',
-  chatConversationScroller: 'w-full overflow-auto px-[18px] py-6 max-[767px]:px-3 max-[767px]:py-[18px]',
-  chatConversationStack: 'mx-auto grid max-w-[760px] gap-5',
+  chatConversationSection: 'flex min-h-0 justify-center bg-white',
+  chatConversationScroller: 'w-full overflow-auto px-[20px] py-7 max-[767px]:px-3 max-[767px]:py-5',
+  chatConversationStack: 'mx-auto grid w-full max-w-[920px] gap-7',
   chatTimestampRow: 'flex items-center justify-center',
-  chatTimestampPill: 'rounded-[9999px] border border-[rgba(0,0,0,0.12)] bg-white px-[10px] py-1 text-[12px] text-[#6d6d6d]',
-  sourceList: 'flex flex-wrap gap-2',
-  sourceCard: 'grid min-w-[180px] cursor-pointer gap-[2px] rounded-[10px] border border-[rgba(0,0,0,0.14)] bg-white px-[10px] py-2 text-left hover:bg-[#f8f8f8]',
+  chatTimestampPill: 'rounded-[9999px] border border-[rgba(0,0,0,0.08)] bg-white/75 px-[10px] py-1 text-[12px] text-[#686868] backdrop-blur-[1px]',
+  sourceList: 'flex max-w-[780px] flex-wrap gap-2',
+  sourceCard:
+    'grid min-w-[190px] max-w-[280px] cursor-pointer gap-[3px] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white px-[11px] py-[9px] text-left transition-colors duration-150 hover:bg-[#f8f8f8]',
   sourceCardTitle: 'text-[12px] leading-4 text-[#1b1b1b]',
   sourceCardLocation: 'text-[11px] leading-[14px] text-[#6f6f6f]',
   sourceCardSnippet: 'text-[11px] leading-[15px] text-[#7b7b7b]',
-  assistantTypingRow: 'grid items-start justify-items-start gap-[10px] [grid-template-columns:auto_minmax(0,1fr)] max-[767px]:grid-cols-[minmax(0,1fr)] max-[767px]:gap-2',
-  assistantTypingBubble: 'inline-flex h-9 w-[72px] items-center justify-center gap-[6px] rounded-[18px] border border-[rgba(0,0,0,0.1)] bg-white',
+  assistantTypingRow: 'grid w-full items-start gap-3',
+  assistantTypingBubble: 'inline-flex h-8 w-[64px] items-center justify-center gap-[6px] rounded-[9999px] bg-white/85',
   typingDotOne: 'h-1.5 w-1.5 rounded-[9999px] bg-[#7d7d7d] [animation:chatgpt-app-bounce_1.2s_infinite_ease-in-out]',
   typingDotTwo: 'h-1.5 w-1.5 rounded-[9999px] bg-[#7d7d7d] [animation:chatgpt-app-bounce_1.2s_infinite_ease-in-out] [animation-delay:0.12s]',
   typingDotThree: 'h-1.5 w-1.5 rounded-[9999px] bg-[#7d7d7d] [animation:chatgpt-app-bounce_1.2s_infinite_ease-in-out] [animation-delay:0.24s]',
@@ -227,6 +235,7 @@ export function ChatPage() {
   const [books, setBooks] = useState<BookSummary[]>([])
   const [selectedBookId, setSelectedBookId] = useState('')
   const [bookListErrorText, setBookListErrorText] = useState('')
+  const [hasHydratedThreadState, setHasHydratedThreadState] = useState(false)
 
   const authEmailId = useId()
   const authErrorId = useId()
@@ -338,6 +347,27 @@ export function ChatPage() {
   }, [])
 
   useEffect(() => {
+    if (!sessionUser) {
+      setThreads([createEmptyThread()])
+      setActiveThreadId('')
+      setHasHydratedThreadState(false)
+      return
+    }
+
+    const storedThreads = readStoredChatThreads(sessionUser.id)
+    const restoredThreads = storedThreads.length > 0 ? storedThreads : [createEmptyThread()]
+    const storedActiveThreadID = readStoredActiveThreadID(sessionUser.id)
+    const nextActiveThreadID =
+      storedActiveThreadID && restoredThreads.some((thread) => thread.id === storedActiveThreadID)
+        ? storedActiveThreadID
+        : restoredThreads[0].id
+
+    setThreads(restoredThreads)
+    setActiveThreadId(nextActiveThreadID)
+    setHasHydratedThreadState(true)
+  }, [sessionUser])
+
+  useEffect(() => {
     if (activeThreadId) return
     if (!threads.length) return
     setActiveThreadId(threads[0].id)
@@ -349,9 +379,16 @@ export function ChatPage() {
   }, [sessionUser, loadReadyBooks])
 
   useEffect(() => {
-    if (!sessionUser) return
-    writeStoredChatThreadSummaries(summarizeThreads(threads))
-  }, [sessionUser, threads])
+    if (!sessionUser || !hasHydratedThreadState) return
+    writeStoredChatThreads(sessionUser.id, threads)
+    writeStoredChatThreadSummaries(summarizeThreads(threads), sessionUser.id)
+  }, [sessionUser, threads, hasHydratedThreadState])
+
+  useEffect(() => {
+    if (!sessionUser || !hasHydratedThreadState) return
+    if (!activeThreadId) return
+    writeStoredActiveThreadID(sessionUser.id, activeThreadId)
+  }, [sessionUser, activeThreadId, hasHydratedThreadState])
 
   function closeAuthModal() {
     setIsAuthOpen(false)
@@ -436,7 +473,7 @@ export function ChatPage() {
     setThreads((previous) =>
       updateThreadAndMoveTop(previous, threadId, (thread) => ({
         ...thread,
-        title: thread.title === '新对话' ? truncateThreadTitle(trimmedPrompt) : thread.title,
+        title: thread.title === '新对话' ? generateSmartThreadTitle(trimmedPrompt) : thread.title,
         updatedAt: now,
         status: 'sending',
         errorText: '',
@@ -830,42 +867,34 @@ export function ChatPage() {
                           <span className={chatTw.chatTimestampPill}>{getRelativeTimeLabel(activeThread.updatedAt)}</span>
                         </div>
 
-                        {activeThread.messages.map((message) => (
-                          <article
-                            key={message.id}
-                            className={
-                              message.role === 'user'
-                                ? 'grid justify-items-end gap-2'
-                                : 'grid items-start justify-items-start gap-[10px] [grid-template-columns:auto_minmax(0,1fr)] max-[767px]:grid-cols-[minmax(0,1fr)] max-[767px]:gap-2'
-                            }
-                          >
-                            {message.role === 'assistant' ? <div className={chatTw.assistantBadge}>AI</div> : null}
-                            <div className={chatTw.messageGrid}>
-                              <div className={cx(
-                                'max-w-[min(92%,720px)] whitespace-pre-wrap rounded-[18px] px-[14px] py-3 text-[15px] leading-[23px] max-[767px]:max-w-full max-[767px]:text-[14px] max-[767px]:leading-[22px]',
-                                message.role === 'user'
-                                  ? 'bg-[#f1f1f1] text-[#0d0d0d]'
-                                  : 'border border-[rgba(0,0,0,0.1)] bg-white text-[#0d0d0d]',
-                              )}>{message.text}</div>
-                              {message.role === 'assistant' && message.sources?.length ? (
-                                <div className={chatTw.sourceList}>
-                                  {message.sources.map((source) => (
-                                    <button key={`${source.label}-${source.location}`} type="button" className={chatTw.sourceCard}>
-                                      <span className={chatTw.sourceCardTitle}>{source.label}</span>
-                                      <span className={chatTw.sourceCardLocation}>{source.location}</span>
-                                      {source.snippet ? <span className={chatTw.sourceCardSnippet}>{source.snippet}</span> : null}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </article>
-                        ))}
+                        {activeThread.messages.map((message) =>
+                          message.role === 'user' ? (
+                            <article key={message.id} className={chatTw.messageUserRow}>
+                              <div className={chatTw.messageUserBubble}>{message.text}</div>
+                            </article>
+                          ) : (
+                            <article key={message.id} className={chatTw.messageAssistantRow}>
+                              <div className={chatTw.messageAssistantBody}>
+                                <div className={chatTw.messageAssistantText}>{message.text}</div>
+                                {message.sources?.length ? (
+                                  <div className={chatTw.sourceList}>
+                                    {message.sources.map((source) => (
+                                      <button key={`${source.label}-${source.location}`} type="button" className={chatTw.sourceCard}>
+                                        <span className={chatTw.sourceCardTitle}>{source.label}</span>
+                                        <span className={chatTw.sourceCardLocation}>{source.location}</span>
+                                        {source.snippet ? <span className={chatTw.sourceCardSnippet}>{source.snippet}</span> : null}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </article>
+                          ),
+                        )}
 
                         {activeThreadIsSending ? (
                           <article className={chatTw.assistantTypingRow}>
-                            <div className={chatTw.assistantBadge}>AI</div>
-                            <div className={chatTw.messageGrid}>
+                            <div className={chatTw.messageAssistantBody}>
                               <div className={chatTw.assistantTypingBubble}>
                                 <span className={chatTw.typingDotOne} />
                                 <span className={chatTw.typingDotTwo} />
