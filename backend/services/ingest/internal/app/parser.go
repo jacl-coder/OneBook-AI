@@ -243,10 +243,11 @@ func (a *App) parseEPUB(path string) ([]chunkPayload, error) {
 			chunks = append(chunks, chunkPayload{
 				Content: part,
 				Metadata: map[string]string{
-					"source_type": "epub",
-					"source_ref":  fmt.Sprintf("section:%s", baseName),
-					"section":     baseName,
-					"chunk":       strconv.Itoa(idx),
+					"source_type":    "epub",
+					"source_ref":     fmt.Sprintf("section:%s", baseName),
+					"section":        baseName,
+					"chunk":          strconv.Itoa(idx),
+					"extract_method": "epub_html_parser",
 				},
 			})
 		}
@@ -266,9 +267,10 @@ func (a *App) parseText(path string) ([]chunkPayload, error) {
 		chunks = append(chunks, chunkPayload{
 			Content: part,
 			Metadata: map[string]string{
-				"source_type": "text",
-				"source_ref":  "text",
-				"chunk":       strconv.Itoa(idx),
+				"source_type":    "text",
+				"source_ref":     "text",
+				"chunk":          strconv.Itoa(idx),
+				"extract_method": "plain_text_parser",
 			},
 		})
 	}

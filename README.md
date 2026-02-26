@@ -136,6 +136,10 @@ docker build -f backend/Dockerfile -t onebook-gateway \
   - 安装官方 PaddleOCR CLI（参考官方仓库文档）：`python -m pip install paddleocr`
   - 打开 `INGEST_OCR_ENABLED=true`，并按需设置 `INGEST_OCR_COMMAND`/`INGEST_OCR_DEVICE`
   - 当前策略：按页质量触发与融合（native 提取低质量页优先采用 OCR 结果）
+  - 阈值参数：
+    - `INGEST_PDF_MIN_PAGE_RUNES`：页最小字符数门槛，低于门槛判为低质量页
+    - `INGEST_PDF_MIN_PAGE_SCORE`：页质量分阈值（0~1）
+    - `INGEST_PDF_OCR_MIN_SCORE_DELTA`：OCR 结果相对 native 的最小增益阈值
 
 ## 后续步骤（建议）
 1) 可观测性：指标/追踪、队列与索引处理监控。
