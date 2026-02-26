@@ -104,3 +104,175 @@ code,
 .mono {
   font-family: 'IBM Plex Mono', monospace;
 }
+
+.chat-md {
+  color: inherit;
+  word-break: break-word;
+}
+
+.chat-md > *:first-child {
+  margin-top: 0;
+}
+
+.chat-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.chat-md p,
+.chat-md ul,
+.chat-md ol,
+.chat-md blockquote,
+.chat-md pre,
+.chat-md table,
+.chat-md hr {
+  margin: 0.7em 0;
+}
+
+.chat-md ul,
+.chat-md ol {
+  padding-left: 1.35em;
+}
+
+.chat-md li + li {
+  margin-top: 0.28em;
+}
+
+.chat-md h1,
+.chat-md h2,
+.chat-md h3,
+.chat-md h4 {
+  margin: 0.9em 0 0.35em;
+  line-height: 1.35;
+}
+
+.chat-md h1 {
+  font-size: 1.16em;
+}
+
+.chat-md h2 {
+  font-size: 1.1em;
+}
+
+.chat-md h3,
+.chat-md h4 {
+  font-size: 1.04em;
+}
+
+.chat-md strong {
+  font-weight: 600;
+}
+
+.chat-md blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.16);
+  margin-left: 0;
+  padding: 0.2em 0 0.2em 0.8em;
+  color: rgba(20, 20, 20, 0.82);
+}
+
+.chat-md__code {
+  border-radius: 6px;
+  background: #f2f2f2;
+  padding: 0.08em 0.4em;
+  font-size: 0.93em;
+}
+
+.chat-md__pre {
+  overflow-x: auto;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 0.74em 0.9em;
+  line-height: 1.65;
+}
+
+.chat-md__pre .chat-md__code {
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.chat-md__pre .hljs {
+  display: block;
+  color: #1f2937;
+  background: transparent;
+}
+
+.chat-md__pre .hljs-comment,
+.chat-md__pre .hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.chat-md__pre .hljs-keyword,
+.chat-md__pre .hljs-selector-tag,
+.chat-md__pre .hljs-literal,
+.chat-md__pre .hljs-name,
+.chat-md__pre .hljs-type,
+.chat-md__pre .hljs-strong {
+  color: #9f1239;
+}
+
+.chat-md__pre .hljs-string,
+.chat-md__pre .hljs-attr,
+.chat-md__pre .hljs-template-tag,
+.chat-md__pre .hljs-template-variable {
+  color: #166534;
+}
+
+.chat-md__pre .hljs-title,
+.chat-md__pre .hljs-function,
+.chat-md__pre .hljs-section,
+.chat-md__pre .hljs-selector-id {
+  color: #1d4ed8;
+}
+
+.chat-md__pre .hljs-number,
+.chat-md__pre .hljs-symbol,
+.chat-md__pre .hljs-bullet,
+.chat-md__pre .hljs-variable,
+.chat-md__pre .hljs-addition {
+  color: #b45309;
+}
+
+.chat-md__pre .hljs-operator,
+.chat-md__pre .hljs-punctuation,
+.chat-md__pre .hljs-subst,
+.chat-md__pre .hljs-deletion {
+  color: #374151;
+}
+
+.chat-md__table-wrap {
+  overflow-x: auto;
+}
+
+.chat-md__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.chat-md__table th,
+.chat-md__table td {
+  border: 1px solid #ececec;
+  padding: 0.44em 0.52em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-md__table th {
+  background: #f8f8f8;
+  font-weight: 600;
+}
+
+.chat-md__link {
+  color: #0b5bd3;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-md__link:hover {
+  color: #0a4db3;
+}
+
+.chat-md__link-disabled {
+  color: inherit;
+}
