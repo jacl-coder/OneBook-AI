@@ -130,18 +130,6 @@ export function getThreadPreview(thread: ChatThread): string {
   return last.text.length <= 34 ? last.text : `${last.text.slice(0, 34)}…`
 }
 
-export function getRelativeTimeLabel(timestamp: number): string {
-  const diff = nowTimestamp() - timestamp
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))} 分钟前`
-  if (diff < 86_400_000) return `${Math.max(1, Math.floor(diff / 3_600_000))} 小时前`
-  if (diff < 172_800_000) return '昨天'
-  const date = new Date(timestamp)
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${month}-${day}`
-}
-
 export function createEmptyThread(): ChatThread {
   return {
     id: createThreadId(),
