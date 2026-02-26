@@ -56,6 +56,10 @@ export const router = createBrowserRouter([
     element: <ChatPage />,
   },
   {
+    path: '/chat/:conversationId',
+    element: <ChatPage />,
+  },
+  {
     path: '/library',
     element: <LibraryPage />,
   },

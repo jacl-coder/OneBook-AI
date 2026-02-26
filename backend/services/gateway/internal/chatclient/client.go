@@ -3,7 +3,9 @@ package chatclient
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -35,8 +37,8 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) AskQuestion(requestID, token, bookID, question string) (domain.Answer, error) {
-	payload := chatRequest{BookID: bookID, Question: question}
+func (c *Client) AskQuestion(requestID, token, conversationID, bookID, question string) (domain.Answer, error) {
+	payload := chatRequest{ConversationID: strings.TrimSpace(conversationID), BookID: bookID, Question: question}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return domain.Answer{}, err
@@ -54,6 +56,56 @@ func (c *Client) AskQuestion(requestID, token, bookID, question string) (domain.
 		return domain.Answer{}, err
 	}
 	return ans, nil
+}
+
+func (c *Client) ListConversations(requestID, token string, limit int) ([]domain.Conversation, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	endpoint := c.baseURL + "/conversations"
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+
+	var resp struct {
+		Items []domain.Conversation `json:"items"`
+	}
+	if err := c.do(req, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+func (c *Client) ListConversationMessages(requestID, token, conversationID string, limit int) ([]domain.Message, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	endpoint := fmt.Sprintf("%s/conversations/%s/messages", c.baseURL, url.PathEscape(strings.TrimSpace(conversationID)))
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+
+	var resp struct {
+		Items []domain.Message `json:"items"`
+	}
+	if err := c.do(req, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
 }
 
 func (c *Client) do(req *http.Request, out any) error {
@@ -98,6 +150,7 @@ func addRequestIDHeader(req *http.Request, requestID string) {
 }
 
 type chatRequest struct {
-	BookID   string `json:"bookId"`
-	Question string `json:"question"`
+	ConversationID string `json:"conversationId,omitempty"`
+	BookID         string `json:"bookId"`
+	Question       string `json:"question"`
 }

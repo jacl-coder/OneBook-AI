@@ -31,12 +31,25 @@ type BookModel struct {
 	UpdatedAt        time.Time `gorm:"not null"`
 }
 
+type ConversationModel struct {
+	ID            string     `gorm:"primaryKey"`
+	UserID        string     `gorm:"not null;index"`
+	BookID        *string    `gorm:"index"`
+	Title         string     `gorm:"not null"`
+	LastMessageAt *time.Time `gorm:"index"`
+	CreatedAt     time.Time  `gorm:"not null"`
+	UpdatedAt     time.Time  `gorm:"not null"`
+}
+
 type MessageModel struct {
-	ID        string    `gorm:"primaryKey"`
-	BookID    string    `gorm:"not null;index"`
-	Role      string    `gorm:"not null"`
-	Content   string    `gorm:"not null"`
-	CreatedAt time.Time `gorm:"not null;index"`
+	ID             string         `gorm:"primaryKey"`
+	ConversationID *string        `gorm:"index"`
+	UserID         string         `gorm:"index"`
+	BookID         string         `gorm:"not null;index"`
+	Role           string         `gorm:"not null"`
+	Content        string         `gorm:"not null"`
+	Sources        datatypes.JSON `gorm:"type:jsonb"`
+	CreatedAt      time.Time      `gorm:"not null;index"`
 }
 
 type ChunkModel struct {

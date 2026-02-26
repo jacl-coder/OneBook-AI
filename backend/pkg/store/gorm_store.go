@@ -75,7 +75,7 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
 			return fmt.Errorf("create pgvector extension: %w", err)
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf(`
@@ -128,6 +128,9 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 				WHERE NOT EXISTS (SELECT 1 FROM book_models b WHERE b.id = c.book_id);
 				DELETE FROM message_models m
 				WHERE NOT EXISTS (SELECT 1 FROM book_models b WHERE b.id = m.book_id);
+				DELETE FROM message_models m
+				WHERE m.conversation_id IS NOT NULL
+				  AND NOT EXISTS (SELECT 1 FROM conversation_models c WHERE c.id = m.conversation_id);
 				IF NOT EXISTS (
 					SELECT 1 FROM information_schema.table_constraints
 					WHERE table_schema = 'public'
@@ -147,6 +150,16 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 					ALTER TABLE message_models
 					ADD CONSTRAINT message_models_book_id_fkey
 					FOREIGN KEY (book_id) REFERENCES book_models(id) ON DELETE CASCADE;
+				END IF;
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE table_schema = 'public'
+					AND table_name = 'message_models'
+					AND constraint_name = 'message_models_conversation_id_fkey'
+				) THEN
+					ALTER TABLE message_models
+					ADD CONSTRAINT message_models_conversation_id_fkey
+					FOREIGN KEY (conversation_id) REFERENCES conversation_models(id) ON DELETE CASCADE;
 				END IF;
 			END $$;
 		`).Error; err != nil {
@@ -325,6 +338,9 @@ func (s *GormStore) GetBook(id string) (domain.Book, bool, error) {
 // DeleteBook removes book and messages (chunks handled by FK cascade).
 func (s *GormStore) DeleteBook(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&ConversationModel{}, "book_id = ?", id).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&MessageModel{}, "book_id = ?", id).Error; err != nil {
 			return err
 		}
@@ -335,10 +351,70 @@ func (s *GormStore) DeleteBook(id string) error {
 	})
 }
 
+// CreateConversation creates a new conversation record.
+func (s *GormStore) CreateConversation(conversation domain.Conversation) error {
+	model := conversationToModel(conversation)
+	return s.db.Create(&model).Error
+}
+
+// GetConversation returns one conversation by ID.
+func (s *GormStore) GetConversation(id string) (domain.Conversation, bool, error) {
+	var model ConversationModel
+	if err := s.db.First(&model, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.Conversation{}, false, nil
+		}
+		return domain.Conversation{}, false, err
+	}
+	return conversationFromModel(model), true, nil
+}
+
+// ListConversationsByUser returns latest conversations of a user.
+func (s *GormStore) ListConversationsByUser(userID string, limit int) ([]domain.Conversation, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var models []ConversationModel
+	if err := s.db.Where("user_id = ?", userID).
+		Order("last_message_at DESC NULLS LAST").
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	items := make([]domain.Conversation, 0, len(models))
+	for _, model := range models {
+		items = append(items, conversationFromModel(model))
+	}
+	return items, nil
+}
+
+// UpdateConversation refreshes title and last-message timestamp.
+func (s *GormStore) UpdateConversation(id string, title string, lastMessageAt time.Time) error {
+	updates := map[string]any{
+		"updated_at": time.Now().UTC(),
+	}
+	if strings.TrimSpace(title) != "" {
+		updates["title"] = strings.TrimSpace(title)
+	}
+	if !lastMessageAt.IsZero() {
+		updates["last_message_at"] = lastMessageAt.UTC()
+	}
+	return s.db.Model(&ConversationModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // AppendMessage records a message.
 func (s *GormStore) AppendMessage(bookID string, msg domain.Message) error {
 	model := messageToModel(msg)
 	model.BookID = bookID
+	return s.db.Create(&model).Error
+}
+
+// AppendConversationMessage records a conversation message.
+func (s *GormStore) AppendConversationMessage(conversationID string, msg domain.Message) error {
+	model := messageToModel(msg)
+	model.ConversationID = &conversationID
+	model.BookID = msg.BookID
 	return s.db.Create(&model).Error
 }
 
@@ -357,6 +433,24 @@ func (s *GormStore) ListMessages(bookID string, limit int) ([]domain.Message, er
 	msgs := make([]domain.Message, 0, len(models))
 	for i := len(models) - 1; i >= 0; i-- {
 		msgs = append(msgs, messageFromModel(models[i]))
+	}
+	return msgs, nil
+}
+
+// ListConversationMessages returns recent messages for a conversation.
+func (s *GormStore) ListConversationMessages(conversationID string, limit int) ([]domain.Message, error) {
+	query := s.db.Where("conversation_id = ?", conversationID).
+		Order("created_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var models []MessageModel
+	if err := query.Find(&models).Error; err != nil {
+		return nil, err
+	}
+	msgs := make([]domain.Message, 0, len(models))
+	for _, model := range models {
+		msgs = append(msgs, messageFromModel(model))
 	}
 	return msgs, nil
 }
@@ -494,23 +588,76 @@ func bookFromModel(m BookModel) domain.Book {
 	}
 }
 
+func conversationToModel(c domain.Conversation) ConversationModel {
+	var bookID *string
+	if strings.TrimSpace(c.BookID) != "" {
+		value := strings.TrimSpace(c.BookID)
+		bookID = &value
+	}
+	return ConversationModel{
+		ID:            c.ID,
+		UserID:        c.UserID,
+		BookID:        bookID,
+		Title:         c.Title,
+		LastMessageAt: c.LastMessageAt,
+		CreatedAt:     c.CreatedAt,
+		UpdatedAt:     c.UpdatedAt,
+	}
+}
+
+func conversationFromModel(m ConversationModel) domain.Conversation {
+	bookID := ""
+	if m.BookID != nil {
+		bookID = strings.TrimSpace(*m.BookID)
+	}
+	return domain.Conversation{
+		ID:            m.ID,
+		UserID:        m.UserID,
+		BookID:        bookID,
+		Title:         m.Title,
+		LastMessageAt: m.LastMessageAt,
+		CreatedAt:     m.CreatedAt,
+		UpdatedAt:     m.UpdatedAt,
+	}
+}
+
 func messageToModel(msg domain.Message) MessageModel {
+	var conversationID *string
+	if strings.TrimSpace(msg.ConversationID) != "" {
+		value := strings.TrimSpace(msg.ConversationID)
+		conversationID = &value
+	}
+	rawSources, _ := json.Marshal(msg.Sources)
 	return MessageModel{
-		ID:        msg.ID,
-		BookID:    msg.BookID,
-		Role:      msg.Role,
-		Content:   msg.Content,
-		CreatedAt: msg.CreatedAt,
+		ID:             msg.ID,
+		ConversationID: conversationID,
+		UserID:         msg.UserID,
+		BookID:         msg.BookID,
+		Role:           msg.Role,
+		Content:        msg.Content,
+		Sources:        rawSources,
+		CreatedAt:      msg.CreatedAt,
 	}
 }
 
 func messageFromModel(m MessageModel) domain.Message {
+	conversationID := ""
+	if m.ConversationID != nil {
+		conversationID = strings.TrimSpace(*m.ConversationID)
+	}
+	var sources []domain.Source
+	if len(m.Sources) > 0 {
+		_ = json.Unmarshal(m.Sources, &sources)
+	}
 	return domain.Message{
-		ID:        m.ID,
-		BookID:    m.BookID,
-		Role:      m.Role,
-		Content:   m.Content,
-		CreatedAt: m.CreatedAt,
+		ID:             m.ID,
+		ConversationID: conversationID,
+		UserID:         m.UserID,
+		BookID:         m.BookID,
+		Role:           m.Role,
+		Content:        m.Content,
+		Sources:        sources,
+		CreatedAt:      m.CreatedAt,
 	}
 }
 

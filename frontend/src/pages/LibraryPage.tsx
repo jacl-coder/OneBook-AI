@@ -6,9 +6,10 @@ import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
 import {
   CHAT_ICON_SPRITE_URL,
-  readStoredChatThreadSummaries,
+  conversationQueryKeys,
+  fetchConversationSummaries,
   getRelativeTimeLabel,
-  type ChatThreadSummary,
+  useChatSidebarState,
 } from '@/pages/chat/shared'
 import {
   deleteBook,
@@ -185,17 +186,37 @@ export function LibraryPage() {
   const libraryNavButtonRef = useRef<HTMLButtonElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
-  const [chatSearch, setChatSearch] = useState('')
-  const [chatThreadSummaries, setChatThreadSummaries] = useState<ChatThreadSummary[]>([])
   const [actionErrorText, setActionErrorText] = useState('')
   const [deletingBookID, setDeletingBookID] = useState('')
+
+  const {
+    searchValue: chatSearch,
+    setSearchValue: setChatSearch,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    isDesktopSidebarCollapsed,
+    isHistoryExpanded,
+    toggleHistoryExpanded,
+    isSidebarExpanded,
+    isApplePlatform,
+    newChatShortcutKeys,
+    searchShortcutKeys,
+    libraryShortcutKeys,
+    getShortcutAriaLabel,
+    handleCloseSidebar,
+    handleOpenSidebar,
+  } = useChatSidebarState()
 
   const booksQuery = useQuery({
     queryKey: libraryQueryKeys.books,
     queryFn: listBooks,
+  })
+  const conversationsQuery = useQuery({
+    queryKey: conversationQueryKeys.list(sessionUser?.id ?? '', 100),
+    queryFn: () => fetchConversationSummaries(100),
+    enabled: Boolean(sessionUser),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   })
   const { refetch: refetchBooks } = booksQuery
 
@@ -234,6 +255,16 @@ export function LibraryPage() {
     () => books.some((book) => isBookPending(book.status)),
     [books],
   )
+  const chatThreadSummaries = useMemo(
+    () =>
+      (conversationsQuery.data ?? []).map((item) => ({
+        id: item.id,
+        title: item.title || '新对话',
+        updatedAt: Date.parse(item.lastMessageAt || item.updatedAt) || Date.now(),
+        preview: '',
+      })),
+    [conversationsQuery.data],
+  )
   const filteredChatThreads = useMemo(() => {
     const keyword = chatSearch.trim().toLowerCase()
     if (!keyword) return chatThreadSummaries
@@ -252,54 +283,6 @@ export function LibraryPage() {
       })),
     [filteredChatThreads],
   )
-
-  const isApplePlatform = useMemo(() => {
-    if (typeof navigator === 'undefined') return false
-    const uaData = navigator as Navigator & { userAgentData?: { platform?: string } }
-    const platform = uaData.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent ?? ''
-    return /mac|iphone|ipad|ipod/i.test(platform)
-  }, [])
-
-  const newChatShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⇧', '⌘', 'O'] : ['Ctrl', 'Shift', 'O']),
-    [isApplePlatform],
-  )
-  const searchShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⌘', 'K'] : ['Ctrl', 'K']),
-    [isApplePlatform],
-  )
-  const libraryShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⌘', 'B'] : ['Ctrl', 'B']),
-    [isApplePlatform],
-  )
-
-  const getShortcutAriaLabel = useCallback((key: string) => {
-    if (key === '⌘') return '命令'
-    if (key === 'Ctrl') return 'Control'
-    if (key === 'Shift' || key === '⇧') return 'Shift'
-    return undefined
-  }, [])
-
-  const isMobileSidebarViewport = useCallback(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 767px)').matches
-  }, [])
-
-  const handleCloseSidebar = useCallback(() => {
-    if (isMobileSidebarViewport()) {
-      setIsSidebarOpen(false)
-      return
-    }
-    setIsDesktopSidebarCollapsed(true)
-  }, [isMobileSidebarViewport])
-
-  const handleOpenSidebar = useCallback(() => {
-    if (isMobileSidebarViewport()) {
-      setIsSidebarOpen(true)
-      return
-    }
-    setIsDesktopSidebarCollapsed(false)
-  }, [isMobileSidebarViewport])
 
   const handleLogout = useCallback(async () => {
     try {
@@ -321,25 +304,10 @@ export function LibraryPage() {
   }, [navigate])
   const handleSidebarThreadClick = useCallback(
     (threadID: string) => {
-      void threadID
-      navigate('/chat')
+      navigate(`/chat/${threadID}`)
     },
     [navigate],
   )
-
-  const refreshChatThreadSummaries = useCallback(() => {
-    if (!sessionUser) {
-      setChatThreadSummaries([])
-      return
-    }
-    const summaries = readStoredChatThreadSummaries(sessionUser.id)
-    setChatThreadSummaries(
-      [...summaries].sort((a, b) => {
-        if (a.updatedAt === b.updatedAt) return 0
-        return b.updatedAt - a.updatedAt
-      }),
-    )
-  }, [sessionUser])
 
   useEffect(() => {
     if (!hasPendingBooks) return undefined
@@ -348,25 +316,6 @@ export function LibraryPage() {
     }, 2500)
     return () => window.clearInterval(timer)
   }, [hasPendingBooks, refetchBooks])
-
-  useEffect(() => {
-    if (!sessionUser) return
-    refreshChatThreadSummaries()
-
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key.includes('onebook:chat:thread-summaries')) {
-        refreshChatThreadSummaries()
-      }
-    }
-    const onFocus = () => refreshChatThreadSummaries()
-
-    window.addEventListener('storage', onStorage)
-    window.addEventListener('focus', onFocus)
-    return () => {
-      window.removeEventListener('storage', onStorage)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [sessionUser, refreshChatThreadSummaries])
 
   useEffect(() => {
     if (!sessionUser) return
@@ -455,10 +404,6 @@ export function LibraryPage() {
     [deleteMutation],
   )
 
-  const isSidebarExpanded = isMobileSidebarViewport()
-    ? isSidebarOpen
-    : !isDesktopSidebarCollapsed
-
   if (!sessionUser) {
     return (
       <div className="grid min-h-screen place-items-center bg-white p-6 text-[#0d0d0d]" style={uiSansStyle}>
@@ -497,7 +442,7 @@ export function LibraryPage() {
         searchValue={chatSearch}
         onSearchChange={setChatSearch}
         isHistoryExpanded={isHistoryExpanded}
-        onToggleHistoryExpanded={() => setIsHistoryExpanded((prev) => !prev)}
+        onToggleHistoryExpanded={toggleHistoryExpanded}
         threads={sidebarThreads}
         onThreadClick={handleSidebarThreadClick}
         onNewChatClick={handleGoChat}

@@ -156,6 +156,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /conversations:
+    get:
+      tags: [chat-internal]
+      summary: List conversation history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListConversationsResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{id}/messages:
+    get:
+      tags: [chat-internal]
+      summary: List messages of one conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListConversationMessagesResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /ingest/jobs:
     post:
       tags: [ingest]
@@ -397,6 +474,8 @@ components:
     Answer:
       type: object
       properties:
+        conversationId:
+          type: string
         bookId:
           type: string
         question:
@@ -410,15 +489,82 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [bookId, question, answer, sources, createdAt]
+      required: [conversationId, bookId, question, answer, sources, createdAt]
     ChatServiceRequest:
       type: object
       properties:
+        conversationId:
+          type: string
         bookId:
           type: string
         question:
           type: string
       required: [bookId, question]
+    ConversationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        bookId:
+          type: string
+        title:
+          type: string
+        lastMessageAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, userId, title, createdAt, updatedAt]
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        userId:
+          type: string
+        bookId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, conversationId, bookId, role, content, createdAt]
+    ListConversationsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationSummary"
+        count:
+          type: integer
+      required: [items, count]
+    ListConversationMessagesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+        count:
+          type: integer
+      required: [items, count]
     IngestRequest:
       type: object
       properties:

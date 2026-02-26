@@ -48,6 +48,9 @@ const sidebarTw = {
     'group/expando-btn inline-flex w-full cursor-pointer items-center justify-start gap-[2px] rounded-none border-0 bg-transparent px-4 py-[6px] text-left text-[#737373] hover:text-[#5f5f5f]',
   sidebarHistoryTitle: 'm-0 text-[14px] leading-4 font-medium tracking-[0]',
   sidebarThreadList: 'mb-2 grid gap-0 px-2',
+  sidebarThreadButton:
+    'group/thread relative block min-h-[34px] cursor-pointer rounded-[10px] border-0 bg-transparent px-[9px] pr-[30px] text-left text-[#0d0d0d] transition-colors duration-120 hover:bg-[#ececec] focus:outline-none',
+  sidebarThreadButtonActive: '!bg-[#ececec] hover:!bg-[#ececec]',
   sidebarThreadTitle:
     'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] leading-[34px] font-normal',
   sidebarAccountPanel: 'grid gap-[6px] p-2',
@@ -309,9 +312,10 @@ export function ChatSidebar({
                   key={thread.id}
                   type="button"
                   className={cx(
-                    'group/thread relative block min-h-[34px] cursor-pointer rounded-[8px] border-0 bg-transparent px-[9px] pr-[30px] text-left text-[#0d0d0d] hover:bg-[#ececec] focus:outline-none',
-                    thread.active && 'bg-[#e7e7e7]',
+                    sidebarTw.sidebarThreadButton,
+                    thread.active && sidebarTw.sidebarThreadButtonActive,
                   )}
+                  aria-current={thread.active ? 'true' : undefined}
                   onClick={() => onThreadClick(thread.id)}
                   title={thread.preview || undefined}
                 >

@@ -49,19 +49,33 @@ type User struct {
 }
 
 type Message struct {
-	ID        string    `json:"id"`
-	BookID    string    `json:"bookId"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversationId,omitempty"`
+	UserID         string    `json:"userId,omitempty"`
+	BookID         string    `json:"bookId"`
+	Role           string    `json:"role"`
+	Content        string    `json:"content"`
+	Sources        []Source  `json:"sources,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type Conversation struct {
+	ID            string     `json:"id"`
+	UserID        string     `json:"userId"`
+	BookID        string     `json:"bookId,omitempty"`
+	Title         string     `json:"title"`
+	LastMessageAt *time.Time `json:"lastMessageAt,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 type Answer struct {
-	BookID    string    `json:"bookId"`
-	Question  string    `json:"question"`
-	Answer    string    `json:"answer"`
-	Sources   []Source  `json:"sources"`
-	CreatedAt time.Time `json:"createdAt"`
+	ConversationID string    `json:"conversationId,omitempty"`
+	BookID         string    `json:"bookId"`
+	Question       string    `json:"question"`
+	Answer         string    `json:"answer"`
+	Sources        []Source  `json:"sources"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 type Source struct {
