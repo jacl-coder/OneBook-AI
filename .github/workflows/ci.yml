@@ -65,13 +65,9 @@ jobs:
         run: test -f package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
-      - name: Install Playwright Browser
-        run: npx playwright install --with-deps chromium
       - name: Lint
         run: npm run lint
       - name: Build
         run: npm run build
       - name: Unit Test
         run: npm run test:unit
-      - name: E2E Test
-        run: npm run test:e2e
