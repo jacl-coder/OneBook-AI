@@ -32,6 +32,7 @@ import {
 } from '@/pages/chat/shared'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
 import { http } from '@/shared/lib/http/client'
+import { MessageMarkdown } from '@/shared/lib/ui/MessageMarkdown'
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
 
@@ -91,7 +92,7 @@ const chatTw = {
     'max-w-[min(72%,560px)] whitespace-pre-wrap rounded-[20px] bg-[#e9e9eb] px-[14px] py-[10px] text-[15px] leading-[23px] text-[#0d0d0d] max-[767px]:max-w-[86%] max-[767px]:text-[14px] max-[767px]:leading-[21px]',
   messageAssistantRow: 'grid w-full items-start gap-3',
   messageAssistantBody: 'grid w-full max-w-full gap-3',
-  messageAssistantText: 'whitespace-pre-wrap text-[17px] leading-[31px] text-[#171717] max-[767px]:text-[15px] max-[767px]:leading-[26px]',
+  messageAssistantText: 'text-[17px] leading-[31px] text-[#171717] max-[767px]:text-[15px] max-[767px]:leading-[26px]',
   heroShell:
     'relative flex min-h-[calc(42svh-52px)] basis-auto shrink-0 flex-col justify-end max-[760px]:min-h-auto max-[760px]:justify-start',
   heroCenter: 'flex justify-center',
@@ -977,7 +978,9 @@ export function ChatPage() {
                           ) : (
                             <article key={message.id} className={chatTw.messageAssistantRow}>
                               <div className={chatTw.messageAssistantBody}>
-                                <div className={chatTw.messageAssistantText}>{message.text}</div>
+                                <div className={chatTw.messageAssistantText}>
+                                  <MessageMarkdown content={message.text} />
+                                </div>
                                 {message.sources?.length ? (
                                   <div className={chatTw.sourceList}>
                                     {message.sources.map((source) => (
