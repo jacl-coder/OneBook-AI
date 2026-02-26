@@ -38,7 +38,7 @@
 - 公共路由（除认证与健康检查外均需登录态）：
   - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/refresh`，`POST /api/auth/logout`，`GET /api/auth/jwks`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
-  - 对话：`POST /api/chats`（body: bookId + question）
+  - 对话：`POST /api/chats`（body: `bookId` + `question` + 可选 `conversationId`），`GET /api/conversations`，`GET /api/conversations/{id}/messages`
   - 管理员：`GET /api/admin/users`，`PATCH /api/admin/users/{id}`，`GET /api/admin/books`
   - 健康：`/healthz`
 
@@ -125,7 +125,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
   - 业务请求通过 `withCredentials` 自动携带 Cookie
   - `401` 时前端触发 `POST /api/auth/refresh`，成功后自动重放原请求（单飞刷新）
 - 书籍状态建议轮询：上传后轮询 `GET /api/books/{id}`，直到 `status` 为 `ready` 或 `failed`
-- 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`
+- 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`（新建会话时不传 `conversationId`，续聊时传已有 `conversationId`）
 - 详细请求/错误语义与联调清单：`docs/backend/backend_handoff.md`
 
 ## 开发与测试

@@ -45,7 +45,9 @@
 - `GET /api/books/{id}`：查询单本书状态与元数据。
 - `GET /api/books/{id}/download`：获取预签名下载链接。
 - `DELETE /api/books/{id}`：删除书籍。
-- `POST /api/chats`：问答（body: `bookId`, `question`）。
+- `POST /api/chats`：问答（body: `bookId`, `question`, 可选 `conversationId`）。
+- `GET /api/conversations`：会话列表（“你的聊天”）。
+- `GET /api/conversations/{id}/messages`：单会话消息列表。
 - `GET /api/users/me`：当前用户信息。
 - `PATCH /api/users/me`：更新邮箱。
 - `POST /api/users/me/password`：修改密码。
@@ -61,6 +63,8 @@
 
 ### 4.2 对话可用性
 - `POST /api/chats` 仅在书籍 `ready` 时可用。
+- 当 `conversationId` 为空时，后端自动创建新会话并返回 `conversationId`。
+- 当 `conversationId` 有值时，后端在该会话中续聊并回写历史消息。
 - 书籍未就绪时会返回冲突类错误（通常为 `409`）。
 
 ## 5. 错误响应约定

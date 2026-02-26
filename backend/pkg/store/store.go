@@ -27,6 +27,12 @@ type Store interface {
 	// chats
 	AppendMessage(bookID string, msg domain.Message) error
 	ListMessages(bookID string, limit int) ([]domain.Message, error)
+	CreateConversation(conversation domain.Conversation) error
+	GetConversation(id string) (domain.Conversation, bool, error)
+	ListConversationsByUser(userID string, limit int) ([]domain.Conversation, error)
+	UpdateConversation(id string, title string, lastMessageAt time.Time) error
+	AppendConversationMessage(conversationID string, msg domain.Message) error
+	ListConversationMessages(conversationID string, limit int) ([]domain.Message, error)
 
 	// chunks
 	ReplaceChunks(bookID string, chunks []domain.Chunk) error

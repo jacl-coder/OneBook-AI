@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
 import appleLogo from '@/assets/brand/provider/apple-logo.svg'
@@ -15,22 +16,20 @@ import {
   type BookSummary,
   type ChatAnswer,
   type ChatThread,
+  conversationQueryKeys,
   createEmptyThread,
   createMessageId,
+  fetchConversationSummaries,
   generateSmartThreadTitle,
   getRelativeTimeLabel,
   getThreadPreview,
   headingPool,
   nowTimestamp,
   quickActions,
-  readStoredActiveThreadID,
-  readStoredChatThreads,
-  summarizeThreads,
+  type ConversationSummary,
+  useChatSidebarState,
   type ListBooksResponse,
   updateThreadAndMoveTop,
-  writeStoredActiveThreadID,
-  writeStoredChatThreads,
-  writeStoredChatThreadSummaries,
 } from '@/pages/chat/shared'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
 import { http } from '@/shared/lib/http/client'
@@ -196,6 +195,26 @@ const chatTw = {
   authSubmitButton: 'mt-[6px] h-[52px] w-full cursor-pointer rounded-[99999px] border-0 bg-[#131313] text-[16px] leading-6 font-normal tracking-[-0.16px] text-white transition-[background-color,opacity] duration-150 hover:bg-[#090909] disabled:cursor-default disabled:bg-[#131313] disabled:opacity-50',
 } as const
 
+type ConversationMessage = {
+  id: string
+  conversationId: string
+  userId?: string
+  bookId: string
+  role: 'user' | 'assistant'
+  content: string
+  sources?: Array<{
+    label: string
+    location: string
+    snippet?: string
+  }>
+  createdAt: string
+}
+
+type ListConversationMessagesResponse = {
+  items: ConversationMessage[]
+  count: number
+}
+
 function pickNextHeading(current?: string) {
   if (headingPool.length <= 1) return headingPool[0] ?? ''
   const candidates = current ? headingPool.filter((item) => item !== current) : headingPool
@@ -205,6 +224,9 @@ function pickNextHeading(current?: string) {
 
 export function ChatPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { conversationId: routeConversationIdParam } = useParams<{ conversationId?: string }>()
+  const routeConversationId = routeConversationIdParam?.trim() ?? ''
   const sessionUser = useSessionStore((state) => state.user)
   const clearSession = useSessionStore((state) => state.clearSession)
 
@@ -228,14 +250,28 @@ export function ChatPage() {
 
   const [threads, setThreads] = useState<ChatThread[]>(() => [createEmptyThread()])
   const [activeThreadId, setActiveThreadId] = useState<string>('')
-  const [threadSearch, setThreadSearch] = useState('')
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
   const [books, setBooks] = useState<BookSummary[]>([])
   const [selectedBookId, setSelectedBookId] = useState('')
   const [bookListErrorText, setBookListErrorText] = useState('')
-  const [hasHydratedThreadState, setHasHydratedThreadState] = useState(false)
+  const [threadLoadErrorText, setThreadLoadErrorText] = useState('')
+
+  const {
+    searchValue: threadSearch,
+    setSearchValue: setThreadSearch,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    isDesktopSidebarCollapsed,
+    isHistoryExpanded,
+    toggleHistoryExpanded,
+    isSidebarExpanded,
+    isApplePlatform,
+    newChatShortcutKeys,
+    searchShortcutKeys,
+    libraryShortcutKeys,
+    getShortcutAriaLabel,
+    handleCloseSidebar,
+    handleOpenSidebar,
+  } = useChatSidebarState()
 
   const authEmailId = useId()
   const authErrorId = useId()
@@ -250,12 +286,14 @@ export function ChatPage() {
   )
 
   const filteredThreads = useMemo(() => {
-    const historyThreads = threads.filter((thread) => thread.messages.length > 0)
+    const historyThreads = threads
+      .filter((thread) => thread.isRemote || thread.messages.length > 0)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
     const keyword = threadSearch.trim().toLowerCase()
     if (!keyword) return historyThreads
     return historyThreads.filter((thread) => {
       const title = thread.title.toLowerCase()
-      const preview = getThreadPreview(thread).toLowerCase()
+      const preview = (thread.messages.length > 0 ? getThreadPreview(thread) : thread.lastUserPrompt).toLowerCase()
       return title.includes(keyword) || preview.includes(keyword)
     })
   }, [threads, threadSearch])
@@ -271,31 +309,6 @@ export function ChatPage() {
 
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
-  const isApplePlatform = useMemo(() => {
-    if (typeof navigator === 'undefined') return false
-    const uaData = navigator as Navigator & { userAgentData?: { platform?: string } }
-    const platform = uaData.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent ?? ''
-    return /mac|iphone|ipad|ipod/i.test(platform)
-  }, [])
-  const newChatShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⇧', '⌘', 'O'] : ['Ctrl', 'Shift', 'O']),
-    [isApplePlatform],
-  )
-  const searchShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⌘', 'K'] : ['Ctrl', 'K']),
-    [isApplePlatform],
-  )
-  const libraryShortcutKeys = useMemo(
-    () => (isApplePlatform ? ['⌘', 'B'] : ['Ctrl', 'B']),
-    [isApplePlatform],
-  )
-
-  const getShortcutAriaLabel = useCallback((key: string) => {
-    if (key === '⌘') return '命令'
-    if (key === 'Ctrl') return 'Control'
-    if (key === 'Shift' || key === '⇧') return 'Shift'
-    return undefined
-  }, [])
 
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId) ?? null,
@@ -303,27 +316,6 @@ export function ChatPage() {
   )
   const hasReadyBooks = books.length > 0
   const canAsk = hasReadyBooks && selectedBookId !== ''
-
-  const isMobileSidebarViewport = useCallback(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 767px)').matches
-  }, [])
-
-  const handleCloseSidebar = useCallback(() => {
-    if (isMobileSidebarViewport()) {
-      setIsSidebarOpen(false)
-      return
-    }
-    setIsDesktopSidebarCollapsed(true)
-  }, [isMobileSidebarViewport])
-
-  const handleOpenSidebar = useCallback(() => {
-    if (isMobileSidebarViewport()) {
-      setIsSidebarOpen(true)
-      return
-    }
-    setIsDesktopSidebarCollapsed(false)
-  }, [isMobileSidebarViewport])
 
   const loadReadyBooks = useCallback(async () => {
     try {
@@ -346,26 +338,106 @@ export function ChatPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!sessionUser) {
-      setThreads([createEmptyThread()])
-      setActiveThreadId('')
-      setHasHydratedThreadState(false)
-      return
+  const mapConversationToThread = useCallback((conversation: ConversationSummary, previous?: ChatThread): ChatThread => {
+    const referenceTime = Date.parse(conversation.lastMessageAt || conversation.updatedAt) || nowTimestamp()
+    return {
+      id: conversation.id,
+      title: conversation.title || '新对话',
+      updatedAt: referenceTime,
+      status: previous?.status ?? 'idle',
+      errorText: previous?.errorText ?? '',
+      lastUserPrompt: previous?.lastUserPrompt ?? '',
+      messages: previous?.messages ?? [],
+      isRemote: true,
     }
+  }, [])
 
-    const storedThreads = readStoredChatThreads(sessionUser.id)
-    const restoredThreads = storedThreads.length > 0 ? storedThreads : [createEmptyThread()]
-    const storedActiveThreadID = readStoredActiveThreadID(sessionUser.id)
-    const nextActiveThreadID =
-      storedActiveThreadID && restoredThreads.some((thread) => thread.id === storedActiveThreadID)
-        ? storedActiveThreadID
-        : restoredThreads[0].id
+  const loadConversationThreads = useCallback(async () => {
+    if (!sessionUser) return
+    try {
+      const list = await queryClient.fetchQuery({
+        queryKey: conversationQueryKeys.list(sessionUser.id, 100),
+        queryFn: () => fetchConversationSummaries(100),
+        staleTime: 30_000,
+      })
+      setThreadLoadErrorText('')
+      setThreads((previous) => {
+        const previousMap = new Map(previous.map((thread) => [thread.id, thread]))
+        const remoteThreads = list.map((conversation) => mapConversationToThread(conversation, previousMap.get(conversation.id)))
+        if (!routeConversationId) {
+          const existingDraft = previous.find((thread) => !thread.isRemote && thread.messages.length === 0)
+          const draft = existingDraft ?? createEmptyThread()
+          return [{ ...draft, isRemote: false }, ...remoteThreads]
+        }
+        if (!remoteThreads.some((thread) => thread.id === routeConversationId)) {
+          const fallback = previousMap.get(routeConversationId) ?? {
+            ...createEmptyThread(),
+            id: routeConversationId,
+            title: '会话',
+            isRemote: true,
+          }
+          return [fallback, ...remoteThreads]
+        }
+        return remoteThreads
+      })
+      setActiveThreadId(routeConversationId || '')
+    } catch (error) {
+      setThreadLoadErrorText(getApiErrorMessage(error, '加载历史会话失败，请稍后重试。'))
+      if (!routeConversationId) {
+        setThreads((previous) => (previous.length ? previous : [createEmptyThread()]))
+      }
+    }
+  }, [sessionUser, routeConversationId, mapConversationToThread, queryClient])
 
-    setThreads(restoredThreads)
-    setActiveThreadId(nextActiveThreadID)
-    setHasHydratedThreadState(true)
-  }, [sessionUser])
+  const loadConversationMessages = useCallback(async (conversationID: string) => {
+    const conversationIdText = conversationID.trim()
+    if (!conversationIdText) return
+    try {
+      const { data } = await http.get<ListConversationMessagesResponse>(
+        `/api/conversations/${encodeURIComponent(conversationIdText)}/messages?limit=200`,
+      )
+      const items = Array.isArray(data.items) ? data.items : []
+      const mappedMessages = items.map((message) => ({
+        id: message.id,
+        role: message.role,
+        text: message.content,
+        createdAt: Date.parse(message.createdAt) || nowTimestamp(),
+        sources: message.sources?.map((source) => ({
+          label: source.label,
+          location: source.location,
+          snippet: source.snippet,
+        })),
+      }))
+      const latestTime = mappedMessages[mappedMessages.length - 1]?.createdAt ?? nowTimestamp()
+      setThreads((previous) => {
+        const index = previous.findIndex((thread) => thread.id === conversationIdText)
+        if (index < 0) {
+          return [
+            {
+              ...createEmptyThread(),
+              id: conversationIdText,
+              title: '会话',
+              updatedAt: latestTime,
+              messages: mappedMessages,
+              isRemote: true,
+            },
+            ...previous,
+          ]
+        }
+        return updateThreadAndMoveTop(previous, conversationIdText, (thread) => ({
+          ...thread,
+          updatedAt: latestTime,
+          status: 'idle',
+          errorText: '',
+          messages: mappedMessages,
+          isRemote: true,
+        }))
+      })
+      setThreadLoadErrorText('')
+    } catch (error) {
+      setThreadLoadErrorText(getApiErrorMessage(error, '加载会话消息失败，请稍后重试。'))
+    }
+  }, [])
 
   useEffect(() => {
     if (activeThreadId) return
@@ -379,16 +451,21 @@ export function ChatPage() {
   }, [sessionUser, loadReadyBooks])
 
   useEffect(() => {
-    if (!sessionUser || !hasHydratedThreadState) return
-    writeStoredChatThreads(sessionUser.id, threads)
-    writeStoredChatThreadSummaries(summarizeThreads(threads), sessionUser.id)
-  }, [sessionUser, threads, hasHydratedThreadState])
+    if (!sessionUser) {
+      setThreads([createEmptyThread()])
+      setActiveThreadId('')
+      setThreadLoadErrorText('')
+      return
+    }
+    void loadConversationThreads()
+  }, [sessionUser, loadConversationThreads])
 
   useEffect(() => {
-    if (!sessionUser || !hasHydratedThreadState) return
-    if (!activeThreadId) return
-    writeStoredActiveThreadID(sessionUser.id, activeThreadId)
-  }, [sessionUser, activeThreadId, hasHydratedThreadState])
+    if (!sessionUser) return
+    if (!routeConversationId) return
+    setActiveThreadId(routeConversationId)
+    void loadConversationMessages(routeConversationId)
+  }, [sessionUser, routeConversationId, loadConversationMessages])
 
   function closeAuthModal() {
     setIsAuthOpen(false)
@@ -424,7 +501,7 @@ export function ChatPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSidebarOpen])
+  }, [isSidebarOpen, setIsSidebarOpen])
 
   const syncGuestPrompt = () => {
     const value = guestEditorRef.current?.innerText ?? ''
@@ -469,6 +546,8 @@ export function ChatPage() {
     const now = nowTimestamp()
     const requestId = pendingAskIdRef.current + 1
     pendingAskIdRef.current = requestId
+    const targetThread = threads.find((thread) => thread.id === threadId)
+    const requestConversationID = targetThread?.isRemote ? threadId : routeConversationId
 
     setThreads((previous) =>
       updateThreadAndMoveTop(previous, threadId, (thread) => ({
@@ -496,23 +575,31 @@ export function ChatPage() {
     }
     try {
       const { data } = await http.post<ChatAnswer>('/api/chats', {
+        conversationId: requestConversationID || undefined,
         bookId: selectedBookId,
         question: trimmedPrompt,
       })
       if (requestId !== pendingAskIdRef.current) return
-      setThreads((previous) =>
-        updateThreadAndMoveTop(previous, threadId, (thread) => ({
-          ...thread,
-          updatedAt: nowTimestamp(),
+      const resolvedConversationID = data.conversationId?.trim() || requestConversationID || threadId
+      const assistantMessageCreatedAt = Date.parse(data.createdAt) || nowTimestamp()
+      setThreads((previous) => {
+        const index = previous.findIndex((thread) => thread.id === threadId)
+        if (index < 0) return previous
+        const baseThread = previous[index]
+        const nextThread: ChatThread = {
+          ...baseThread,
+          id: resolvedConversationID,
+          isRemote: true,
+          updatedAt: assistantMessageCreatedAt,
           status: 'idle',
           errorText: '',
           messages: [
-            ...thread.messages,
+            ...baseThread.messages,
             {
               id: createMessageId(),
               role: 'assistant',
               text: data.answer,
-              createdAt: Date.parse(data.createdAt) || nowTimestamp(),
+              createdAt: assistantMessageCreatedAt,
               sources: data.sources.map((source) => ({
                 label: source.label,
                 location: source.location,
@@ -520,8 +607,20 @@ export function ChatPage() {
               })),
             },
           ],
-        })),
-      )
+        }
+        const rest = previous
+          .filter((_, idx) => idx !== index)
+          .filter((thread) => thread.id !== resolvedConversationID)
+        return [nextThread, ...rest]
+      })
+      setActiveThreadId(resolvedConversationID)
+      if (resolvedConversationID !== routeConversationId) {
+        navigate(`/chat/${resolvedConversationID}`)
+      }
+      if (sessionUser) {
+        await queryClient.invalidateQueries({ queryKey: conversationQueryKeys.list(sessionUser.id, 100) })
+      }
+      void loadConversationThreads()
     } catch (error) {
       if (requestId !== pendingAskIdRef.current) return
       setThreads((previous) =>
@@ -584,26 +683,29 @@ export function ChatPage() {
   }
 
   const handleCreateConversation = useCallback(() => {
-    const isOnDraftThread = Boolean(activeThread && activeThread.messages.length === 0)
+    const isOnDraftThread = Boolean(activeThread && activeThread.messages.length === 0 && !activeThread.isRemote)
     if (isOnDraftThread) {
       setHeading((current) => pickNextHeading(current))
       resetAuthComposer()
+      navigate('/chat')
       setIsSidebarOpen(false)
       requestAnimationFrame(() => authEditorRef.current?.focus())
       return
     }
 
     const newThread = createEmptyThread()
-    setThreads((previous) => [newThread, ...previous])
+    setThreads((previous) => [newThread, ...previous.filter((thread) => thread.id !== newThread.id)])
     setActiveThreadId(newThread.id)
     setHeading((current) => pickNextHeading(current))
     resetAuthComposer()
+    navigate('/chat')
     setIsSidebarOpen(false)
     requestAnimationFrame(() => authEditorRef.current?.focus())
-  }, [activeThread, resetAuthComposer])
+  }, [activeThread, navigate, resetAuthComposer, setIsSidebarOpen])
 
   const handleThreadSelect = (threadId: string) => {
     setActiveThreadId(threadId)
+    navigate(`/chat/${threadId}`)
     setIsSidebarOpen(false)
     setTimeout(() => authEditorRef.current?.focus(), 0)
   }
@@ -777,8 +879,6 @@ export function ChatPage() {
   )
 
   if (sessionUser) {
-    const isSidebarExpanded = isMobileSidebarViewport() ? isSidebarOpen : !isDesktopSidebarCollapsed
-
     return (
       <div
         className={cx(
@@ -798,7 +898,7 @@ export function ChatPage() {
           searchValue={threadSearch}
           onSearchChange={setThreadSearch}
           isHistoryExpanded={isHistoryExpanded}
-          onToggleHistoryExpanded={() => setIsHistoryExpanded((prev) => !prev)}
+          onToggleHistoryExpanded={toggleHistoryExpanded}
           threads={sidebarThreads}
           onThreadClick={handleThreadSelect}
           onNewChatClick={handleCreateConversation}
@@ -854,6 +954,15 @@ export function ChatPage() {
                   <div className={chatTw.chatConversationStack}>
                     {activeThread ? (
                       <>
+                        {threadLoadErrorText ? (
+                          <div className={chatTw.alertBox} role="status" aria-live="polite">
+                            <span>{threadLoadErrorText}</span>
+                            <button type="button" className={chatTw.alertAction} onClick={() => void loadConversationThreads()}>
+                              重试
+                            </button>
+                          </div>
+                        ) : null}
+
                         {bookListErrorText ? (
                           <div className={chatTw.alertBox} role="status" aria-live="polite">
                             <span>{bookListErrorText}</span>

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,6 +201,8 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/books", s.authenticated(s.handleBooks))
 	s.mux.Handle("/api/books/", s.authenticated(s.handleBookByID))
 	s.mux.Handle("/api/chats", s.authenticated(s.handleChats))
+	s.mux.Handle("/api/conversations", s.authenticated(s.handleConversations))
+	s.mux.Handle("/api/conversations/", s.authenticated(s.handleConversationByID))
 
 	// admin
 	s.mux.Handle("/api/admin/users", s.adminOnly(s.handleAdminUsers))
@@ -785,12 +788,68 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		writeErrorWithCode(w, r, http.StatusBadRequest, "book ID is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
-	ans, err := s.chat.AskQuestion(requestIDFromRequest(r), ctx.AccessToken, req.BookID, req.Question)
+	ans, err := s.chat.AskQuestion(
+		requestIDFromRequest(r),
+		ctx.AccessToken,
+		req.ConversationID,
+		req.BookID,
+		req.Question,
+	)
 	if err != nil {
 		writeChatError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ans)
+}
+
+func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	limit := parsePositiveIntWithMax(r.URL.Query().Get("limit"), 30, 100)
+	items, err := s.chat.ListConversations(requestIDFromRequest(r), ctx.AccessToken, limit)
+	if err != nil {
+		writeChatError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"count": len(items),
+	})
+}
+
+func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/conversations/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "CHAT_CONVERSATION_NOT_FOUND")
+		return
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "messages" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "CHAT_CONVERSATION_NOT_FOUND")
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	conversationID := strings.TrimSpace(parts[0])
+	if conversationID == "" {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "conversation ID is required", "CHAT_CONVERSATION_ID_REQUIRED")
+		return
+	}
+	limit := parsePositiveIntWithMax(r.URL.Query().Get("limit"), 200, 500)
+	items, err := s.chat.ListConversationMessages(requestIDFromRequest(r), ctx.AccessToken, conversationID, limit)
+	if err != nil {
+		writeChatError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"count": len(items),
+	})
 }
 
 // admin handlers
@@ -875,9 +934,25 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	writeErrorWithCode(w, r, http.StatusMethodNotAllowed, "method not allowed", "SYSTEM_METHOD_NOT_ALLOWED")
 }
 
+func parsePositiveIntWithMax(raw string, fallback int, max int) int {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
 type chatRequest struct {
-	BookID   string `json:"bookId"`
-	Question string `json:"question"`
+	ConversationID string `json:"conversationId,omitempty"`
+	BookID         string `json:"bookId"`
+	Question       string `json:"question"`
 }
 
 type authRequest struct {

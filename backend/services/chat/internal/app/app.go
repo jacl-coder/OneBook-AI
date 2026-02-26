@@ -12,6 +12,8 @@ import (
 	"onebookai/pkg/store"
 )
 
+const defaultConversationTitle = "新对话"
+
 // Config holds runtime configuration for the core application.
 type Config struct {
 	DatabaseURL       string
@@ -99,8 +101,8 @@ func New(cfg Config) (*App, error) {
 	}, nil
 }
 
-// AskQuestion performs a placeholder question/answer flow bound to a book.
-func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (domain.Answer, error) {
+// AskQuestion performs a placeholder question/answer flow bound to a book and conversation.
+func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string) (domain.Answer, error) {
 	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
 		return domain.Answer{}, fmt.Errorf("forbidden")
 	}
@@ -109,6 +111,10 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (
 	}
 	if strings.TrimSpace(question) == "" {
 		return domain.Answer{}, fmt.Errorf("question required")
+	}
+	conversation, err := a.ensureConversation(user, book, question, conversationID)
+	if err != nil {
+		return domain.Answer{}, err
 	}
 	ctx := context.Background()
 	queryEmbedding, err := a.embedder.EmbedText(ctx, question, "RETRIEVAL_QUERY")
@@ -124,7 +130,11 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (
 	}
 	var history []domain.Message
 	if a.historyLimit > 0 {
-		history, err = a.store.ListMessages(book.ID, a.historyLimit)
+		historyLimit := a.historyLimit * 2
+		if historyLimit < a.historyLimit {
+			historyLimit = a.historyLimit
+		}
+		history, err = a.store.ListConversationMessages(conversation.ID, historyLimit)
 		if err != nil {
 			return domain.Answer{}, fmt.Errorf("load history: %w", err)
 		}
@@ -143,31 +153,144 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string) (
 		return domain.Answer{}, fmt.Errorf("generate answer: %w", err)
 	}
 	answer := domain.Answer{
-		BookID:    book.ID,
-		Question:  question,
-		Answer:    response,
-		Sources:   sources,
-		CreatedAt: time.Now().UTC(),
+		ConversationID: conversation.ID,
+		BookID:         book.ID,
+		Question:       question,
+		Answer:         response,
+		Sources:        sources,
+		CreatedAt:      time.Now().UTC(),
 	}
-	if err := a.store.AppendMessage(book.ID, domain.Message{
-		ID:        util.NewID(),
-		BookID:    book.ID,
-		Role:      "user",
-		Content:   question,
-		CreatedAt: time.Now().UTC(),
+	userMessageTime := time.Now().UTC()
+	if err := a.store.AppendConversationMessage(conversation.ID, domain.Message{
+		ID:             util.NewID(),
+		ConversationID: conversation.ID,
+		UserID:         user.ID,
+		BookID:         book.ID,
+		Role:           "user",
+		Content:        question,
+		CreatedAt:      userMessageTime,
 	}); err != nil {
 		return domain.Answer{}, fmt.Errorf("save user message: %w", err)
 	}
-	if err := a.store.AppendMessage(book.ID, domain.Message{
-		ID:        util.NewID(),
-		BookID:    book.ID,
-		Role:      "assistant",
-		Content:   answer.Answer,
-		CreatedAt: time.Now().UTC(),
+	assistantMessageTime := time.Now().UTC()
+	if err := a.store.AppendConversationMessage(conversation.ID, domain.Message{
+		ID:             util.NewID(),
+		ConversationID: conversation.ID,
+		UserID:         user.ID,
+		BookID:         book.ID,
+		Role:           "assistant",
+		Content:        answer.Answer,
+		Sources:        answer.Sources,
+		CreatedAt:      assistantMessageTime,
 	}); err != nil {
 		return domain.Answer{}, fmt.Errorf("save answer message: %w", err)
 	}
+	if err := a.store.UpdateConversation(conversation.ID, "", assistantMessageTime); err != nil {
+		return domain.Answer{}, fmt.Errorf("update conversation: %w", err)
+	}
 	return answer, nil
+}
+
+// ListConversations lists recent conversations for current user.
+func (a *App) ListConversations(user domain.User, limit int) ([]domain.Conversation, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return nil, fmt.Errorf("user id required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	items, err := a.store.ListConversationsByUser(user.ID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list conversations: %w", err)
+	}
+	return items, nil
+}
+
+// ListConversationMessages lists conversation messages in chronological order.
+func (a *App) ListConversationMessages(user domain.User, conversationID string, limit int) ([]domain.Message, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil, fmt.Errorf("conversation id required")
+	}
+	conversation, ok, err := a.store.GetConversation(conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("load conversation: %w", err)
+	}
+	if !ok {
+		return nil, ErrConversationNotFound
+	}
+	if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
+		return nil, ErrConversationForbidden
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	items, err := a.store.ListConversationMessages(conversationID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list conversation messages: %w", err)
+	}
+	return items, nil
+}
+
+func (a *App) ensureConversation(user domain.User, book domain.Book, question string, conversationID string) (domain.Conversation, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID != "" {
+		conversation, ok, err := a.store.GetConversation(conversationID)
+		if err != nil {
+			return domain.Conversation{}, fmt.Errorf("load conversation: %w", err)
+		}
+		if !ok {
+			return domain.Conversation{}, ErrConversationNotFound
+		}
+		if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
+			return domain.Conversation{}, ErrConversationForbidden
+		}
+		if conversation.BookID != "" && conversation.BookID != book.ID {
+			return domain.Conversation{}, fmt.Errorf("conversation book mismatch")
+		}
+		return conversation, nil
+	}
+
+	now := time.Now().UTC()
+	conversation := domain.Conversation{
+		ID:            util.NewID(),
+		UserID:        user.ID,
+		BookID:        book.ID,
+		Title:         generateConversationTitle(question),
+		LastMessageAt: &now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := a.store.CreateConversation(conversation); err != nil {
+		return domain.Conversation{}, fmt.Errorf("create conversation: %w", err)
+	}
+	return conversation, nil
+}
+
+func generateConversationTitle(question string) string {
+	text := strings.TrimSpace(strings.ReplaceAll(question, "\n", " "))
+	if text == "" {
+		return defaultConversationTitle
+	}
+	for _, prefix := range []string{"请问一下", "请问", "麻烦你", "麻烦", "帮我", "可以帮我", "能帮我", "我想问一下", "我想问", "我想了解一下", "我想了解", "请你", "请", "关于", "有关"} {
+		if strings.HasPrefix(text, prefix) {
+			text = strings.TrimSpace(strings.TrimPrefix(text, prefix))
+			break
+		}
+	}
+	text = strings.TrimSuffix(text, "吗")
+	text = strings.TrimSuffix(text, "呢")
+	text = strings.TrimSuffix(text, "？")
+	text = strings.TrimSuffix(text, "?")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return defaultConversationTitle
+	}
+	runes := []rune(text)
+	if len(runes) > 24 {
+		return string(runes[:24]) + "…"
+	}
+	return text
 }
 
 func buildContext(chunks []domain.Chunk) (string, []domain.Source) {

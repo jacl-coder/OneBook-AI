@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"onebookai/internal/usertoken"
@@ -53,6 +55,8 @@ func (s *Server) Router() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.Handle("/chats", s.withUser(s.handleChats))
+	s.mux.Handle("/conversations", s.withUser(s.handleConversations))
+	s.mux.Handle("/conversations/", s.withUser(s.handleConversationByID))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -114,11 +118,15 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeBookError(w, err)
 		return
 	}
-	ans, err := s.app.AskQuestion(user, book, req.Question)
+	ans, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, app.ErrBookNotReady) {
 			status = http.StatusConflict
+		} else if errors.Is(err, app.ErrConversationNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, app.ErrConversationForbidden) {
+			status = http.StatusForbidden
 		} else if strings.Contains(err.Error(), "forbidden") {
 			status = http.StatusForbidden
 		}
@@ -128,13 +136,81 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 	writeJSON(w, http.StatusOK, ans)
 }
 
+func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, _ string, user domain.User) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	limit := readLimitParam(r.URL.Query(), 30, 100)
+	items, err := s.app.ListConversations(user, limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"count": len(items),
+	})
+}
+
+func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, _ string, user domain.User) {
+	path := strings.TrimPrefix(r.URL.Path, "/conversations/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "messages" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	conversationID := parts[0]
+	limit := readLimitParam(r.URL.Query(), 200, 500)
+	items, err := s.app.ListConversationMessages(user, conversationID, limit)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, app.ErrConversationNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, app.ErrConversationForbidden) {
+			status = http.StatusForbidden
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"count": len(items),
+	})
+}
+
+func readLimitParam(values url.Values, fallback int, max int) int {
+	raw := strings.TrimSpace(values.Get("limit"))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	if parsed > max {
+		return max
+	}
+	return parsed
+}
+
 func methodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
 type chatRequest struct {
-	BookID   string `json:"bookId"`
-	Question string `json:"question"`
+	ConversationID string `json:"conversationId,omitempty"`
+	BookID         string `json:"bookId"`
+	Question       string `json:"question"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -187,6 +263,12 @@ func errorCodeForChat(status int, msg string) string {
 		return "CHAT_QUESTION_REQUIRED"
 	case message == "bookid is required":
 		return "CHAT_BOOK_ID_REQUIRED"
+	case message == "conversation id required":
+		return "CHAT_CONVERSATION_ID_REQUIRED"
+	case message == "conversation not found":
+		return "CHAT_CONVERSATION_NOT_FOUND"
+	case message == "conversation forbidden":
+		return "CHAT_CONVERSATION_FORBIDDEN"
 	case message == "book not ready":
 		return "CHAT_BOOK_NOT_READY"
 	case message == "forbidden":
@@ -205,6 +287,8 @@ func errorCodeForChat(status int, msg string) string {
 		return "AUTH_INVALID_TOKEN"
 	case http.StatusForbidden:
 		return "CHAT_FORBIDDEN"
+	case http.StatusNotFound:
+		return "CHAT_CONVERSATION_NOT_FOUND"
 	case http.StatusConflict:
 		return "CHAT_BOOK_NOT_READY"
 	case http.StatusMethodNotAllowed:

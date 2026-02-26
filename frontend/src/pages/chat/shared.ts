@@ -1,3 +1,7 @@
+import { useCallback, useMemo, useState } from 'react'
+
+import { http } from '@/shared/lib/http/client'
+
 export const quickActions = [
   { key: 'attach', symbolId: 'chat-attach', label: '附件' },
 ] as const
@@ -40,6 +44,7 @@ export type ChatThread = {
   status: ThreadStatus
   lastUserPrompt: string
   errorText: string
+  isRemote?: boolean
 }
 
 export type ChatThreadSummary = {
@@ -61,6 +66,7 @@ export type ListBooksResponse = {
 }
 
 export type ChatAnswer = {
+  conversationId?: string
   bookId: string
   question: string
   answer: string
@@ -145,6 +151,7 @@ export function createEmptyThread(): ChatThread {
     lastUserPrompt: '',
     errorText: '',
     messages: [],
+    isRemote: false,
   }
 }
 
@@ -160,179 +167,123 @@ export function updateThreadAndMoveTop(
   return [updated, ...rest]
 }
 
-const CHAT_THREAD_SUMMARIES_STORAGE_KEY = 'onebook:chat:thread-summaries'
-const CHAT_THREADS_STORAGE_KEY = 'onebook:chat:threads'
-const CHAT_ACTIVE_THREAD_STORAGE_KEY = 'onebook:chat:active-thread'
-
-function userScopedStorageKey(baseKey: string, userID: string): string {
-  return `${baseKey}:${userID}`
+export type ConversationSummary = {
+  id: string
+  userId: string
+  bookId?: string
+  title: string
+  lastMessageAt?: string
+  createdAt: string
+  updatedAt: string
 }
 
-function readStorageItem(baseKey: string, userID: string): string | null {
-  if (typeof window === 'undefined') return null
-  const scopedKey = userScopedStorageKey(baseKey, userID)
-  return (
-    window.localStorage.getItem(scopedKey) ??
-    window.sessionStorage.getItem(scopedKey) ??
-    window.localStorage.getItem(baseKey) ??
-    window.sessionStorage.getItem(baseKey)
+type ListConversationsResponse = {
+  items: ConversationSummary[]
+  count: number
+}
+
+export const conversationQueryKeys = {
+  list: (userID: string, limit: number) => ['chat', 'conversations', userID, limit] as const,
+}
+
+export async function fetchConversationSummaries(limit: number): Promise<ConversationSummary[]> {
+  const { data } = await http.get<ListConversationsResponse>(`/api/conversations?limit=${limit}`)
+  return Array.isArray(data.items) ? data.items : []
+}
+
+type UseChatSidebarStateResult = {
+  searchValue: string
+  setSearchValue: (value: string) => void
+  isSidebarOpen: boolean
+  setIsSidebarOpen: (next: boolean) => void
+  isDesktopSidebarCollapsed: boolean
+  isHistoryExpanded: boolean
+  toggleHistoryExpanded: () => void
+  isSidebarExpanded: boolean
+  isApplePlatform: boolean
+  newChatShortcutKeys: string[]
+  searchShortcutKeys: string[]
+  libraryShortcutKeys: string[]
+  getShortcutAriaLabel: (key: string) => string | undefined
+  handleCloseSidebar: () => void
+  handleOpenSidebar: () => void
+}
+
+export function useChatSidebarState(): UseChatSidebarStateResult {
+  const [searchValue, setSearchValue] = useState('')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
+
+  const isApplePlatform = useMemo(() => {
+    if (typeof navigator === 'undefined') return false
+    const uaData = navigator as Navigator & { userAgentData?: { platform?: string } }
+    const platform = uaData.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent ?? ''
+    return /mac|iphone|ipad|ipod/i.test(platform)
+  }, [])
+
+  const newChatShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⇧', '⌘', 'O'] : ['Ctrl', 'Shift', 'O']),
+    [isApplePlatform],
   )
-}
+  const searchShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⌘', 'K'] : ['Ctrl', 'K']),
+    [isApplePlatform],
+  )
+  const libraryShortcutKeys = useMemo(
+    () => (isApplePlatform ? ['⌘', 'B'] : ['Ctrl', 'B']),
+    [isApplePlatform],
+  )
 
-function writeStorageItem(baseKey: string, userID: string, value: string) {
-  if (typeof window === 'undefined') return
-  const scopedKey = userScopedStorageKey(baseKey, userID)
-  window.localStorage.setItem(scopedKey, value)
-  window.sessionStorage.setItem(scopedKey, value)
-}
+  const getShortcutAriaLabel = useCallback((key: string) => {
+    if (key === '⌘') return '命令'
+    if (key === 'Ctrl') return 'Control'
+    if (key === 'Shift' || key === '⇧') return 'Shift'
+    return undefined
+  }, [])
 
-function parseThreadSource(input: unknown): ThreadSource | null {
-  if (!input || typeof input !== 'object') return null
-  const record = input as Partial<ThreadSource>
-  if (typeof record.label !== 'string') return null
-  if (typeof record.location !== 'string') return null
-  if (record.snippet != null && typeof record.snippet !== 'string') return null
-  return {
-    label: record.label,
-    location: record.location,
-    snippet: record.snippet,
-  }
-}
+  const isMobileSidebarViewport = useCallback(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 767px)').matches
+  }, [])
 
-function parseThreadMessage(input: unknown): ThreadMessage | null {
-  if (!input || typeof input !== 'object') return null
-  const record = input as Partial<ThreadMessage>
-  if (typeof record.id !== 'string' || !record.id.trim()) return null
-  if (record.role !== 'user' && record.role !== 'assistant') return null
-  if (typeof record.text !== 'string') return null
-  if (typeof record.createdAt !== 'number' || Number.isNaN(record.createdAt)) return null
-
-  const sources = Array.isArray(record.sources)
-    ? record.sources
-        .map((item) => parseThreadSource(item))
-        .filter((item): item is ThreadSource => item !== null)
-    : undefined
-
-  return {
-    id: record.id,
-    role: record.role,
-    text: record.text,
-    createdAt: record.createdAt,
-    sources,
-  }
-}
-
-function parseThread(input: unknown): ChatThread | null {
-  if (!input || typeof input !== 'object') return null
-  const record = input as Partial<ChatThread>
-  if (typeof record.id !== 'string' || !record.id.trim()) return null
-  if (typeof record.title !== 'string') return null
-  if (typeof record.updatedAt !== 'number' || Number.isNaN(record.updatedAt)) return null
-  if (!Array.isArray(record.messages)) return null
-  if (typeof record.lastUserPrompt !== 'string') return null
-  if (typeof record.errorText !== 'string') return null
-
-  const messages = record.messages
-    .map((item) => parseThreadMessage(item))
-    .filter((item): item is ThreadMessage => item !== null)
-
-  const status: ThreadStatus =
-    record.status === 'error' ? 'error' : 'idle'
-
-  return {
-    id: record.id,
-    title: record.title,
-    updatedAt: record.updatedAt,
-    messages,
-    status,
-    lastUserPrompt: record.lastUserPrompt,
-    errorText: record.errorText,
-  }
-}
-
-export function summarizeThreads(threads: ChatThread[]): ChatThreadSummary[] {
-  return threads
-    .filter((thread) => thread.messages.length > 0)
-    .map((thread) => ({
-      id: thread.id,
-      title: thread.title,
-      updatedAt: thread.updatedAt,
-      preview: getThreadPreview(thread),
-    }))
-}
-
-export function readStoredChatThreads(userID: string): ChatThread[] {
-  if (!userID.trim()) return []
-  const raw = readStorageItem(CHAT_THREADS_STORAGE_KEY, userID)
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map((item) => parseThread(item))
-      .filter((item): item is ChatThread => item !== null)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  } catch {
-    return []
-  }
-}
-
-export function writeStoredChatThreads(userID: string, threads: ChatThread[]) {
-  if (!userID.trim()) return
-  writeStorageItem(CHAT_THREADS_STORAGE_KEY, userID, JSON.stringify(threads))
-}
-
-export function readStoredActiveThreadID(userID: string): string {
-  if (!userID.trim()) return ''
-  const raw = readStorageItem(CHAT_ACTIVE_THREAD_STORAGE_KEY, userID)
-  if (!raw) return ''
-  return raw.trim()
-}
-
-export function writeStoredActiveThreadID(userID: string, threadID: string) {
-  if (!userID.trim()) return
-  writeStorageItem(CHAT_ACTIVE_THREAD_STORAGE_KEY, userID, threadID)
-}
-
-export function readStoredChatThreadSummaries(userID?: string): ChatThreadSummary[] {
-  if (typeof window === 'undefined') return []
-  const scopedRaw = userID?.trim()
-    ? readStorageItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY, userID.trim())
-    : window.localStorage.getItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY) ??
-      window.sessionStorage.getItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY)
-  const raw = scopedRaw
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    const result: ChatThreadSummary[] = []
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') continue
-      const record = item as Partial<ChatThreadSummary>
-      if (typeof record.id !== 'string' || !record.id.trim()) continue
-      if (typeof record.title !== 'string') continue
-      if (typeof record.updatedAt !== 'number' || Number.isNaN(record.updatedAt)) continue
-      if (typeof record.preview !== 'string') continue
-      result.push({
-        id: record.id,
-        title: record.title,
-        updatedAt: record.updatedAt,
-        preview: record.preview,
-      })
+  const handleCloseSidebar = useCallback(() => {
+    if (isMobileSidebarViewport()) {
+      setIsSidebarOpen(false)
+      return
     }
-    return result
-  } catch {
-    return []
-  }
-}
+    setIsDesktopSidebarCollapsed(true)
+  }, [isMobileSidebarViewport])
 
-export function writeStoredChatThreadSummaries(summaries: ChatThreadSummary[], userID?: string) {
-  if (typeof window === 'undefined') return
-  const payload = JSON.stringify(summaries)
-  if (userID?.trim()) {
-    writeStorageItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY, userID.trim(), payload)
-    return
+  const handleOpenSidebar = useCallback(() => {
+    if (isMobileSidebarViewport()) {
+      setIsSidebarOpen(true)
+      return
+    }
+    setIsDesktopSidebarCollapsed(false)
+  }, [isMobileSidebarViewport])
+
+  const isSidebarExpanded = isMobileSidebarViewport() ? isSidebarOpen : !isDesktopSidebarCollapsed
+
+  const toggleHistoryExpanded = useCallback(() => {
+    setIsHistoryExpanded((prev) => !prev)
+  }, [])
+
+  return {
+    searchValue,
+    setSearchValue,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    isDesktopSidebarCollapsed,
+    isHistoryExpanded,
+    toggleHistoryExpanded,
+    isSidebarExpanded,
+    isApplePlatform,
+    newChatShortcutKeys,
+    searchShortcutKeys,
+    libraryShortcutKeys,
+    getShortcutAriaLabel,
+    handleCloseSidebar,
+    handleOpenSidebar,
   }
-  window.localStorage.setItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY, payload)
-  window.sessionStorage.setItem(CHAT_THREAD_SUMMARIES_STORAGE_KEY, payload)
 }
