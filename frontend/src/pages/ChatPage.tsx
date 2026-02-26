@@ -21,7 +21,6 @@ import {
   createMessageId,
   fetchConversationSummaries,
   generateSmartThreadTitle,
-  getRelativeTimeLabel,
   getThreadPreview,
   headingPool,
   nowTimestamp,
@@ -143,8 +142,6 @@ const chatTw = {
   chatConversationSection: 'flex min-h-0 justify-center bg-white',
   chatConversationScroller: 'w-full overflow-auto px-[20px] py-7 max-[767px]:px-3 max-[767px]:py-5',
   chatConversationStack: 'mx-auto grid w-full max-w-[920px] gap-7',
-  chatTimestampRow: 'flex items-center justify-center',
-  chatTimestampPill: 'rounded-[9999px] border border-[rgba(0,0,0,0.08)] bg-white/75 px-[10px] py-1 text-[12px] text-[#686868] backdrop-blur-[1px]',
   sourceList: 'flex max-w-[780px] flex-wrap gap-2',
   sourceCard:
     'grid min-w-[190px] max-w-[280px] cursor-pointer gap-[3px] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white px-[11px] py-[9px] text-left transition-colors duration-150 hover:bg-[#f8f8f8]',
@@ -971,10 +968,6 @@ export function ChatPage() {
                             </button>
                           </div>
                         ) : null}
-
-                        <div className={chatTw.chatTimestampRow}>
-                          <span className={chatTw.chatTimestampPill}>{getRelativeTimeLabel(activeThread.updatedAt)}</span>
-                        </div>
 
                         {activeThread.messages.map((message) =>
                           message.role === 'user' ? (

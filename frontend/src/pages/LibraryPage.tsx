@@ -8,7 +8,6 @@ import {
   CHAT_ICON_SPRITE_URL,
   conversationQueryKeys,
   fetchConversationSummaries,
-  getRelativeTimeLabel,
   useChatSidebarState,
 } from '@/pages/chat/shared'
 import {
@@ -105,9 +104,9 @@ const libraryTw = {
   table:
     'overflow-hidden rounded-[14px] border border-[rgba(0,0,0,0.08)] bg-white',
   tableHeader:
-    'grid grid-cols-[minmax(0,2fr)_110px_150px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] bg-[#fafafa] px-4 py-3 text-[12px] font-medium text-[#6d6d6d] max-[980px]:hidden',
+    'grid grid-cols-[minmax(0,2fr)_110px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] bg-[#fafafa] px-4 py-3 text-[12px] font-medium text-[#6d6d6d] max-[980px]:hidden',
   row:
-    'grid grid-cols-[minmax(0,2fr)_110px_150px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 last:border-b-0 max-[980px]:grid-cols-1 max-[980px]:gap-2 max-[980px]:px-3',
+    'grid grid-cols-[minmax(0,2fr)_110px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 last:border-b-0 max-[980px]:grid-cols-1 max-[980px]:gap-2 max-[980px]:px-3',
   titleCell: 'min-w-0',
   titleText:
     'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] font-medium text-[#0d0d0d]',
@@ -138,12 +137,6 @@ function formatSize(sizeBytes: number): string {
     unitIndex += 1
   }
   return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
-}
-
-function formatDate(isoTime: string): string {
-  const timestamp = Date.parse(isoTime)
-  if (Number.isNaN(timestamp)) return '-'
-  return getRelativeTimeLabel(timestamp)
 }
 
 function statusLabel(status: LibraryBook['status']): string {
@@ -529,7 +522,6 @@ export function LibraryPage() {
                 <div className={libraryTw.tableHeader}>
                   <span>书籍</span>
                   <span>状态</span>
-                  <span>更新时间</span>
                   <span>大小</span>
                   <span>操作</span>
                 </div>
@@ -550,11 +542,6 @@ export function LibraryPage() {
                       <span className={cx(libraryTw.statusChip, statusClass(book.status))}>
                         {statusLabel(book.status)}
                       </span>
-                    </div>
-
-                    <div>
-                      <span className={libraryTw.cellLabel}>更新时间</span>
-                      <span className="text-[13px] text-[#4f4f4f]">{formatDate(book.updatedAt)}</span>
                     </div>
 
                     <div>
