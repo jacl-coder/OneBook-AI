@@ -90,7 +90,7 @@ const chatTw = {
   messageUserBubble:
     'max-w-[min(72%,560px)] whitespace-pre-wrap rounded-[20px] bg-[#e9e9eb] px-[14px] py-[10px] text-[15px] leading-[23px] text-[#0d0d0d] max-[767px]:max-w-[86%] max-[767px]:text-[14px] max-[767px]:leading-[21px]',
   messageAssistantRow: 'grid w-full items-start gap-3',
-  messageAssistantBody: 'grid w-full max-w-[780px] gap-3',
+  messageAssistantBody: 'grid w-full max-w-full gap-3',
   messageAssistantText: 'whitespace-pre-wrap text-[17px] leading-[31px] text-[#171717] max-[767px]:text-[15px] max-[767px]:leading-[26px]',
   heroShell:
     'relative flex min-h-[calc(42svh-52px)] basis-auto shrink-0 flex-col justify-end max-[760px]:min-h-auto max-[760px]:justify-start',
@@ -141,8 +141,8 @@ const chatTw = {
   chatTopBarRight: 'inline-flex items-center gap-2',
   chatConversationSection: 'flex min-h-0 justify-center bg-white',
   chatConversationScroller: 'w-full overflow-auto px-[20px] py-7 max-[767px]:px-3 max-[767px]:py-5',
-  chatConversationStack: 'mx-auto grid w-full max-w-[920px] gap-7',
-  sourceList: 'flex max-w-[780px] flex-wrap gap-2',
+  chatConversationStack: 'mx-auto grid w-full max-w-[48rem] gap-7',
+  sourceList: 'flex max-w-full flex-wrap gap-2',
   sourceCard:
     'grid min-w-[190px] max-w-[280px] cursor-pointer gap-[3px] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white px-[11px] py-[9px] text-left transition-colors duration-150 hover:bg-[#f8f8f8]',
   sourceCardTitle: 'text-[12px] leading-4 text-[#1b1b1b]',
