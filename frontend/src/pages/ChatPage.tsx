@@ -316,6 +316,15 @@ export function ChatPage() {
   const hasReadyBooks = books.length > 0
   const canAsk = hasReadyBooks && selectedBookId !== ''
 
+  // For the placeholder: show the book tied to the active conversation,
+  // falling back to the globally selected book for new conversations.
+  const activeBookTitle = useMemo(() => {
+    const threadBookId = activeThread?.isRemote ? activeThread.bookId : undefined
+    const displayBookId = threadBookId || selectedBookId
+    if (!displayBookId) return undefined
+    return books.find((b) => b.id === displayBookId)?.title
+  }, [activeThread, selectedBookId, books])
+
   const loadReadyBooks = useCallback(async () => {
     try {
       const { data } = await http.get<ListBooksResponse>('/api/books')
@@ -361,6 +370,7 @@ export function ChatPage() {
       lastUserPrompt: previous?.lastUserPrompt ?? '',
       messages: previous?.messages ?? [],
       isRemote: true,
+      bookId: conversation.bookId || previous?.bookId,
     }
   }, [])
 
@@ -826,7 +836,7 @@ export function ChatPage() {
                   {!hasAuthPrompt ? (
                     <div className={chatTw.composerPlaceholder} aria-hidden="true">
                       {canAsk
-                        ? `基于《${selectedBook?.title ?? '所选书籍'}》提问，回答将附带可追溯引用`
+                        ? `基于《${activeBookTitle ?? selectedBook?.title ?? '所选书籍'}》提问，回答将附带可追溯引用`
                         : '请先在书库上传并等待书籍处理完成'}
                     </div>
                   ) : null}
