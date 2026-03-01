@@ -105,7 +105,28 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeError(w, http.StatusBadRequest, "question is required")
 		return
 	}
-	if req.BookID == "" {
+
+	// For existing conversations, resolve bookId from the stored conversation
+	// so the frontend doesn't need to track which book a conversation belongs to.
+	resolvedBookID := strings.TrimSpace(req.BookID)
+	if strings.TrimSpace(req.ConversationID) != "" {
+		convBookID, err := s.app.GetConversationBookID(user, req.ConversationID)
+		if err != nil {
+			if errors.Is(err, app.ErrConversationNotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+			} else if errors.Is(err, app.ErrConversationForbidden) {
+				writeError(w, http.StatusForbidden, err.Error())
+			} else {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+		if convBookID != "" {
+			resolvedBookID = convBookID
+		}
+	}
+
+	if resolvedBookID == "" {
 		writeError(w, http.StatusBadRequest, "bookId is required")
 		return
 	}
@@ -113,7 +134,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeError(w, http.StatusInternalServerError, "book client not configured")
 		return
 	}
-	book, err := s.books.GetBook(token, req.BookID)
+	book, err := s.books.GetBook(token, resolvedBookID)
 	if err != nil {
 		writeBookError(w, err)
 		return
