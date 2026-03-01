@@ -230,6 +230,27 @@ func (a *App) ListConversations(user domain.User, limit int) ([]domain.Conversat
 	return items, nil
 }
 
+// GetConversationBookID returns the bookId stored on an existing conversation.
+// This allows the server layer to resolve the correct book without requiring the
+// frontend to track which book each conversation belongs to.
+func (a *App) GetConversationBookID(user domain.User, conversationID string) (string, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return "", fmt.Errorf("conversation id required")
+	}
+	conversation, ok, err := a.store.GetConversation(conversationID)
+	if err != nil {
+		return "", fmt.Errorf("load conversation: %w", err)
+	}
+	if !ok {
+		return "", ErrConversationNotFound
+	}
+	if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
+		return "", ErrConversationForbidden
+	}
+	return conversation.BookID, nil
+}
+
 // ListConversationMessages lists conversation messages in chronological order.
 func (a *App) ListConversationMessages(user domain.User, conversationID string, limit int) ([]domain.Message, error) {
 	conversationID = strings.TrimSpace(conversationID)
@@ -268,9 +289,6 @@ func (a *App) ensureConversation(user domain.User, book domain.Book, question st
 		}
 		if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
 			return domain.Conversation{}, ErrConversationForbidden
-		}
-		if conversation.BookID != "" && conversation.BookID != book.ID {
-			return domain.Conversation{}, fmt.Errorf("conversation book mismatch")
 		}
 		return conversation, nil
 	}
