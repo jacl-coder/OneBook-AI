@@ -27,7 +27,6 @@ type FileConfig struct {
 	QueueConcurrency            int    `yaml:"queueConcurrency"`
 	QueueMaxRetries             int    `yaml:"queueMaxRetries"`
 	QueueRetryDelaySeconds      int    `yaml:"queueRetryDelaySeconds"`
-	GeminiAPIKey                string `yaml:"geminiAPIKey"`
 	EmbeddingProvider           string `yaml:"embeddingProvider"`
 	EmbeddingBaseURL            string `yaml:"embeddingBaseURL"`
 	EmbeddingModel              string `yaml:"embeddingModel"`
@@ -92,15 +91,6 @@ func Load(path string) (FileConfig, error) {
 			cfg.QueueRetryDelaySeconds = n
 		}
 	}
-	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
-		cfg.GeminiAPIKey = v
-	}
-	if v := os.Getenv("GEMINI_EMBEDDING_MODEL"); v != "" {
-		cfg.EmbeddingModel = v
-		if cfg.EmbeddingProvider == "" {
-			cfg.EmbeddingProvider = "gemini"
-		}
-	}
 	if v := os.Getenv("ONEBOOK_EMBEDDING_DIM"); v != "" {
 		if dim, err := strconv.Atoi(v); err == nil {
 			cfg.EmbeddingDim = dim
@@ -148,21 +138,18 @@ func validateConfig(cfg FileConfig) error {
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
-		provider = "gemini"
-	}
-	if provider == "gemini" && cfg.GeminiAPIKey == "" {
-		return errors.New("config: geminiAPIKey is required (set in config.yaml or GEMINI_API_KEY)")
+		provider = "ollama"
 	}
 	if cfg.EmbeddingModel == "" {
-		return errors.New("config: embeddingModel is required (set in config.yaml, GEMINI_EMBEDDING_MODEL, or OLLAMA_EMBEDDING_MODEL)")
+		return errors.New("config: embeddingModel is required (set in config.yaml or OLLAMA_EMBEDDING_MODEL)")
 	}
 	if cfg.EmbeddingDim <= 0 {
 		return errors.New("config: embeddingDim is required (set ONEBOOK_EMBEDDING_DIM)")
 	}
 	switch provider {
-	case "ollama", "gemini":
+	case "ollama":
 	default:
-		return errors.New("config: embeddingProvider must be gemini or ollama")
+		return errors.New("config: embeddingProvider must be ollama")
 	}
 	return nil
 }
