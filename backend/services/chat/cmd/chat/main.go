@@ -40,15 +40,17 @@ func main() {
 	bookClient := bookclient.NewClient(cfg.BookServiceURL)
 
 	appCore, err := app.New(app.Config{
-		DatabaseURL:       cfg.DatabaseURL,
-		GeminiAPIKey:      cfg.GeminiAPIKey,
-		GenerationModel:   cfg.GenerationModel,
-		EmbeddingProvider: cfg.EmbeddingProvider,
-		EmbeddingBaseURL:  cfg.EmbeddingBaseURL,
-		EmbeddingModel:    cfg.EmbeddingModel,
-		EmbeddingDim:      cfg.EmbeddingDim,
-		TopK:              cfg.TopK,
-		HistoryLimit:      cfg.HistoryLimit,
+		DatabaseURL:        cfg.DatabaseURL,
+		GenerationProvider: cfg.GenerationProvider,
+		GenerationBaseURL:  cfg.GenerationBaseURL,
+		GenerationAPIKey:   cfg.GenerationAPIKey,
+		GenerationModel:    cfg.GenerationModel,
+		EmbeddingProvider:  cfg.EmbeddingProvider,
+		EmbeddingBaseURL:   cfg.EmbeddingBaseURL,
+		EmbeddingModel:     cfg.EmbeddingModel,
+		EmbeddingDim:       cfg.EmbeddingDim,
+		TopK:               cfg.TopK,
+		HistoryLimit:       cfg.HistoryLimit,
 	})
 	if err != nil {
 		log.Fatalf("failed to init app: %v", err)

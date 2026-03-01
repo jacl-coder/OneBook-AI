@@ -13,23 +13,25 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port              string `yaml:"port"`
-	DatabaseURL       string `yaml:"databaseURL"`
-	LogLevel          string `yaml:"logLevel"`
-	AuthServiceURL    string `yaml:"authServiceURL"`
-	AuthJWKSURL       string `yaml:"authJwksURL"`
-	JWTIssuer         string `yaml:"jwtIssuer"`
-	JWTAudience       string `yaml:"jwtAudience"`
-	JWTLeeway         string `yaml:"jwtLeeway"`
-	BookServiceURL    string `yaml:"bookServiceURL"`
-	GeminiAPIKey      string `yaml:"geminiAPIKey"`
-	GenerationModel   string `yaml:"generationModel"`
-	EmbeddingProvider string `yaml:"embeddingProvider"`
-	EmbeddingBaseURL  string `yaml:"embeddingBaseURL"`
-	EmbeddingModel    string `yaml:"embeddingModel"`
-	EmbeddingDim      int    `yaml:"embeddingDim"`
-	TopK              int    `yaml:"topK"`
-	HistoryLimit      int    `yaml:"historyLimit"`
+	Port               string `yaml:"port"`
+	DatabaseURL        string `yaml:"databaseURL"`
+	LogLevel           string `yaml:"logLevel"`
+	AuthServiceURL     string `yaml:"authServiceURL"`
+	AuthJWKSURL        string `yaml:"authJwksURL"`
+	JWTIssuer          string `yaml:"jwtIssuer"`
+	JWTAudience        string `yaml:"jwtAudience"`
+	JWTLeeway          string `yaml:"jwtLeeway"`
+	BookServiceURL     string `yaml:"bookServiceURL"`
+	GenerationProvider string `yaml:"generationProvider"`
+	GenerationBaseURL  string `yaml:"generationBaseURL"`
+	GenerationAPIKey   string `yaml:"generationAPIKey"`
+	GenerationModel    string `yaml:"generationModel"`
+	EmbeddingProvider  string `yaml:"embeddingProvider"`
+	EmbeddingBaseURL   string `yaml:"embeddingBaseURL"`
+	EmbeddingModel     string `yaml:"embeddingModel"`
+	EmbeddingDim       int    `yaml:"embeddingDim"`
+	TopK               int    `yaml:"topK"`
+	HistoryLimit       int    `yaml:"historyLimit"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -68,9 +70,24 @@ func Load(path string) (FileConfig, error) {
 		cfg.BookServiceURL = v
 	}
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
-		cfg.GeminiAPIKey = v
+		cfg.GenerationAPIKey = v
+		if cfg.GenerationProvider == "" {
+			cfg.GenerationProvider = "gemini"
+		}
 	}
 	if v := os.Getenv("GEMINI_GENERATION_MODEL"); v != "" {
+		cfg.GenerationModel = v
+	}
+	if v := os.Getenv("GENERATION_PROVIDER"); v != "" {
+		cfg.GenerationProvider = v
+	}
+	if v := os.Getenv("GENERATION_BASE_URL"); v != "" {
+		cfg.GenerationBaseURL = v
+	}
+	if v := os.Getenv("GENERATION_API_KEY"); v != "" {
+		cfg.GenerationAPIKey = v
+	}
+	if v := os.Getenv("GENERATION_MODEL"); v != "" {
 		cfg.GenerationModel = v
 	}
 	if v := os.Getenv("ONEBOOK_EMBEDDING_DIM"); v != "" {
@@ -113,11 +130,26 @@ func validateConfig(cfg FileConfig) error {
 	if cfg.BookServiceURL == "" {
 		return errors.New("config: bookServiceURL is required (set in config.yaml or CHAT_BOOK_SERVICE_URL)")
 	}
-	if cfg.GeminiAPIKey == "" {
-		return errors.New("config: geminiAPIKey is required (set in config.yaml or GEMINI_API_KEY)")
+	genProvider := strings.ToLower(strings.TrimSpace(cfg.GenerationProvider))
+	if genProvider == "" {
+		genProvider = "gemini"
+	}
+	switch genProvider {
+	case "gemini":
+		if cfg.GenerationAPIKey == "" {
+			return errors.New("config: generationAPIKey is required for gemini (set GEMINI_API_KEY or GENERATION_API_KEY)")
+		}
+	case "ollama":
+		// ollama generation does not require an API key
+	case "openai-compat":
+		if cfg.GenerationBaseURL == "" {
+			return errors.New("config: generationBaseURL is required for openai-compat (set GENERATION_BASE_URL)")
+		}
+	default:
+		return fmt.Errorf("config: generationProvider must be gemini, ollama, or openai-compat (got %q)", genProvider)
 	}
 	if cfg.GenerationModel == "" {
-		return errors.New("config: generationModel is required (set in config.yaml)")
+		return errors.New("config: generationModel is required (set GEMINI_GENERATION_MODEL or GENERATION_MODEL)")
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {

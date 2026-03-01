@@ -16,26 +16,27 @@ const defaultConversationTitle = "新对话"
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL       string
-	Store             store.Store
-	GeminiAPIKey      string
-	GenerationModel   string
-	EmbeddingProvider string
-	EmbeddingBaseURL  string
-	EmbeddingModel    string
-	EmbeddingDim      int
-	TopK              int
-	HistoryLimit      int
+	DatabaseURL        string
+	Store              store.Store
+	GenerationProvider string
+	GenerationBaseURL  string
+	GenerationAPIKey   string
+	GenerationModel    string
+	EmbeddingProvider  string
+	EmbeddingBaseURL   string
+	EmbeddingModel     string
+	EmbeddingDim       int
+	TopK               int
+	HistoryLimit       int
 }
 
 // App is the core application service wiring together storage and chat logic.
 type App struct {
-	store           store.Store
-	gemini          *ai.GeminiClient
-	embedder        ai.Embedder
-	generationModel string
-	topK            int
-	historyLimit    int
+	store        store.Store
+	generator    ai.TextGenerator
+	embedder     ai.Embedder
+	topK         int
+	historyLimit int
 }
 
 // New constructs the application with database-backed storage for messages.
@@ -58,10 +59,13 @@ func New(cfg Config) (*App, error) {
 	if cfg.EmbeddingModel == "" {
 		return nil, fmt.Errorf("embedding model required")
 	}
-	gemini, err := ai.NewGeminiClient(cfg.GeminiAPIKey)
+
+	// Build text generator based on provider.
+	generator, err := buildGenerator(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("init text generator: %w", err)
 	}
+
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
 		provider = "ollama"
@@ -87,13 +91,38 @@ func New(cfg Config) (*App, error) {
 	}
 
 	return &App{
-		store:           dataStore,
-		gemini:          gemini,
-		embedder:        embedder,
-		generationModel: cfg.GenerationModel,
-		topK:            topK,
-		historyLimit:    historyLimit,
+		store:        dataStore,
+		generator:    generator,
+		embedder:     embedder,
+		topK:         topK,
+		historyLimit: historyLimit,
 	}, nil
+}
+
+// buildGenerator constructs the TextGenerator for the configured provider.
+func buildGenerator(cfg Config) (ai.TextGenerator, error) {
+	provider := strings.ToLower(strings.TrimSpace(cfg.GenerationProvider))
+	if provider == "" {
+		provider = "gemini"
+	}
+	switch provider {
+	case "gemini":
+		client, err := ai.NewGeminiClient(cfg.GenerationAPIKey)
+		if err != nil {
+			return nil, err
+		}
+		return ai.NewGeminiGenerator(client, cfg.GenerationModel), nil
+	case "ollama":
+		client := ai.NewOllamaClient(cfg.GenerationBaseURL)
+		return ai.NewOllamaGenerator(client, cfg.GenerationModel), nil
+	case "openai-compat":
+		if cfg.GenerationBaseURL == "" {
+			return nil, fmt.Errorf("generationBaseURL required for openai-compat provider")
+		}
+		return ai.NewOpenAICompatGenerator(cfg.GenerationBaseURL, cfg.GenerationAPIKey, cfg.GenerationModel), nil
+	default:
+		return nil, fmt.Errorf("unknown generation provider: %s", provider)
+	}
 }
 
 // AskQuestion performs a placeholder question/answer flow bound to a book and conversation.
@@ -143,7 +172,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, question, contextText)
 	}
 	systemPrompt := "你是一个可靠的读书助手，必须基于提供的资料回答，并在回答中标注引用编号。"
-	response, err := a.gemini.GenerateText(ctx, a.generationModel, systemPrompt, userPrompt)
+	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
 	if err != nil {
 		return domain.Answer{}, fmt.Errorf("generate answer: %w", err)
 	}
