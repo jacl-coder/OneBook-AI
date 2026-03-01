@@ -20,7 +20,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, cleanup := util.InitLogger(cfg.LogLevel, "auth", cfg.LogsDir, "../../logs")
+	logger, cleanup := util.InitLogger(cfg.LogLevel, "auth", cfg.LogsDir)
 	if cleanup != nil {
 		defer cleanup()
 	}
