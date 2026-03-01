@@ -9,7 +9,7 @@ port: "8083"
 # CHAT_AUTH_JWKS_URL
 # JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY
 logLevel: "info"
-logsDir: "logs"
+logsDir: "backend/logs"
 authServiceURL: "http://localhost:8081"
 authJwksURL: "http://localhost:8081/auth/jwks"
 jwtIssuer: "onebook-auth"

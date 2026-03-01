@@ -8,7 +8,7 @@ port: "8084"
 # INGEST_OCR_ENABLED, INGEST_OCR_COMMAND, INGEST_OCR_DEVICE, INGEST_OCR_TIMEOUT_SECONDS
 # INGEST_PDF_MIN_PAGE_RUNES, INGEST_PDF_MIN_PAGE_SCORE, INGEST_PDF_OCR_MIN_SCORE_DELTA
 logLevel: "info"
-logsDir: "logs"
+logsDir: "backend/logs"
 bookServiceURL: "http://localhost:8082"
 indexerURL: "http://localhost:8085"
 chunkSize: 800
