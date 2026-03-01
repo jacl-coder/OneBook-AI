@@ -59,13 +59,13 @@ func openLogFile(logsDir, service string) (*os.File, error) {
 }
 
 // InitLogger configures the global slog logger.
-// Logs are written as JSON to both stdout and files under logsDir (if non-empty).
-// Two files are created:
-//   - <service>-<YYYY-MM-DD>.log  – per-service log
-//   - all-<YYYY-MM-DD>.log        – combined log for all services
+// Logs are written as JSON to both stdout and files:
+//   - logsDir/<service>-<YYYY-MM-DD>.log          – per-service log
+//   - combinedLogsDir/all-<YYYY-MM-DD>.log         – combined log shared by all services
 //
+// If combinedLogsDir is empty, the combined log is skipped.
 // Returns the logger and an optional cleanup function (nil when no file is opened).
-func InitLogger(level, service, logsDir string) (*slog.Logger, func()) {
+func InitLogger(level, service, logsDir, combinedLogsDir string) (*slog.Logger, func()) {
 	slogLevel := parseLevel(level)
 
 	var w io.Writer = os.Stdout
@@ -85,13 +85,15 @@ func InitLogger(level, service, logsDir string) (*slog.Logger, func()) {
 			closers = append(closers, func() { _ = sf.Close() })
 		}
 
-		// Combined log file for all services
-		af, err := openLogFile(logsDir, "all")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARN: failed to open combined log file: %v\n", err)
-		} else {
-			writers = append(writers, af)
-			closers = append(closers, func() { _ = af.Close() })
+		// Combined log file for all services (shared directory)
+		if combinedLogsDir != "" {
+			af, err := openLogFile(combinedLogsDir, "all")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "WARN: failed to open combined log file: %v\n", err)
+			} else {
+				writers = append(writers, af)
+				closers = append(closers, func() { _ = af.Close() })
+			}
 		}
 
 		if len(writers) > 1 {

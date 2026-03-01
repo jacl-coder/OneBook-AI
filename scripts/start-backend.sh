@@ -65,6 +65,11 @@ if [[ -z "${ONEBOOK_EMBEDDING_DIM:-}" ]]; then
   echo "ONEBOOK_EMBEDDING_DIM not set, defaulting to ${ONEBOOK_EMBEDDING_DIM}"
 fi
 
+# Resolve LOGS_DIR to an absolute path so all services share the same directory.
+LOGS_DIR="$(to_abs_path "${LOGS_DIR:-backend/logs}")"
+export LOGS_DIR
+mkdir -p "$LOGS_DIR"
+
 if [[ -z "${CORS_ALLOWED_ORIGINS:-}" ]]; then
   # Default allow local Swagger UI and Vite dev server.
   export CORS_ALLOWED_ORIGINS="http://localhost:8086,http://localhost:5173"

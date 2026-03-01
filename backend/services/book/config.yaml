@@ -7,7 +7,7 @@ port: "8082"
 # JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY
 # BOOK_MAX_UPLOAD_BYTES, BOOK_ALLOWED_EXTENSIONS
 logLevel: "info"
-logsDir: "logs"
+logsDir: "backend/logs"
 authServiceURL: "http://localhost:8081"
 authJwksURL: "http://localhost:8081/auth/jwks"
 jwtIssuer: "onebook-auth"
