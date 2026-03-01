@@ -45,6 +45,7 @@ export type ChatThread = {
   lastUserPrompt: string
   errorText: string
   isRemote?: boolean
+  bookId?: string
 }
 
 export type ChatThreadSummary = {

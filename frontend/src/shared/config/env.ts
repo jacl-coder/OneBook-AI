@@ -1,5 +1,5 @@
 const defaultApiBaseUrl = 'http://localhost:8080'
-const defaultRequestTimeoutMs = 15_000
+const defaultRequestTimeoutMs = 120_000
 
 function parseNumber(value: string | undefined, fallback: number): number {
   if (!value) {

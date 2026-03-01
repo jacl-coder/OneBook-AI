@@ -77,7 +77,7 @@ func main() {
 		Addr:         addr,
 		Handler:      httpServer.Router(),
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 150 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
