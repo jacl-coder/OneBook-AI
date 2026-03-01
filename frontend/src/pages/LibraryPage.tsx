@@ -292,9 +292,12 @@ export function LibraryPage() {
     libraryNavButtonRef.current?.focus()
   }, [])
 
-  const handleGoChat = useCallback(() => {
-    navigate('/chat')
-  }, [navigate])
+  const handleGoChat = useCallback(
+    (bookId?: string) => {
+      navigate(bookId ? `/chat?bookId=${encodeURIComponent(bookId)}` : '/chat')
+    },
+    [navigate],
+  )
   const handleSidebarThreadClick = useCallback(
     (threadID: string) => {
       navigate(`/chat/${threadID}`)
@@ -553,7 +556,7 @@ export function LibraryPage() {
                       <button
                         type="button"
                         className={libraryTw.actionBtn}
-                        onClick={handleGoChat}
+                        onClick={() => handleGoChat(book.id)}
                         disabled={book.status !== 'ready'}
                       >
                         去对话

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
@@ -225,6 +225,7 @@ export function ChatPage() {
   const queryClient = useQueryClient()
   const { conversationId: routeConversationIdParam } = useParams<{ conversationId?: string }>()
   const routeConversationId = routeConversationIdParam?.trim() ?? ''
+  const [searchParams, setSearchParams] = useSearchParams()
   const sessionUser = useSessionStore((state) => state.user)
   const clearSession = useSessionStore((state) => state.clearSession)
 
@@ -326,15 +327,28 @@ export function ChatPage() {
         return
       }
       setBookListErrorText('')
-      setSelectedBookId((current) =>
-        current && readyBooks.some((book) => book.id === current) ? current : readyBooks[0].id,
-      )
+
+      // If a bookId was passed via URL search params (e.g. from library page),
+      // prefer it over the current selection, then clean up the param.
+      const preferredBookId = searchParams.get('bookId')
+      if (preferredBookId && readyBooks.some((book) => book.id === preferredBookId)) {
+        setSelectedBookId(preferredBookId)
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete('bookId')
+          return next
+        }, { replace: true })
+      } else {
+        setSelectedBookId((current) =>
+          current && readyBooks.some((book) => book.id === current) ? current : readyBooks[0].id,
+        )
+      }
     } catch (error) {
       setBooks([])
       setSelectedBookId('')
       setBookListErrorText(getApiErrorMessage(error, '加载书籍失败，请稍后重试。'))
     }
-  }, [])
+  }, [searchParams, setSearchParams])
 
   const mapConversationToThread = useCallback((conversation: ConversationSummary, previous?: ChatThread): ChatThread => {
     const referenceTime = Date.parse(conversation.lastMessageAt || conversation.updatedAt) || nowTimestamp()
