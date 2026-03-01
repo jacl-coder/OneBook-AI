@@ -1,14 +1,16 @@
 # 后端架构说明（当前实现）
 
 ## 服务划分（已落地）
+
 - **Gateway**：统一入口与鉴权校验，路由到 Auth/Book/Chat；提供 admin 查询与 healthz。
 - **Auth**：注册/登录/登出、用户自助、管理员用户管理；采用 RS256 JWT（JWKS）+ Redis（refresh token、撤销状态）。
 - **Book**：书籍元数据管理、上传校验、预签名下载 URL、删除书籍；文件存储在 MinIO。
 - **Ingest**：拉取文件、解析 PDF/EPUB/TXT、清洗与语义分块、写入 chunks，失败回写状态。
 - **Indexer**：Embedding 生成（Ollama）、向量写入 pgvector、更新书籍状态。
-- **Chat**：向量检索 + Gemini 生成回答，返回出处，并保存历史消息。
+- **Chat**：向量检索 + LLM（TextGenerator，支持 Gemini/Ollama/OpenAI 兼容）生成回答，返回出处，并保存历史消息。
 
 ## 数据与依赖
+
 - **Postgres + pgvector**：用户/书籍/消息/chunk/向量。
 - **MinIO**：书籍文件存储（S3 兼容）。
 - **Redis**：
@@ -17,12 +19,14 @@
   - Redis Streams 持久队列（Ingest/Indexer）。
 
 ## 核心调用链路
-1) Gateway → Book：上传文件，写 MinIO 与书籍元数据，入队 Ingest。
-2) Ingest：解析文件 → 分块 → 写入 chunks → 触发 Indexer。
-3) Indexer：批量/并发生成向量 → 写入 pgvector → 状态更新为 ready。
-4) Chat：问题向量检索 TopK → 拼装上下文与历史 → Gemini 回答 → 保存消息。
+
+1. Gateway → Book：上传文件，写 MinIO 与书籍元数据，入队 Ingest。
+2. Ingest：解析文件 → 分块 → 写入 chunks → 触发 Indexer。
+3. Indexer：批量/并发生成向量 → 写入 pgvector → 状态更新为 ready。
+4. Chat：问题向量检索 TopK → 拼装上下文与历史 → LLM（TextGenerator）回答 → 保存消息。
 
 ## 安全与权限
+
 - 对外接口通过 Gateway 统一鉴权（浏览器会话 Cookie；前端不注入 Bearer）。
 - 内部服务接口通过短时效服务 JWT（Bearer）保护，并校验 `iss/aud/exp`。
 - 用户 Access Token 由业务服务通过 JWKS 本地验签。
@@ -30,18 +34,21 @@
 - Refresh token 使用轮换与重放检测；检测到旧 token 重放后撤销整个 token family。
 
 ## 一致性与可靠性（当前）
+
 - **Refresh token 并发安全**：轮换使用 Redis 原子 CAS，避免并发请求下同一 refresh token 出现双成功。
 - **队列重试一致性**：失败重试路径在单事务内执行 `XADD + XACK + XDEL`，避免“先 ack 再重投”导致的丢任务窗口。
 - **限流策略**：Gateway/Auth 使用 Redis 分布式固定窗口限流；Redis 异常时默认拒绝请求（fail closed）。
 
 ## 运行与运维
+
 - 服务均提供 `/healthz` 健康检查。
 - Swagger UI 可查看 REST/OpenAPI 规范。
-- 目前仅基础日志，尚未引入 metrics/tracing。
+- 结构化日志：基于 `log/slog` JSON 输出，上下文传播 `request_id`/`service`，按状态码分级（5xx=Error、4xx=Warn），慢请求告警（≥5s）；同时写入 stdout 和 `backend/logs/`（按服务 + 汇总 `all`）。Metrics/tracing 尚未引入。
 - 前端联调入口与错误语义见 `docs/backend/backend_handoff.md`。
 
 ## 仍待完善的方向
-- 统一可观测性（日志、metrics、tracing）。
+
+- 可观测性进一步增强：metrics、tracing（结构化日志已落地）。
 - 检索质量优化（重排、去重、提示模板）。
 - 任务与索引进度可视化、失败重试 UI。
 - 安全与配额（刷新令牌、速率限制、配额管理）。
