@@ -64,7 +64,7 @@ func New(cfg Config) (*App, error) {
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
-		provider = "gemini"
+		provider = "ollama"
 	}
 	var embedder ai.Embedder
 	switch provider {
@@ -74,11 +74,6 @@ func New(cfg Config) (*App, error) {
 		}
 		ollama := ai.NewOllamaClient(cfg.EmbeddingBaseURL)
 		embedder = ai.NewOllamaEmbedder(ollama, cfg.EmbeddingModel, cfg.EmbeddingDim)
-	case "gemini":
-		if cfg.EmbeddingDim <= 0 {
-			return nil, fmt.Errorf("embedding dim required for gemini")
-		}
-		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel, cfg.EmbeddingDim)
 	default:
 		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
 	}

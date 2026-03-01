@@ -32,26 +32,6 @@ func NewGeminiClient(apiKey string) (*GeminiClient, error) {
 	}, nil
 }
 
-// EmbedText generates an embedding for the input text.
-func (c *GeminiClient) EmbedText(ctx context.Context, model string, text string, taskType string, dimensions int) ([]float32, error) {
-	reqBody := embedRequest{
-		Content: content{
-			Parts: []part{{Text: text}},
-		},
-	}
-	if taskType != "" {
-		reqBody.TaskType = taskType
-	}
-	if dimensions > 0 {
-		reqBody.OutputDimensionality = dimensions
-	}
-	var resp embedResponse
-	if err := c.doJSON(ctx, fmt.Sprintf("%s/models/%s:embedContent?key=%s", c.baseURL, normalizeModel(model), c.apiKey), reqBody, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Embedding.Values, nil
-}
-
 // GenerateText returns the generated response for a prompt.
 func (c *GeminiClient) GenerateText(ctx context.Context, model, systemPrompt, userPrompt string) (string, error) {
 	reqBody := generateRequest{
@@ -122,18 +102,6 @@ type part struct {
 type content struct {
 	Role  string `json:"role,omitempty"`
 	Parts []part `json:"parts"`
-}
-
-type embedRequest struct {
-	Content              content `json:"content"`
-	TaskType             string  `json:"taskType,omitempty"`
-	OutputDimensionality int     `json:"outputDimensionality,omitempty"`
-}
-
-type embedResponse struct {
-	Embedding struct {
-		Values []float32 `json:"values"`
-	} `json:"embedding"`
 }
 
 type generateRequest struct {

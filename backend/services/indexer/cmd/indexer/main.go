@@ -37,7 +37,6 @@ func main() {
 		QueueConcurrency:          cfg.QueueConcurrency,
 		QueueMaxRetries:           cfg.QueueMaxRetries,
 		QueueRetryDelaySeconds:    cfg.QueueRetryDelaySeconds,
-		GeminiAPIKey:              cfg.GeminiAPIKey,
 		EmbeddingProvider:         cfg.EmbeddingProvider,
 		EmbeddingBaseURL:          cfg.EmbeddingBaseURL,
 		EmbeddingModel:            cfg.EmbeddingModel,

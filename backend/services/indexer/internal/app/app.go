@@ -6,13 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/queue"
 	"onebookai/pkg/store"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Status represents the lifecycle of an index job.
@@ -49,7 +50,6 @@ type Config struct {
 	QueueConcurrency          int
 	QueueMaxRetries           int
 	QueueRetryDelaySeconds    int
-	GeminiAPIKey              string
 	EmbeddingProvider         string
 	EmbeddingBaseURL          string
 	EmbeddingModel            string
@@ -99,7 +99,7 @@ func New(cfg Config) (*App, error) {
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
-		provider = "gemini"
+		provider = "ollama"
 	}
 	dim := cfg.EmbeddingDim
 	var embedder ai.Embedder
@@ -110,18 +110,6 @@ func New(cfg Config) (*App, error) {
 		}
 		ollama := ai.NewOllamaClient(cfg.EmbeddingBaseURL)
 		embedder = ai.NewOllamaEmbedder(ollama, cfg.EmbeddingModel, dim)
-	case "gemini":
-		if cfg.GeminiAPIKey == "" {
-			return nil, fmt.Errorf("gemini api key required")
-		}
-		gemini, err := ai.NewGeminiClient(cfg.GeminiAPIKey)
-		if err != nil {
-			return nil, err
-		}
-		if dim <= 0 {
-			return nil, fmt.Errorf("embedding dim required for gemini")
-		}
-		embedder = ai.NewGeminiEmbedder(gemini, cfg.EmbeddingModel, dim)
 	default:
 		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
 	}
