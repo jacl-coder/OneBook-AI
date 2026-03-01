@@ -69,15 +69,6 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("CHAT_BOOK_SERVICE_URL"); v != "" {
 		cfg.BookServiceURL = v
 	}
-	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
-		cfg.GenerationAPIKey = v
-		if cfg.GenerationProvider == "" {
-			cfg.GenerationProvider = "gemini"
-		}
-	}
-	if v := os.Getenv("GEMINI_GENERATION_MODEL"); v != "" {
-		cfg.GenerationModel = v
-	}
 	if v := os.Getenv("GENERATION_PROVIDER"); v != "" {
 		cfg.GenerationProvider = v
 	}
@@ -137,7 +128,7 @@ func validateConfig(cfg FileConfig) error {
 	switch genProvider {
 	case "gemini":
 		if cfg.GenerationAPIKey == "" {
-			return errors.New("config: generationAPIKey is required for gemini (set GEMINI_API_KEY or GENERATION_API_KEY)")
+			return errors.New("config: generationAPIKey is required for gemini (set GENERATION_API_KEY)")
 		}
 	case "ollama":
 		// ollama generation does not require an API key
@@ -149,7 +140,7 @@ func validateConfig(cfg FileConfig) error {
 		return fmt.Errorf("config: generationProvider must be gemini, ollama, or openai-compat (got %q)", genProvider)
 	}
 	if cfg.GenerationModel == "" {
-		return errors.New("config: generationModel is required (set GEMINI_GENERATION_MODEL or GENERATION_MODEL)")
+		return errors.New("config: generationModel is required (set GENERATION_MODEL)")
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
