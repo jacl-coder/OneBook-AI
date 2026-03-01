@@ -5,7 +5,7 @@
 - **Auth**：注册/登录/登出、用户自助、管理员用户管理；采用 RS256 JWT（JWKS）+ Redis（refresh token、撤销状态）。
 - **Book**：书籍元数据管理、上传校验、预签名下载 URL、删除书籍；文件存储在 MinIO。
 - **Ingest**：拉取文件、解析 PDF/EPUB/TXT、清洗与语义分块、写入 chunks，失败回写状态。
-- **Indexer**：Embedding 生成（Gemini/Ollama）、向量写入 pgvector、更新书籍状态。
+- **Indexer**：Embedding 生成（Ollama）、向量写入 pgvector、更新书籍状态。
 - **Chat**：向量检索 + Gemini 生成回答，返回出处，并保存历史消息。
 
 ## 数据与依赖
