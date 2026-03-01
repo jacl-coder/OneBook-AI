@@ -3,16 +3,18 @@
 面向个人/小团队的“书本对话”应用：用户上传电子书，系统解析并基于书本内容进行对话式问答（附出处），支持书库管理和会话历史。
 
 ## 当前状态
+
 - 需求与功能规格：见 `docs/product/requirements.md` 与 `docs/product/functional_spec.md`
 - 技术框架概览：见 `docs/architecture/tech_overview.md` 与 `docs/backend/backend_arch.md`
 - RAG 演进目标：见 `docs/architecture/advanced_rag_plan.md`（后续检索优化默认按该基线推进）
 - 前端联调说明：见 `docs/backend/backend_handoff.md`
 - 前端开发流程：见 `docs/frontend/frontend_development_workflow.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
-- Embedding 使用本地 Ollama；回答生成使用 Gemini
+- Embedding 使用本地 Ollama；回答生成通过 TextGenerator 接口支持多 LLM provider（Gemini/Ollama/OpenAI 兼容）
 - Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
 
 ## 功能概览（已实现）
+
 - 上传 PDF/EPUB/TXT，支持扩展名白名单和大小限制（默认 50MB）。
 - 书库列表/查询/删除；下载返回预签名 URL，浏览器下载名为原始文件名。
 - 解析与分块：PDF/EPUB/TXT，语义分块并保留来源元数据（`source_type/source_ref`）。
@@ -25,15 +27,17 @@
 - 队列可靠性改进：重试路径采用同一事务内 `XADD + XACK + XDEL`，避免“先 ack 再重投”丢任务窗口。
 
 ## 技术栈（当前）
+
 - 后端：Go（标准库 `net/http`）
 - 数据库：Postgres + pgvector
 - 存储：MinIO（S3 兼容对象存储）
 - 队列：Redis Streams（Ingest/Indexer），Redis（认证撤销状态与 refresh token）
-- LLM：Gemini（回答生成）
+- LLM：多 provider（Gemini / Ollama / OpenAI 兼容），通过 `TextGenerator` 接口切换
 - Embedding：Ollama（本地模型）
 - 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库
 
 ## 后端服务与 API
+
 - 服务目录：`backend/services/`（Gateway + 多服务）
 - 默认端口：Gateway 8080、Auth 8081、Book 8082、Chat 8083、Ingest 8084、Indexer 8085
 - 公共路由（除认证与健康检查外均需登录态）：
@@ -44,6 +48,7 @@
   - 健康：`/healthz`
 
 ## 本地运行
+
 ```bash
 # 启动依赖（Postgres + Redis + MinIO + Swagger UI）
 docker compose up -d postgres redis minio minio-init swagger-ui
@@ -97,6 +102,7 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
 一键启动（含依赖 + 本地 Ollama embeddings）：
+
 ```bash
 # 默认会在 secrets/jwt/ 与 secrets/internal-jwt/ 下自动生成 RS256 密钥（若不存在）
 # 注意：密钥仅用于本地开发，不应提交到 Git 仓库
@@ -106,7 +112,9 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
 ## Docker 构建（服务镜像）
+
 项目提供通用 `backend/Dockerfile`，通过构建参数指定服务与入口：
+
 ```bash
 # 示例：构建 gateway
 docker build -f backend/Dockerfile -t onebook-gateway \
@@ -115,11 +123,13 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 ```
 
 ## 接口文档
+
 - REST/OpenAPI（Gateway）：`backend/api/rest/openapi.yaml`
 - REST/OpenAPI（Internal）：`backend/api/rest/openapi-internal.yaml`
 - Swagger UI：`docker compose up -d swagger-ui` 后访问 `http://localhost:8086`
 
 ## 前端联调（建议先看）
+
 - 统一只请求 Gateway：`http://localhost:8080`
 - 会话使用：
   - 登录/注册成功后由网关设置 `HttpOnly` Cookie（`onebook_access` + `onebook_refresh`）
@@ -130,6 +140,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 详细请求/错误语义与联调清单：`docs/backend/backend_handoff.md`
 
 ## 开发与测试
+
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
 - 可选 OCR（扫描版 PDF）：
@@ -142,7 +153,8 @@ docker build -f backend/Dockerfile -t onebook-gateway \
     - `INGEST_PDF_OCR_MIN_SCORE_DELTA`：OCR 结果相对 native 的最小增益阈值
 
 ## 后续步骤（建议）
-1) 可观测性：指标/追踪、队列与索引处理监控。
-2) 检索质量：重排、去重与提示模板优化。
-3) 安全与配额：细粒度权限、密钥轮换自动化、配额管理。
-4) 前端：书库与对话 UI、上传进度与失败重试体验。
+
+1. 可观测性增强：metrics/tracing、队列与索引处理监控（结构化日志已落地）。
+2. 检索质量：重排、去重与提示模板优化。
+3. 安全与配额：细粒度权限、密钥轮换自动化、配额管理。
+4. 前端：书库与对话 UI、上传进度与失败重试体验。
