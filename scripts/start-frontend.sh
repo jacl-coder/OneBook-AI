@@ -59,6 +59,9 @@ fi
 
 trap cleanup EXIT INT TERM
 
+# Kill any leftover listener on frontend port to ensure idempotent startup.
+fuser -k "${FRONTEND_PORT}/tcp" >/dev/null 2>&1 || true
+
 cd "$FRONTEND_DIR"
 if [[ ! -d node_modules ]]; then
   echo "Installing frontend dependencies..."
