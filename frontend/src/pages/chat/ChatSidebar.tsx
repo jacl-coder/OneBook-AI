@@ -149,7 +149,7 @@ export function ChatSidebar({
       <aside
         id="stage-slideover-sidebar"
         className={cx(
-          'min-h-screen grid grid-rows-[auto_minmax(0,1fr)_auto] bg-[#f7f7f7] p-0 max-[767px]:fixed max-[767px]:bottom-0 max-[767px]:left-0 max-[767px]:top-0 max-[767px]:z-[39] max-[767px]:w-[min(82vw,300px)] max-[767px]:-translate-x-[104%] max-[767px]:shadow-[6px_0_30px_rgba(0,0,0,0.15)] max-[767px]:transition-transform max-[767px]:duration-180',
+          'grid grid-rows-[auto_minmax(0,1fr)_auto] bg-[#f7f7f7] p-0 max-[767px]:fixed max-[767px]:bottom-0 max-[767px]:left-0 max-[767px]:top-0 max-[767px]:z-[39] max-[767px]:w-[min(82vw,300px)] max-[767px]:-translate-x-[104%] max-[767px]:shadow-[6px_0_30px_rgba(0,0,0,0.15)] max-[767px]:transition-transform max-[767px]:duration-180',
           isSidebarOpen && 'max-[767px]:translate-x-0',
           isDesktopSidebarCollapsed && 'md:hidden',
         )}
