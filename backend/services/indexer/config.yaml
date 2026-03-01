@@ -6,6 +6,7 @@ port: "8085"
 # ONEBOOK_EMBEDDING_DIM (canonical embedding dim for db/chat/indexer)
 # EMBEDDING_BATCH_SIZE, EMBEDDING_CONCURRENCY
 logLevel: "info"
+logsDir: "logs"
 bookServiceURL: "http://localhost:8082"
 queueName: "onebook:indexer"
 queueGroup: "indexer"

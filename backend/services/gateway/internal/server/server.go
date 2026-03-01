@@ -1,19 +1,16 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/sync/singleflight"
 	"onebookai/internal/ratelimit"
 	"onebookai/internal/usertoken"
 	"onebookai/internal/util"
@@ -21,11 +18,9 @@ import (
 	"onebookai/services/gateway/internal/authclient"
 	"onebookai/services/gateway/internal/bookclient"
 	"onebookai/services/gateway/internal/chatclient"
+
+	"golang.org/x/sync/singleflight"
 )
-
-type contextKey string
-
-const requestIDContextKey contextKey = "request_id"
 
 const (
 	defaultAccessCookieName    = "onebook_access"
@@ -175,8 +170,7 @@ func New(cfg Config) (*Server, error) {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	handler := util.WithSecurityHeaders(util.WithCORS(s.mux))
-	return withRequestID(handler)
+	return util.WithRequestID(util.WithRequestLog("gateway", util.WithSecurityHeaders(util.WithCORS(s.mux))))
 }
 
 func (s *Server) routes() {
@@ -295,7 +289,7 @@ func (s *Server) authorizeAccessToken(r *http.Request, accessToken string) (doma
 			return domain.User{}, errSessionUnauthorized
 		}
 	}
-	user, err := s.auth.Me(requestIDFromRequest(r), token)
+	user, err := s.auth.Me(util.RequestIDFromRequest(r), token)
 	if err != nil {
 		if isUnauthorizedAuthError(err) {
 			s.audit(r, "gateway.token.verify", "fail", "reason", "auth_me_unauthorized")
@@ -314,7 +308,7 @@ func (s *Server) refreshViaCookie(w http.ResponseWriter, r *http.Request, refres
 		return authContext{}, errSessionUnauthorized
 	}
 	result, err, _ := s.refreshSingle.Do(token, func() (any, error) {
-		user, accessToken, newRefreshToken, err := s.auth.Refresh(requestIDFromRequest(r), token)
+		user, accessToken, newRefreshToken, err := s.auth.Refresh(util.RequestIDFromRequest(r), token)
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +347,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.SignUp(requestIDFromRequest(r), req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.auth.SignUp(util.RequestIDFromRequest(r), req.Email, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.signup", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -382,7 +376,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.Login(requestIDFromRequest(r), req.Email, req.Password)
+	user, accessToken, refreshToken, err := s.auth.Login(util.RequestIDFromRequest(r), req.Email, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.login", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -416,7 +410,7 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
 		return
 	}
-	passwordLogin, err := s.auth.LoginMethods(requestIDFromRequest(r), req.Email)
+	passwordLogin, err := s.auth.LoginMethods(util.RequestIDFromRequest(r), req.Email)
 	if err != nil {
 		s.audit(r, "gateway.login.methods", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -446,7 +440,7 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "email and verification purpose are required", "AUTH_INVALID_REQUEST")
 		return
 	}
-	resp, err := s.auth.OTPSend(requestIDFromRequest(r), req.Email, req.Purpose)
+	resp, err := s.auth.OTPSend(util.RequestIDFromRequest(r), req.Email, req.Purpose)
 	if err != nil {
 		s.audit(r, "gateway.otp.send", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -477,7 +471,7 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, accessToken, refreshToken, err := s.auth.OTPVerify(
-		requestIDFromRequest(r),
+		util.RequestIDFromRequest(r),
 		req.ChallengeID,
 		req.Email,
 		req.Purpose,
@@ -517,7 +511,7 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 		writeErrorWithCode(w, r, http.StatusBadRequest, "verification request is incomplete", "AUTH_INVALID_REQUEST")
 		return
 	}
-	resp, err := s.auth.PasswordResetVerify(requestIDFromRequest(r), req.ChallengeID, req.Email, req.Code)
+	resp, err := s.auth.PasswordResetVerify(util.RequestIDFromRequest(r), req.ChallengeID, req.Email, req.Code)
 	if err != nil {
 		s.audit(r, "gateway.password.reset.verify", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -547,7 +541,7 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		writeErrorWithCode(w, r, http.StatusBadRequest, "email, reset token, and new password are required", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if err := s.auth.PasswordResetComplete(requestIDFromRequest(r), req.Email, req.ResetToken, req.NewPassword); err != nil {
+	if err := s.auth.PasswordResetComplete(util.RequestIDFromRequest(r), req.Email, req.ResetToken, req.NewPassword); err != nil {
 		s.audit(r, "gateway.password.reset.complete", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -598,7 +592,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if err := s.auth.Logout(requestIDFromRequest(r), accessToken, refreshToken); err != nil {
+	if err := s.auth.Logout(util.RequestIDFromRequest(r), accessToken, refreshToken); err != nil {
 		s.audit(r, "gateway.logout", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -612,7 +606,7 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w, r)
 		return
 	}
-	keys, err := s.auth.JWKS(requestIDFromRequest(r))
+	keys, err := s.auth.JWKS(util.RequestIDFromRequest(r))
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -635,7 +629,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, ctx authContex
 			writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
 			return
 		}
-		updated, err := s.auth.UpdateMe(requestIDFromRequest(r), ctx.AccessToken, req.Email)
+		updated, err := s.auth.UpdateMe(util.RequestIDFromRequest(r), ctx.AccessToken, req.Email)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
@@ -664,7 +658,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, ct
 		writeErrorWithCode(w, r, http.StatusBadRequest, "new password is required", "AUTH_NEW_PASSWORD_REQUIRED")
 		return
 	}
-	if err := s.auth.ChangePassword(requestIDFromRequest(r), ctx.AccessToken, req.CurrentPassword, req.NewPassword); err != nil {
+	if err := s.auth.ChangePassword(util.RequestIDFromRequest(r), ctx.AccessToken, req.CurrentPassword, req.NewPassword); err != nil {
 		writeAuthError(w, r, err)
 		return
 	}
@@ -705,14 +699,14 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, ctx auth
 
 	switch r.Method {
 	case http.MethodGet:
-		book, err := s.books.GetBook(requestIDFromRequest(r), ctx.AccessToken, id)
+		book, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
 		if err != nil {
 			writeBookError(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, book)
 	case http.MethodDelete:
-		if err := s.books.DeleteBook(requestIDFromRequest(r), ctx.AccessToken, id); err != nil {
+		if err := s.books.DeleteBook(util.RequestIDFromRequest(r), ctx.AccessToken, id); err != nil {
 			writeBookError(w, r, err)
 			return
 		}
@@ -728,7 +722,7 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, toke
 		methodNotAllowed(w, r)
 		return
 	}
-	resp, err := s.books.GetDownloadURL(requestIDFromRequest(r), token, id)
+	resp, err := s.books.GetDownloadURL(util.RequestIDFromRequest(r), token, id)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -754,7 +748,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 		writeErrorWithCode(w, r, http.StatusBadRequest, "unsupported file type", "BOOK_UNSUPPORTED_FILE_TYPE")
 		return
 	}
-	book, err := s.books.UploadBook(requestIDFromRequest(r), token, header.Filename, file)
+	book, err := s.books.UploadBook(util.RequestIDFromRequest(r), token, header.Filename, file)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -763,7 +757,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 }
 
 func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, token string) {
-	books, err := s.books.ListBooks(requestIDFromRequest(r), token)
+	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), token)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -789,7 +783,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		return
 	}
 	ans, err := s.chat.AskQuestion(
-		requestIDFromRequest(r),
+		util.RequestIDFromRequest(r),
 		ctx.AccessToken,
 		req.ConversationID,
 		req.BookID,
@@ -808,7 +802,7 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, ctx
 		return
 	}
 	limit := parsePositiveIntWithMax(r.URL.Query().Get("limit"), 30, 100)
-	items, err := s.chat.ListConversations(requestIDFromRequest(r), ctx.AccessToken, limit)
+	items, err := s.chat.ListConversations(util.RequestIDFromRequest(r), ctx.AccessToken, limit)
 	if err != nil {
 		writeChatError(w, r, err)
 		return
@@ -841,7 +835,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	limit := parsePositiveIntWithMax(r.URL.Query().Get("limit"), 200, 500)
-	items, err := s.chat.ListConversationMessages(requestIDFromRequest(r), ctx.AccessToken, conversationID, limit)
+	items, err := s.chat.ListConversationMessages(util.RequestIDFromRequest(r), ctx.AccessToken, conversationID, limit)
 	if err != nil {
 		writeChatError(w, r, err)
 		return
@@ -858,7 +852,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, ctx au
 		methodNotAllowed(w, r)
 		return
 	}
-	users, err := s.auth.AdminListUsers(requestIDFromRequest(r), ctx.AccessToken)
+	users, err := s.auth.AdminListUsers(util.RequestIDFromRequest(r), ctx.AccessToken)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -906,7 +900,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		writeErrorWithCode(w, r, http.StatusBadRequest, "role or status is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
 		return
 	}
-	updated, err := s.auth.AdminUpdateUser(requestIDFromRequest(r), ctx.AccessToken, id, role, status)
+	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -919,7 +913,7 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, ctx au
 		methodNotAllowed(w, r)
 		return
 	}
-	books, err := s.books.ListBooks(requestIDFromRequest(r), ctx.AccessToken)
+	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), ctx.AccessToken)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -1114,7 +1108,7 @@ func writeErrorWithCode(w http.ResponseWriter, r *http.Request, status int, msg,
 	writeJSON(w, status, errorResponse{
 		Error:     msg,
 		Code:      code,
-		RequestID: requestIDFromRequest(r),
+		RequestID: util.RequestIDFromRequest(r),
 	})
 }
 
@@ -1243,14 +1237,15 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		"path", r.URL.Path,
 		"method", r.Method,
 		"ip", util.ClientIP(r, s.trustedProxies),
-		"request_id", requestIDFromRequest(r),
+		"request_id", util.RequestIDFromRequest(r),
 	}
 	logAttrs = append(logAttrs, attrs...)
+	log := util.LoggerFromContext(r.Context())
 	if outcome == "success" {
-		slog.Info("security_event", logAttrs...)
+		log.Info("security_event", logAttrs...)
 		return
 	}
-	slog.Warn("security_event", logAttrs...)
+	log.Warn("security_event", logAttrs...)
 }
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg, code string) bool {
@@ -1273,25 +1268,24 @@ func (s *Server) isExtensionAllowed(filename string) bool {
 }
 
 func writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
+	log := util.LoggerFromContext(r.Context())
 	if apiErr, ok := err.(*authclient.APIError); ok {
-		slog.Warn(
+		log.Warn(
 			"gateway_upstream_error",
 			"upstream", "auth",
 			"status", apiErr.Status,
 			"code", apiErr.Code,
 			"path", r.URL.Path,
 			"method", r.Method,
-			"request_id", requestIDFromRequest(r),
 		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
-	slog.Error(
+	log.Error(
 		"gateway_upstream_unavailable",
 		"upstream", "auth",
 		"path", r.URL.Path,
 		"method", r.Method,
-		"request_id", requestIDFromRequest(r),
 		"err", err,
 	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "auth service unavailable", "AUTH_SERVICE_UNAVAILABLE")
@@ -1306,71 +1300,49 @@ func isUnauthorizedAuthError(err error) bool {
 }
 
 func writeBookError(w http.ResponseWriter, r *http.Request, err error) {
+	log := util.LoggerFromContext(r.Context())
 	if apiErr, ok := err.(*bookclient.APIError); ok {
-		slog.Warn(
+		log.Warn(
 			"gateway_upstream_error",
 			"upstream", "book",
 			"status", apiErr.Status,
 			"code", apiErr.Code,
 			"path", r.URL.Path,
 			"method", r.Method,
-			"request_id", requestIDFromRequest(r),
 		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
-	slog.Error(
+	log.Error(
 		"gateway_upstream_unavailable",
 		"upstream", "book",
 		"path", r.URL.Path,
 		"method", r.Method,
-		"request_id", requestIDFromRequest(r),
 		"err", err,
 	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "book service unavailable", "BOOK_SERVICE_UNAVAILABLE")
 }
 
 func writeChatError(w http.ResponseWriter, r *http.Request, err error) {
+	log := util.LoggerFromContext(r.Context())
 	if apiErr, ok := err.(*chatclient.APIError); ok {
-		slog.Warn(
+		log.Warn(
 			"gateway_upstream_error",
 			"upstream", "chat",
 			"status", apiErr.Status,
 			"code", apiErr.Code,
 			"path", r.URL.Path,
 			"method", r.Method,
-			"request_id", requestIDFromRequest(r),
 		)
 		writeErrorWithCode(w, r, apiErr.Status, apiErr.Message, apiErr.Code)
 		return
 	}
-	slog.Error(
+	log.Error(
 		"gateway_upstream_unavailable",
 		"upstream", "chat",
 		"path", r.URL.Path,
 		"method", r.Method,
-		"request_id", requestIDFromRequest(r),
 		"err", err,
 	)
 	writeErrorWithCode(w, r, http.StatusBadGateway, "chat service unavailable", "CHAT_SERVICE_UNAVAILABLE")
-}
-
-func withRequestID(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := strings.TrimSpace(r.Header.Get("X-Request-Id"))
-		if requestID == "" {
-			requestID = util.NewID()
-		}
-		w.Header().Set("X-Request-Id", requestID)
-		ctx := context.WithValue(r.Context(), requestIDContextKey, requestID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func requestIDFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	id, _ := r.Context().Value(requestIDContextKey).(string)
-	return id
 }

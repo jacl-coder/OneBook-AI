@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"onebookai/internal/util"
@@ -15,26 +16,31 @@ import (
 func main() {
 	cfg, err := config.Load(config.ConfigPath)
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "FATAL: failed to load config: %v\n", err)
+		os.Exit(1)
 	}
+
+	logger, cleanup := util.InitLogger(cfg.LogLevel, "auth", cfg.LogsDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
+
 	sessionTTL, err := config.ParseSessionTTL(cfg.SessionTTL)
 	if err != nil {
-		log.Fatalf("failed to parse session TTL: %v", err)
+		util.Fatal("failed to parse session TTL", "err", err)
 	}
 	refreshTTL, err := config.ParseRefreshTTL(cfg.RefreshTTL)
 	if err != nil {
-		log.Fatalf("failed to parse refresh TTL: %v", err)
+		util.Fatal("failed to parse refresh TTL", "err", err)
 	}
 	jwtLeeway, err := config.ParseJWTLeeway(cfg.JWTLeeway)
 	if err != nil {
-		log.Fatalf("failed to parse jwt leeway: %v", err)
+		util.Fatal("failed to parse jwt leeway", "err", err)
 	}
 	verifyPublicKeys, err := config.ParseVerifyPublicKeys(cfg.JWTVerifyPublicKeys)
 	if err != nil {
-		log.Fatalf("failed to parse jwt verify public keys: %v", err)
+		util.Fatal("failed to parse jwt verify public keys", "err", err)
 	}
-
-	logger := util.InitLogger(cfg.LogLevel)
 
 	appCore, err := app.New(app.Config{
 		DatabaseURL:         cfg.DatabaseURL,
@@ -51,7 +57,7 @@ func main() {
 		JWTLeeway:           jwtLeeway,
 	})
 	if err != nil {
-		log.Fatalf("failed to init app: %v", err)
+		util.Fatal("failed to init app", "err", err)
 	}
 
 	httpServer, err := server.New(server.Config{
@@ -65,7 +71,7 @@ func main() {
 		PasswordRateLimitPerMinute: cfg.PasswordRateLimitPerMinute,
 	})
 	if err != nil {
-		log.Fatalf("failed to init auth server: %v", err)
+		util.Fatal("failed to init auth server", "err", err)
 	}
 
 	addr := ":" + cfg.Port

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -111,7 +110,7 @@ func New(cfg Config) (*Server, error) {
 
 // Router returns the configured handler.
 func (s *Server) Router() http.Handler {
-	return util.WithRequestID(util.WithSecurityHeaders(s.mux))
+	return util.WithRequestID(util.WithRequestLog("auth", util.WithSecurityHeaders(s.mux)))
 }
 
 func (s *Server) routes() {
@@ -214,7 +213,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.signup", "fail", "reason", "invalid_password")
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("auth.signup_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.signup_error", "err", err)
 			s.audit(r, "auth.signup", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -256,7 +255,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.login", "fail", "reason", "invalid_credentials")
 			writeError(w, http.StatusUnauthorized, err.Error())
 		default:
-			slog.Error("auth.login_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.login_error", "err", err)
 			s.audit(r, "auth.login", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -294,7 +293,7 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 	}
 	passwordLogin, err := s.app.CanLoginWithPassword(email)
 	if err != nil {
-		slog.Error("auth.login.methods_error", "err", err)
+		util.LoggerFromContext(r.Context()).Error("auth.login.methods_error", "err", err)
 		s.audit(r, "auth.login.methods", "fail", "reason", "internal_error")
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -334,7 +333,7 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 	if purpose == otpPurposeSignupPassword || purpose == otpPurposeSignupOTP {
 		exists, err := s.app.HasUserEmail(email)
 		if err != nil {
-			slog.Error("auth.otp.send_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.otp.send_error", "err", err)
 			s.audit(r, "auth.otp.send", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -355,13 +354,13 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.otp.send", "fail", "reason", "invalid_purpose")
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("auth.otp.send_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.otp.send_error", "err", err)
 			s.audit(r, "auth.otp.send", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
 		return
 	}
-	slog.Info(
+	util.LoggerFromContext(r.Context()).Info(
 		"auth_otp_sent",
 		"email", maskEmail(email),
 		"purpose", purpose,
@@ -431,7 +430,7 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_request")
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("auth.otp.verify_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.otp.verify_error", "err", err)
 			s.audit(r, "auth.otp.verify", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -447,7 +446,7 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_credentials")
 			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
 		default:
-			slog.Error("auth.otp.verify_flow_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.otp.verify_flow_error", "err", err)
 			s.audit(r, "auth.otp.verify", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -498,7 +497,7 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 			s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_request")
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("auth.password.reset.verify_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.password.reset.verify_error", "err", err)
 			s.audit(r, "auth.password.reset.verify", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -506,7 +505,7 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 	}
 	resetToken, expiresInSeconds, err := s.otp.CreateResetToken(email)
 	if err != nil {
-		slog.Error("auth.password.reset.token_error", "err", err)
+		util.LoggerFromContext(r.Context()).Error("auth.password.reset.token_error", "err", err)
 		s.audit(r, "auth.password.reset.verify", "fail", "reason", "internal_error")
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -548,7 +547,7 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 			s.audit(r, "auth.password.reset.complete", "fail", "reason", "token_invalid")
 			writeError(w, http.StatusUnauthorized, err.Error())
 		default:
-			slog.Error("auth.password.reset.validate_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.password.reset.validate_error", "err", err)
 			s.audit(r, "auth.password.reset.complete", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -562,13 +561,13 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, app.ErrInvalidCredentials), errors.Is(err, app.ErrUserDisabled):
 			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
 		default:
-			slog.Error("auth.password.reset.complete_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.password.reset.complete_error", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
 		return
 	}
 	if err := s.otp.ConsumeResetToken(req.ResetToken); err != nil {
-		slog.Warn("auth.password.reset.consume_token_error", "err", err)
+		util.LoggerFromContext(r.Context()).Warn("auth.password.reset.consume_token_error", "err", err)
 	}
 	s.audit(r, "auth.password.reset.complete", "success")
 	w.WriteHeader(http.StatusNoContent)
@@ -599,7 +598,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			s.audit(r, "auth.refresh", "fail", "reason", "invalid_refresh_token")
 			writeError(w, http.StatusUnauthorized, err.Error())
 		default:
-			slog.Error("auth.refresh_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.refresh_error", "err", err)
 			s.audit(r, "auth.refresh", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
@@ -708,7 +707,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 		case errors.Is(err, app.ErrCurrentPasswordRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrInvalidCredentials), isPasswordPolicyError(err):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.Error("auth.password.change_error", "err", err)
+			util.LoggerFromContext(r.Context()).Error("auth.password.change_error", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
 		return
@@ -868,12 +867,12 @@ type jwksResponse struct {
 func bearerToken(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		slog.Warn("missing bearer prefix", "path", r.URL.Path)
+		util.LoggerFromContext(r.Context()).Warn("missing bearer prefix", "path", r.URL.Path)
 		return "", false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 	if token == "" {
-		slog.Warn("empty bearer token", "path", r.URL.Path)
+		util.LoggerFromContext(r.Context()).Warn("empty bearer token", "path", r.URL.Path)
 		return "", false
 	}
 	return token, true
@@ -942,9 +941,9 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 	if s.alerter != nil && outcome != "success" {
 		alert, err := s.alerter.Observe(event, outcome, ip)
 		if err != nil {
-			slog.Error("security_alert_error", "event", event, "outcome", outcome, "ip", ip, "err", err)
+			util.LoggerFromContext(r.Context()).Error("security_alert_error", "event", event, "outcome", outcome, "ip", ip, "err", err)
 		} else if alert.Triggered {
-			slog.Error(
+			util.LoggerFromContext(r.Context()).Error(
 				"security_alert",
 				"event", event,
 				"outcome", outcome,
@@ -956,10 +955,10 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		}
 	}
 	if outcome == "success" {
-		slog.Info("security_event", logAttrs...)
+		util.LoggerFromContext(r.Context()).Info("security_event", logAttrs...)
 		return
 	}
-	slog.Warn("security_event", logAttrs...)
+	util.LoggerFromContext(r.Context()).Warn("security_event", logAttrs...)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

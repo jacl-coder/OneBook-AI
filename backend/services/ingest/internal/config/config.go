@@ -14,6 +14,7 @@ import (
 type FileConfig struct {
 	Port                        string  `yaml:"port"`
 	LogLevel                    string  `yaml:"logLevel"`
+	LogsDir                     string  `yaml:"logsDir"`
 	DatabaseURL                 string  `yaml:"databaseURL"`
 	BookServiceURL              string  `yaml:"bookServiceURL"`
 	IndexerURL                  string  `yaml:"indexerURL"`
@@ -53,6 +54,9 @@ func Load(path string) (FileConfig, error) {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
 	// Override with environment variables
+	if v := os.Getenv("LOGS_DIR"); v != "" {
+		cfg.LogsDir = v
+	}
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
 	}

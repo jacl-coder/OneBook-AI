@@ -1,4 +1,6 @@
 port: "8081"
+logLevel: "info"
+logsDir: "logs"
 # Secrets loaded from environment variables:
 # DATABASE_URL, REDIS_ADDR, REDIS_PASSWORD (required),
 # JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH/JWT_KEY_ID/JWT_VERIFY_PUBLIC_KEYS (RS256),
@@ -16,4 +18,3 @@ signupRateLimitPerMinute: 5
 loginRateLimitPerMinute: 10
 refreshRateLimitPerMinute: 20
 passwordRateLimitPerMinute: 10
-logLevel: "info"
