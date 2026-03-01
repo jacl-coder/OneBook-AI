@@ -15,6 +15,7 @@ import (
 type FileConfig struct {
 	Port                       string   `yaml:"port"`
 	LogLevel                   string   `yaml:"logLevel"`
+	LogsDir                    string   `yaml:"logsDir"`
 	AuthServiceURL             string   `yaml:"authServiceURL"`
 	AuthJWKSURL                string   `yaml:"authJwksURL"`
 	AccessCookieName           string   `yaml:"accessCookieName"`
@@ -57,6 +58,9 @@ func Load(path string) (FileConfig, error) {
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+	if v := os.Getenv("LOGS_DIR"); v != "" {
+		cfg.LogsDir = v
 	}
 	if v := os.Getenv("GATEWAY_MAX_UPLOAD_BYTES"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {

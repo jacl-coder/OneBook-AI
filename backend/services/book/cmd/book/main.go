@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"onebookai/internal/servicetoken"
@@ -18,17 +19,22 @@ import (
 func main() {
 	cfg, err := config.Load(config.ConfigPath)
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "FATAL: failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
-	logger := util.InitLogger(cfg.LogLevel)
+	logger, cleanup := util.InitLogger(cfg.LogLevel, "book", cfg.LogsDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
+
 	jwtLeeway, err := config.ParseJWTLeeway(cfg.JWTLeeway)
 	if err != nil {
-		log.Fatalf("failed to parse jwt leeway: %v", err)
+		util.Fatal("failed to parse jwt leeway", "err", err)
 	}
 	internalVerifyKeys, err := servicetoken.ParseVerifyPublicKeys(cfg.InternalJWTVerifyPublicKeys)
 	if err != nil {
-		log.Fatalf("failed to parse internal jwt verify public keys: %v", err)
+		util.Fatal("failed to parse internal jwt verify public keys", "err", err)
 	}
 	authClient := authclient.NewClient(cfg.AuthServiceURL)
 	tokenVerifier, err := usertoken.NewVerifier(usertoken.Config{
@@ -39,7 +45,7 @@ func main() {
 		HTTPClient: &http.Client{Timeout: 5 * time.Second},
 	})
 	if err != nil {
-		log.Fatalf("failed to init jwks verifier: %v", err)
+		util.Fatal("failed to init jwks verifier", "err", err)
 	}
 
 	appCore, err := app.New(app.Config{
@@ -56,7 +62,7 @@ func main() {
 		AllowedExtensions:         cfg.AllowedExtensions,
 	})
 	if err != nil {
-		log.Fatalf("failed to init app: %v", err)
+		util.Fatal("failed to init app", "err", err)
 	}
 
 	httpServer, err := server.New(server.Config{
@@ -69,7 +75,7 @@ func main() {
 		MaxUploadBytes:              cfg.MaxUploadBytes,
 	})
 	if err != nil {
-		log.Fatalf("failed to init server: %v", err)
+		util.Fatal("failed to init server", "err", err)
 	}
 
 	addr := ":" + cfg.Port

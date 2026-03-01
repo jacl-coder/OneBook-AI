@@ -20,6 +20,7 @@ vendor/
 
 # Logs & temp
 *.log
+logs/
 tmp/
 
 # Environment

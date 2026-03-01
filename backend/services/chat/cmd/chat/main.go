@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"onebookai/internal/usertoken"
@@ -18,13 +19,18 @@ import (
 func main() {
 	cfg, err := config.Load(config.ConfigPath)
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "FATAL: failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
-	logger := util.InitLogger(cfg.LogLevel)
+	logger, cleanup := util.InitLogger(cfg.LogLevel, "chat", cfg.LogsDir)
+	if cleanup != nil {
+		defer cleanup()
+	}
+
 	jwtLeeway, err := config.ParseJWTLeeway(cfg.JWTLeeway)
 	if err != nil {
-		log.Fatalf("failed to parse jwt leeway: %v", err)
+		util.Fatal("failed to parse jwt leeway", "err", err)
 	}
 	authClient := authclient.NewClient(cfg.AuthServiceURL)
 	tokenVerifier, err := usertoken.NewVerifier(usertoken.Config{
@@ -35,7 +41,7 @@ func main() {
 		HTTPClient: &http.Client{Timeout: 5 * time.Second},
 	})
 	if err != nil {
-		log.Fatalf("failed to init jwks verifier: %v", err)
+		util.Fatal("failed to init jwks verifier", "err", err)
 	}
 	bookClient := bookclient.NewClient(cfg.BookServiceURL)
 
@@ -53,7 +59,7 @@ func main() {
 		HistoryLimit:       cfg.HistoryLimit,
 	})
 	if err != nil {
-		log.Fatalf("failed to init app: %v", err)
+		util.Fatal("failed to init app", "err", err)
 	}
 
 	httpServer := server.New(server.Config{

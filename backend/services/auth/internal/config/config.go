@@ -21,6 +21,7 @@ type FileConfig struct {
 	SessionTTL                 string   `yaml:"sessionTTL"`
 	RefreshTTL                 string   `yaml:"refreshTTL"`
 	LogLevel                   string   `yaml:"logLevel"`
+	LogsDir                    string   `yaml:"logsDir"`
 	JWTPrivateKeyPath          string   `yaml:"jwtPrivateKeyPath"`
 	JWTPublicKeyPath           string   `yaml:"jwtPublicKeyPath"`
 	JWTKeyID                   string   `yaml:"jwtKeyId"`
@@ -48,6 +49,9 @@ func Load(path string) (FileConfig, error) {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
 	// Override with environment variables
+	if v := os.Getenv("LOGS_DIR"); v != "" {
+		cfg.LogsDir = v
+	}
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
 	}
