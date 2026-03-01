@@ -7,7 +7,7 @@
 - **Auth**：注册/登录/登出、用户自助、管理员用户管理；RS256 JWT + JWKS，本地验签，Redis 管理 refresh token 与撤销状态。
 - **Book**：书籍上传/列表/查询/删除，文件存储 MinIO，下载返回预签名 URL。
 - **Ingest**：解析 PDF/EPUB/TXT → 语义分块 → 写入 chunks（带来源元数据）。
-- **Indexer**：Embedding（Gemini/Ollama）、批量/并发写入 pgvector，更新书籍状态。
+- **Indexer**：Embedding（Ollama）、批量/并发写入 pgvector，更新书籍状态。
 - **Chat**：向量检索 + Gemini 生成回答，保存消息历史。
 - **基础设施**：Postgres + pgvector、Redis、MinIO；CI（go test）与通用 Dockerfile。
 

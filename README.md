@@ -9,7 +9,7 @@
 - 前端联调说明：见 `docs/backend/backend_handoff.md`
 - 前端开发流程：见 `docs/frontend/frontend_development_workflow.md`
 - 后端链路已打通：上传 → 解析/分块 → 向量索引 → 检索问答
-- Embedding 支持本地 Ollama 或 Gemini；回答生成使用 Gemini
+- Embedding 使用本地 Ollama；回答生成使用 Gemini
 - Ingest/Indexer 通过 Redis Streams 持久队列驱动，支持重试
 
 ## 功能概览（已实现）
@@ -30,7 +30,7 @@
 - 存储：MinIO（S3 兼容对象存储）
 - 队列：Redis Streams（Ingest/Indexer），Redis（认证撤销状态与 refresh token）
 - LLM：Gemini（回答生成）
-- Embedding：Gemini 或 Ollama（本地模型）
+- Embedding：Ollama（本地模型）
 - 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库
 
 ## 后端服务与 API

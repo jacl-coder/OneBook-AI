@@ -6,7 +6,7 @@
 - 存储：MinIO（S3 兼容对象存储）。
 - 队列：Redis Streams（Ingest/Indexer），Redis（refresh token、撤销状态、分布式限流）。
 - LLM：Gemini（回答生成）。
-- Embedding：Gemini 或 Ollama（本地模型）。
+- Embedding：Ollama（本地模型）。
 - 解析：PDF 优先 `pdftotext`（可选），失败则使用 Go PDF 库；EPUB/HTML 解析；TXT 直接分块。
 - 前端：React 19 + TypeScript + Vite 7 + React Router 7 + Axios + TanStack Query + Zustand + Tailwind v4。
 
@@ -23,7 +23,7 @@
 - **Message**：按书存储对话历史。
 
 ## 可替换与扩展点
-- Embedding 可切换为本地 Ollama 或云端（Gemini），维度可配置。
+- Embedding 使用 Ollama（本地模型），维度可配置。
 - LLM 目前仅接入 Gemini，接口预留可扩展其他模型。
 - 存储层可替换为其他 S3 兼容对象存储；向量可迁移到专用向量数据库。
 
