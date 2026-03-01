@@ -134,7 +134,7 @@ const chatTw = {
   sidebarAccountMeta: 'grid min-w-0',
   sidebarAccountEmail: 'overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-4',
   sidebarLogoutButton: 'cursor-pointer rounded-[8px] border-0 bg-transparent px-[6px] py-1 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
-  chatMainLayout: 'grid min-h-screen grid-rows-[52px_minmax(0,1fr)_auto]',
+  chatMainLayout: 'grid min-h-0 h-full grid-rows-[52px_minmax(0,1fr)_auto]',
   chatTopBar: 'flex h-[52px] items-center justify-between bg-white px-[14px] py-2 max-[767px]:px-[10px]',
   chatTopBarLeft: 'flex items-center gap-2',
   chatSidebarOpenIcon: 'block h-[18px] w-[18px]',
@@ -880,7 +880,7 @@ export function ChatPage() {
     return (
       <div
         className={cx(
-          'grid min-h-screen bg-white text-[#0d0d0d] max-[767px]:grid-cols-[minmax(0,1fr)]',
+          'grid h-screen overflow-hidden bg-white text-[#0d0d0d] max-[767px]:grid-cols-[minmax(0,1fr)]',
           isDesktopSidebarCollapsed ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[260px_minmax(0,1fr)]',
         )}
         style={chatUiSansStyle}
