@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,9 +73,15 @@ func (a *App) parsePDF(path string) ([]chunkPayload, error) {
 		}
 	}
 	if needsOCR {
-		ocrPages, ocrErr := a.parsePDFWithPaddleOCR(path)
+		var ocrPages []pageExtraction
+		var ocrErr error
+		if a.ocrServiceURL != "" {
+			ocrPages, ocrErr = a.parsePDFWithOCRService(path)
+		} else {
+			ocrPages, ocrErr = a.parsePDFWithPaddleOCR(path)
+		}
 		if ocrErr != nil && len(nativePages) == 0 {
-			return nil, fmt.Errorf("no text extracted from PDF; native=%v; paddleocr=%v", nativeErr, ocrErr)
+			return nil, fmt.Errorf("no text extracted from PDF; native=%v; ocr=%v", nativeErr, ocrErr)
 		}
 		if ocrErr == nil {
 			selectedPages = a.mergePDFPages(nativePages, ocrPages)
@@ -208,6 +216,93 @@ func (a *App) parsePDFWithPaddleOCR(path string) ([]pageExtraction, error) {
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("paddleocr extracted no usable text")
+	}
+	return out, nil
+}
+
+// ocrServicePage is the per-page structure returned by the Docker OCR HTTP service.
+type ocrServicePage struct {
+	Page     int     `json:"page"`
+	Text     string  `json:"text"`
+	AvgScore float64 `json:"avg_score"`
+}
+
+// ocrServiceResponse is the full response from POST /ocr.
+type ocrServiceResponse struct {
+	Pages []ocrServicePage `json:"pages"`
+}
+
+// parsePDFWithOCRService calls the Docker OCR HTTP service (preferred over CLI).
+func (a *App) parsePDFWithOCRService(path string) ([]pageExtraction, error) {
+	if a.ocrServiceURL == "" {
+		return nil, fmt.Errorf("ocr service URL not configured")
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open pdf for ocr service: %w", err)
+	}
+	defer f.Close()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", filepath.Base(path))
+	if err != nil {
+		return nil, fmt.Errorf("create multipart field: %w", err)
+	}
+	if _, err = io.Copy(part, f); err != nil {
+		return nil, fmt.Errorf("write pdf to multipart: %w", err)
+	}
+	if err = mw.Close(); err != nil {
+		return nil, fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), a.ocrTimeout)
+	defer cancel()
+
+	url := strings.TrimRight(a.ocrServiceURL, "/") + "/ocr"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("build ocr http request: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	// Use a client without a fixed Timeout so the context deadline (ocrTimeout) governs.
+	ocrHTTPClient := &http.Client{}
+	resp, err := ocrHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call ocr service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read ocr service response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ocr service error %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var svcResp ocrServiceResponse
+	if err := json.Unmarshal(respBody, &svcResp); err != nil {
+		return nil, fmt.Errorf("parse ocr service response: %w", err)
+	}
+
+	out := make([]pageExtraction, 0, len(svcResp.Pages))
+	for _, p := range svcResp.Pages {
+		text := normalizeTextPreserveNewlines(p.Text)
+		if text == "" {
+			continue
+		}
+		out = append(out, pageExtraction{
+			Page:        p.Page,
+			Text:        text,
+			Method:      "ocr-service",
+			OCRAvgScore: p.AvgScore,
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("ocr service extracted no usable text")
 	}
 	return out, nil
 }

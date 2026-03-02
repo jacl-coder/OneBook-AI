@@ -50,6 +50,7 @@ func main() {
 		OCRCommand:                cfg.OCRCommand,
 		OCRDevice:                 cfg.OCRDevice,
 		OCRTimeoutSeconds:         cfg.OCRTimeoutSeconds,
+		OCRServiceURL:             cfg.OCRServiceURL,
 		PDFMinPageRunes:           cfg.PDFMinPageRunes,
 		PDFMinPageScore:           cfg.PDFMinPageScore,
 		PDFOCRMinScoreDelta:       cfg.PDFOCRMinScoreDelta,
