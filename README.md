@@ -111,6 +111,16 @@ GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ./run.sh
 ```
 
+单独重启某个服务（修改配置后无需重启全部服务）：
+
+```bash
+# 用法：./scripts/restart-service.sh <service>
+# service 可选：auth | book | chat | ingest | indexer | gateway
+./scripts/restart-service.sh ingest
+```
+
+脚本会自动加载 `.env`、kill 旧进程（按端口），然后前台启动对应服务。
+
 ## Docker 构建（服务镜像）
 
 项目提供通用 `backend/Dockerfile`，通过构建参数指定服务与入口：
@@ -144,8 +154,10 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
 - 可选 OCR（扫描版 PDF）：
-  - 安装官方 PaddleOCR CLI（参考官方仓库文档）：`python -m pip install paddleocr`
-  - 打开 `INGEST_OCR_ENABLED=true`，并按需设置 `INGEST_OCR_COMMAND`/`INGEST_OCR_DEVICE`
+  - 安装 PaddleOCR CLI：`pip install paddlepaddle paddleocr`
+  - 验证：`paddleocr ocr --help`
+  - 在 `.env` 中设置 `INGEST_OCR_ENABLED=true`，并按需调整 `INGEST_OCR_COMMAND`/`INGEST_OCR_DEVICE`
+  - 修改配置后执行 `./scripts/restart-service.sh ingest` 使配置生效
   - 当前策略：按页质量触发与融合（native 提取低质量页优先采用 OCR 结果）
   - 阈值参数：
     - `INGEST_PDF_MIN_PAGE_RUNES`：页最小字符数门槛，低于门槛判为低质量页
