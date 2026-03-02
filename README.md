@@ -154,13 +154,13 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
 - 可选 OCR（扫描版 PDF）：
-  - 启动 Docker OCR 服务（推荐，首次需构建镜像会下载模型）：`docker compose up -d ocr-service`
-  - 在 `.env` 中设置：
+  - OCR 服务随后端一同启动（`./run.sh` 会自动 `docker compose up -d ocr-service`）
+  - 首次启动需构建镜像并下载模型，耗时较长，后续启动使用缓存
+  - 在 `.env` 中确认已设置：
     ```dotenv
     INGEST_OCR_ENABLED=true
     INGEST_OCR_SERVICE_URL=http://localhost:8087
     ```
-  - 执行 `./scripts/restart-service.sh ingest` 使配置生效
   - OCR 服务暴露 `POST /ocr`（multipart PDF）返回每页文本和置信度分
   - 当 `INGEST_OCR_SERVICE_URL` 未设置时，降级为本地 CLI（`INGEST_OCR_COMMAND`）
   - 当前策略：按页质量触发与融合（native 提取低质量页优先采用 OCR 结果）

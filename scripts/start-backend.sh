@@ -120,7 +120,7 @@ for p in "$GATEWAY_PORT" "$AUTH_PORT" "$BOOK_PORT" "$CHAT_PORT" "$INGEST_PORT" "
   fuser -k "${p}/tcp" >/dev/null 2>&1 || true
 done
 
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui
+docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui ocr-service
 
 echo "Waiting for MinIO to be ready..."
 until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do
@@ -133,6 +133,12 @@ until docker exec onebook-postgres pg_isready -U onebook >/dev/null 2>&1; do
   sleep 1
 done
 echo "Postgres is ready."
+
+echo "Waiting for OCR service to be ready..."
+until curl -sf http://localhost:8087/healthz >/dev/null 2>&1; do
+  sleep 2
+done
+echo "OCR service is ready."
 
 cd "$ROOT_DIR/backend/services/auth"
 GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run ./cmd/auth &
