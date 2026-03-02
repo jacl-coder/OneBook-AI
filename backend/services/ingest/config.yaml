@@ -17,6 +17,7 @@ ocrEnabled: false
 ocrCommand: "paddleocr"
 ocrDevice: "cpu"
 ocrTimeoutSeconds: 120
+# ocrServiceURL: "http://localhost:8087"  # Docker OCR service (preferred when set)
 pdfMinPageRunes: 80
 pdfMinPageScore: 0.45
 pdfOcrMinScoreDelta: 0.08

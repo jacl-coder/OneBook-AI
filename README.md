@@ -34,7 +34,7 @@
 - 队列：Redis Streams（Ingest/Indexer），Redis（认证撤销状态与 refresh token）
 - LLM：多 provider（Gemini / Ollama / OpenAI 兼容），通过 `TextGenerator` 接口切换
 - Embedding：Ollama（本地模型）
-- 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库
+- 解析：PDF 优先调用 `pdftotext`（可选），失败则使用 Go PDF 库；扫描版 PDF 可配置 Docker OCR 服务（PaddleOCR HTTP）
 
 ## 后端服务与 API
 
@@ -154,10 +154,15 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
 - 可选 OCR（扫描版 PDF）：
-  - 安装 PaddleOCR CLI：`pip install paddlepaddle paddleocr`
-  - 验证：`paddleocr ocr --help`
-  - 在 `.env` 中设置 `INGEST_OCR_ENABLED=true`，并按需调整 `INGEST_OCR_COMMAND`/`INGEST_OCR_DEVICE`
-  - 修改配置后执行 `./scripts/restart-service.sh ingest` 使配置生效
+  - 启动 Docker OCR 服务（推荐，首次需构建镜像会下载模型）：`docker compose up -d ocr-service`
+  - 在 `.env` 中设置：
+    ```dotenv
+    INGEST_OCR_ENABLED=true
+    INGEST_OCR_SERVICE_URL=http://localhost:8087
+    ```
+  - 执行 `./scripts/restart-service.sh ingest` 使配置生效
+  - OCR 服务暴露 `POST /ocr`（multipart PDF）返回每页文本和置信度分
+  - 当 `INGEST_OCR_SERVICE_URL` 未设置时，降级为本地 CLI（`INGEST_OCR_COMMAND`）
   - 当前策略：按页质量触发与融合（native 提取低质量页优先采用 OCR 结果）
   - 阈值参数：
     - `INGEST_PDF_MIN_PAGE_RUNES`：页最小字符数门槛，低于门槛判为低质量页

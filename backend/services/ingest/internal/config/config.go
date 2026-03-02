@@ -35,6 +35,7 @@ type FileConfig struct {
 	OCRCommand                  string  `yaml:"ocrCommand"`
 	OCRDevice                   string  `yaml:"ocrDevice"`
 	OCRTimeoutSeconds           int     `yaml:"ocrTimeoutSeconds"`
+	OCRServiceURL               string  `yaml:"ocrServiceURL"`
 	PDFMinPageRunes             int     `yaml:"pdfMinPageRunes"`
 	PDFMinPageScore             float64 `yaml:"pdfMinPageScore"`
 	PDFOCRMinScoreDelta         float64 `yaml:"pdfOcrMinScoreDelta"`
@@ -125,6 +126,9 @@ func Load(path string) (FileConfig, error) {
 			cfg.OCRTimeoutSeconds = n
 		}
 	}
+	if v := os.Getenv("INGEST_OCR_SERVICE_URL"); v != "" {
+		cfg.OCRServiceURL = v
+	}
 	if v := os.Getenv("INGEST_PDF_MIN_PAGE_RUNES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.PDFMinPageRunes = n
@@ -174,8 +178,8 @@ func validateConfig(cfg FileConfig) error {
 	if cfg.ChunkOverlap >= cfg.ChunkSize {
 		return errors.New("config: chunkOverlap must be smaller than chunkSize")
 	}
-	if cfg.OCREnabled && strings.TrimSpace(cfg.OCRCommand) == "" {
-		return errors.New("config: ocrCommand is required when ocrEnabled=true")
+	if cfg.OCREnabled && strings.TrimSpace(cfg.OCRServiceURL) == "" && strings.TrimSpace(cfg.OCRCommand) == "" {
+		return errors.New("config: ocrEnabled=true requires either INGEST_OCR_SERVICE_URL (Docker OCR service) or INGEST_OCR_COMMAND (CLI)")
 	}
 	if cfg.OCRTimeoutSeconds < 0 {
 		return errors.New("config: ocrTimeoutSeconds must be >= 0")

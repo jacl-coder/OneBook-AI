@@ -61,27 +61,29 @@ type Config struct {
 	OCRCommand                string
 	OCRDevice                 string
 	OCRTimeoutSeconds         int
-	PDFMinPageRunes           int
-	PDFMinPageScore           float64
-	PDFOCRMinScoreDelta       float64
+	OCRServiceURL       	  string
+	PDFMinPageRunes     	  int
+	PDFMinPageScore     	  float64
+	PDFOCRMinScoreDelta 	  float64
 }
 
 // App processes ingest jobs.
 type App struct {
-	store        store.Store
-	bookClient   *bookClient
-	indexClient  *indexerClient
-	queue        *queue.RedisJobQueue
-	chunkSize    int
-	chunkOverlap int
-	ocrEnabled   bool
-	ocrCommand   string
-	ocrDevice    string
-	ocrTimeout   time.Duration
-	pdfMinRunes  int
-	pdfMinScore  float64
-	pdfScoreDiff float64
-	httpClient   *http.Client
+	store         store.Store
+	bookClient    *bookClient
+	indexClient   *indexerClient
+	queue         *queue.RedisJobQueue
+	chunkSize     int
+	chunkOverlap  int
+	ocrEnabled    bool
+	ocrCommand    string
+	ocrDevice     string
+	ocrTimeout    time.Duration
+	ocrServiceURL string
+	pdfMinRunes   int
+	pdfMinScore   float64
+	pdfScoreDiff  float64
+	httpClient    *http.Client
 }
 
 // New constructs the ingest service with persistence.
@@ -157,20 +159,21 @@ func New(cfg Config) (*App, error) {
 		return nil, err
 	}
 	app := &App{
-		store:        dataStore,
-		bookClient:   newBookClient(cfg.BookServiceURL, signer),
-		indexClient:  newIndexerClient(cfg.IndexerURL, signer),
-		queue:        q,
-		chunkSize:    chunkSize,
-		chunkOverlap: chunkOverlap,
-		ocrEnabled:   cfg.OCREnabled,
-		ocrCommand:   ocrCommand,
-		ocrDevice:    ocrDevice,
-		ocrTimeout:   time.Duration(ocrTimeoutSeconds) * time.Second,
-		pdfMinRunes:  pdfMinRunes,
-		pdfMinScore:  pdfMinScore,
-		pdfScoreDiff: pdfScoreDiff,
-		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		store:         dataStore,
+		bookClient:    newBookClient(cfg.BookServiceURL, signer),
+		indexClient:   newIndexerClient(cfg.IndexerURL, signer),
+		queue:         q,
+		chunkSize:     chunkSize,
+		chunkOverlap:  chunkOverlap,
+		ocrEnabled:    cfg.OCREnabled,
+		ocrCommand:    ocrCommand,
+		ocrDevice:     ocrDevice,
+		ocrTimeout:    time.Duration(ocrTimeoutSeconds) * time.Second,
+		ocrServiceURL: strings.TrimSpace(cfg.OCRServiceURL),
+		pdfMinRunes:   pdfMinRunes,
+		pdfMinScore:   pdfMinScore,
+		pdfScoreDiff:  pdfScoreDiff,
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 	}
 	app.startWorkers(cfg.QueueConcurrency)
 	return app, nil

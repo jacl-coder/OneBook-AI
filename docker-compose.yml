@@ -44,3 +44,19 @@ services:
       - "8086:8080"
     volumes:
       - ./backend/api/rest:/usr/share/nginx/html/specs:ro
+  ocr-service:
+    build:
+      context: ./services/ocr
+      dockerfile: Dockerfile
+    container_name: onebook-ocr
+    environment:
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      OCR_PORT: "8087"
+    ports:
+      - "8087:8087"
+    volumes:
+      # Cache downloaded models across restarts
+      - onebook-ocr-models:/root/.paddlex
+    restart: unless-stopped
+volumes:
+  onebook-ocr-models:
