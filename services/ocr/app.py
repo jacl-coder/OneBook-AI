@@ -18,6 +18,7 @@ GET /healthz → {"status":"ok"}
 """
 
 import os
+import json
 import tempfile
 import logging
 from typing import List
@@ -27,10 +28,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from paddleocr import PaddleOCR
 
+
+class UTF8JSONResponse(JSONResponse):
+    """JSONResponse that never ASCII-escapes Unicode characters."""
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content, ensure_ascii=False,
+            allow_nan=False, separators=(",", ":"),
+        ).encode("utf-8")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr-service")
 
-app = FastAPI(title="OneBook OCR Service", version="1.0.0")
+app = FastAPI(title="OneBook OCR Service", version="1.0.0", default_response_class=UTF8JSONResponse)
 
 # Initialise once at startup — model files are cached in /root/.paddlex
 _ocr: PaddleOCR | None = None
@@ -109,19 +119,29 @@ def _parse_result(result) -> List[OCRPage]:
         texts: list[str] = []
         scores: list[float] = []
 
-        # PaddleOCR v3 predict() returns OCRResult objects with .boxes/.rec_texts/.rec_scores
-        if hasattr(item, "rec_texts"):
+        # PaddleOCR v3.x predict() returns dicts with rec_texts / rec_scores flat lists.
+        # Older objects with attribute-based access are also handled as fallback.
+        if isinstance(item, dict):
+            pi = item.get("page_index")
+            if pi is not None:
+                page_num = int(pi) + 1
+            if "rec_texts" in item:
+                # v3.x format
+                for t, s in zip(item.get("rec_texts") or [], item.get("rec_scores") or []):
+                    if t and str(t).strip():
+                        texts.append(str(t).strip())
+                        scores.append(float(s) if s else 0.0)
+            else:
+                # v2.x fallback: rec_res is a list of (text, score) tuples
+                for box_info in item.get("rec_res", []):
+                    t = box_info[0] if isinstance(box_info, (list, tuple)) else box_info.get("text", "")
+                    s = box_info[1] if isinstance(box_info, (list, tuple)) else box_info.get("score", 0.0)
+                    if t and str(t).strip():
+                        texts.append(str(t).strip())
+                        scores.append(float(s) if s else 0.0)
+        elif hasattr(item, "rec_texts"):
+            # object-style access (some paddleocr versions)
             for t, s in zip(item.rec_texts or [], item.rec_scores or []):
-                if t and str(t).strip():
-                    texts.append(str(t).strip())
-                    scores.append(float(s) if s else 0.0)
-        elif isinstance(item, dict):
-            # page_index key present in some versions
-            if "page_index" in item:
-                page_num = int(item["page_index"]) + 1
-            for box_info in item.get("rec_res", []):
-                t = box_info[0] if isinstance(box_info, (list, tuple)) else box_info.get("text", "")
-                s = box_info[1] if isinstance(box_info, (list, tuple)) else box_info.get("score", 0.0)
                 if t and str(t).strip():
                     texts.append(str(t).strip())
                     scores.append(float(s) if s else 0.0)
