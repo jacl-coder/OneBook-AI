@@ -22,4 +22,5 @@
 
 - `docs/architecture/tech_overview.md`：技术总览
 - `docs/architecture/advanced_rag_plan.md`：Advanced RAG 目标与执行基线
+- `docs/architecture/rag_eval_system_plan.md`：Advanced RAG 评测系统（6 类首版）与本地运行说明
 - `docs/architecture/rag_interview_qa.md`：RAG 面试问答（初稿）

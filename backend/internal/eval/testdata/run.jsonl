@@ -1,0 +1,3 @@
+{"qid":"q1","results":[{"doc_id":"c1","score":0.95},{"doc_id":"c2","score":0.91},{"doc_id":"c3","score":0.10}]}
+{"qid":"q2","results":[{"doc_id":"c3","score":0.97},{"doc_id":"c2","score":0.20}]}
+{"qid":"q3","results":[{"doc_id":"c5","score":0.20},{"doc_id":"c2","score":0.15}]}

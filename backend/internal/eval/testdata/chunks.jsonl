@@ -1,0 +1,5 @@
+{"chunk_id":"c1","doc_id":"d1","text":"计费最小单位是分钟。","metadata":{"source_type":"pdf","source_ref":"page:10","extract_method":"native"}}
+{"chunk_id":"c2","doc_id":"d1","text":"费用按分钟向上取整。","metadata":{"source_type":"pdf","source_ref":"page:11","extract_method":"native"}}
+{"chunk_id":"c3","doc_id":"d2","text":"注册后可以重置密码。","metadata":{"source_type":"pdf","source_ref":"page:2","extract_method":"native"}}
+{"chunk_id":"c4","doc_id":"d3","text":"","metadata":{"source_type":"pdf","source_ref":"page:1","extract_method":"native"}}
+{"chunk_id":"c5","doc_id":"d4","text":"系统支持中文问答。","metadata":{"source_type":"text","source_ref":"text","extract_method":"plain_text_parser"}}
