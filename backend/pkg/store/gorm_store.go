@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pgvector/pgvector-go"
+	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -75,7 +76,7 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
 			return fmt.Errorf("create pgvector extension: %w", err)
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf(`
@@ -164,6 +165,12 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 			END $$;
 		`).Error; err != nil {
 			return fmt.Errorf("ensure book foreign keys: %w", err)
+		}
+		if err := tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_admin_audit_target
+			ON admin_audit_log_models (target_type, target_id, created_at DESC);
+		`).Error; err != nil {
+			return fmt.Errorf("ensure admin audit target index: %w", err)
 		}
 		return nil
 	}); err != nil {
@@ -268,6 +275,43 @@ func (s *GormStore) ListUsers() ([]domain.User, error) {
 	return res, nil
 }
 
+// ListUsersWithOptions returns users with filtering and pagination.
+func (s *GormStore) ListUsersWithOptions(opts UserListOptions) ([]domain.User, int, error) {
+	page, pageSize := normalizePage(opts.Page, opts.PageSize)
+	tx := s.db.Model(&UserModel{})
+	query := strings.TrimSpace(opts.Query)
+	if query != "" {
+		like := "%" + strings.ToLower(query) + "%"
+		tx = tx.Where("LOWER(email) LIKE ? OR LOWER(id) LIKE ?", like, like)
+	}
+	role := strings.TrimSpace(strings.ToLower(opts.Role))
+	if role != "" {
+		tx = tx.Where("role = ?", role)
+	}
+	status := strings.TrimSpace(strings.ToLower(opts.Status))
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	sortBy := normalizeUserSortBy(opts.SortBy)
+	sortOrder := normalizeSortOrder(opts.SortOrder)
+	var models []UserModel
+	if err := tx.Order(sortBy + " " + sortOrder).
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]domain.User, 0, len(models))
+	for _, model := range models {
+		items = append(items, userFromModel(model))
+	}
+	return items, int(total), nil
+}
+
 // UserCount returns number of users.
 func (s *GormStore) UserCount() (int, error) {
 	var count int64
@@ -305,6 +349,43 @@ func (s *GormStore) ListBooks() ([]domain.Book, error) {
 // ListBooksByOwner returns books filtered by owner.
 func (s *GormStore) ListBooksByOwner(ownerID string) ([]domain.Book, error) {
 	return s.listBooks("created_at ASC", "owner_id = ?", ownerID)
+}
+
+// ListBooksWithOptions returns books with filtering and pagination.
+func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, int, error) {
+	page, pageSize := normalizePage(opts.Page, opts.PageSize)
+	tx := s.db.Model(&BookModel{})
+	query := strings.TrimSpace(opts.Query)
+	if query != "" {
+		like := "%" + strings.ToLower(query) + "%"
+		tx = tx.Where("LOWER(title) LIKE ? OR LOWER(original_filename) LIKE ? OR LOWER(id) LIKE ?", like, like, like)
+	}
+	ownerID := strings.TrimSpace(opts.OwnerID)
+	if ownerID != "" {
+		tx = tx.Where("owner_id = ?", ownerID)
+	}
+	status := strings.TrimSpace(strings.ToLower(opts.Status))
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	sortBy := normalizeBookSortBy(opts.SortBy)
+	sortOrder := normalizeSortOrder(opts.SortOrder)
+	var models []BookModel
+	if err := tx.Order(sortBy + " " + sortOrder).
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]domain.Book, 0, len(models))
+	for _, model := range models {
+		items = append(items, bookFromModel(model))
+	}
+	return items, int(total), nil
 }
 
 func (s *GormStore) listBooks(order string, conds ...any) ([]domain.Book, error) {
@@ -520,6 +601,121 @@ func (s *GormStore) SearchChunks(bookID string, embedding []float32, limit int) 
 	return chunks, nil
 }
 
+// SaveAdminAuditLog persists an admin audit event.
+func (s *GormStore) SaveAdminAuditLog(entry domain.AdminAuditLog) error {
+	model, err := adminAuditLogToModel(entry)
+	if err != nil {
+		return err
+	}
+	return s.db.Create(&model).Error
+}
+
+// ListAdminAuditLogs returns paginated admin audit logs.
+func (s *GormStore) ListAdminAuditLogs(opts AdminAuditLogListOptions) ([]domain.AdminAuditLog, int, error) {
+	page, pageSize := normalizePage(opts.Page, opts.PageSize)
+	tx := s.db.Model(&AdminAuditLogModel{})
+	if actorID := strings.TrimSpace(opts.ActorID); actorID != "" {
+		tx = tx.Where("actor_id = ?", actorID)
+	}
+	if action := strings.TrimSpace(opts.Action); action != "" {
+		tx = tx.Where("action = ?", action)
+	}
+	if targetType := strings.TrimSpace(opts.TargetType); targetType != "" {
+		tx = tx.Where("target_type = ?", targetType)
+	}
+	if targetID := strings.TrimSpace(opts.TargetID); targetID != "" {
+		tx = tx.Where("target_id = ?", targetID)
+	}
+	if !opts.From.IsZero() {
+		tx = tx.Where("created_at >= ?", opts.From.UTC())
+	}
+	if !opts.To.IsZero() {
+		tx = tx.Where("created_at <= ?", opts.To.UTC())
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var models []AdminAuditLogModel
+	if err := tx.Order("created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]domain.AdminAuditLog, 0, len(models))
+	for _, model := range models {
+		entry, err := adminAuditLogFromModel(model)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, entry)
+	}
+	return items, int(total), nil
+}
+
+// GetAdminOverview returns aggregate metrics for admin dashboard.
+func (s *GormStore) GetAdminOverview(windowStart time.Time, windowHours int) (domain.AdminOverview, error) {
+	if windowHours <= 0 {
+		windowHours = 24
+	}
+	start := windowStart.UTC()
+	if start.IsZero() {
+		start = time.Now().UTC().Add(-time.Duration(windowHours) * time.Hour)
+	}
+	var totalUsers, activeUsers, disabledUsers int64
+	if err := s.db.Model(&UserModel{}).Count(&totalUsers).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	if err := s.db.Model(&UserModel{}).Where("status = ?", string(domain.StatusActive)).Count(&activeUsers).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	if err := s.db.Model(&UserModel{}).Where("status = ?", string(domain.StatusDisabled)).Count(&disabledUsers).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	var totalBooks, booksCreated24h, booksFailed24h int64
+	if err := s.db.Model(&BookModel{}).Count(&totalBooks).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	if err := s.db.Model(&BookModel{}).Where("created_at >= ?", start).Count(&booksCreated24h).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	if err := s.db.Model(&BookModel{}).
+		Where("status = ? AND updated_at >= ?", string(domain.StatusFailed), start).
+		Count(&booksFailed24h).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	var grouped []struct {
+		Status string
+		Count  int64
+	}
+	if err := s.db.Model(&BookModel{}).
+		Select("status, COUNT(*) AS count").
+		Group("status").
+		Scan(&grouped).Error; err != nil {
+		return domain.AdminOverview{}, err
+	}
+	byStatus := make([]domain.BookStatusCount, 0, len(grouped))
+	for _, row := range grouped {
+		byStatus = append(byStatus, domain.BookStatusCount{
+			Status: row.Status,
+			Count:  int(row.Count),
+		})
+	}
+	return domain.AdminOverview{
+		TotalUsers:      int(totalUsers),
+		ActiveUsers:     int(activeUsers),
+		DisabledUsers:   int(disabledUsers),
+		TotalBooks:      int(totalBooks),
+		BooksByStatus:   byStatus,
+		BooksCreated24h: int(booksCreated24h),
+		BooksFailed24h:  int(booksFailed24h),
+		RefreshedAt:     time.Now().UTC(),
+		WindowStart:     start,
+		WindowHours:     windowHours,
+	}, nil
+}
+
 func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
 	if len(embedding) == 0 {
 		return fmt.Errorf("embedding vector is empty")
@@ -528,6 +724,50 @@ func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
 		return fmt.Errorf("embedding dimension mismatch: got %d, want %d", len(embedding), s.embeddingDim)
 	}
 	return nil
+}
+
+func normalizePage(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
+}
+
+func normalizeSortOrder(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "asc":
+		return "ASC"
+	default:
+		return "DESC"
+	}
+}
+
+func normalizeUserSortBy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "email":
+		return "email"
+	case "updatedat", "updated_at":
+		return "updated_at"
+	default:
+		return "created_at"
+	}
+}
+
+func normalizeBookSortBy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "title":
+		return "title"
+	case "createdat", "created_at":
+		return "created_at"
+	default:
+		return "updated_at"
+	}
 }
 
 func userToModel(u domain.User) UserModel {
@@ -684,4 +924,74 @@ func chunkFromModel(model ChunkModel) domain.Chunk {
 		Metadata:  meta,
 		CreatedAt: model.CreatedAt,
 	}
+}
+
+func adminAuditLogToModel(entry domain.AdminAuditLog) (AdminAuditLogModel, error) {
+	before, err := marshalOptionalJSON(entry.Before)
+	if err != nil {
+		return AdminAuditLogModel{}, fmt.Errorf("marshal admin audit before: %w", err)
+	}
+	after, err := marshalOptionalJSON(entry.After)
+	if err != nil {
+		return AdminAuditLogModel{}, fmt.Errorf("marshal admin audit after: %w", err)
+	}
+	return AdminAuditLogModel{
+		ID:         strings.TrimSpace(entry.ID),
+		ActorID:    strings.TrimSpace(entry.ActorID),
+		Action:     strings.TrimSpace(entry.Action),
+		TargetType: strings.TrimSpace(entry.TargetType),
+		TargetID:   strings.TrimSpace(entry.TargetID),
+		Before:     before,
+		After:      after,
+		RequestID:  strings.TrimSpace(entry.RequestID),
+		IP:         strings.TrimSpace(entry.IP),
+		UserAgent:  strings.TrimSpace(entry.UserAgent),
+		CreatedAt:  entry.CreatedAt.UTC(),
+	}, nil
+}
+
+func adminAuditLogFromModel(model AdminAuditLogModel) (domain.AdminAuditLog, error) {
+	before, err := unmarshalOptionalJSON(model.Before)
+	if err != nil {
+		return domain.AdminAuditLog{}, fmt.Errorf("unmarshal admin audit before: %w", err)
+	}
+	after, err := unmarshalOptionalJSON(model.After)
+	if err != nil {
+		return domain.AdminAuditLog{}, fmt.Errorf("unmarshal admin audit after: %w", err)
+	}
+	return domain.AdminAuditLog{
+		ID:         model.ID,
+		ActorID:    model.ActorID,
+		Action:     model.Action,
+		TargetType: model.TargetType,
+		TargetID:   model.TargetID,
+		Before:     before,
+		After:      after,
+		RequestID:  model.RequestID,
+		IP:         model.IP,
+		UserAgent:  model.UserAgent,
+		CreatedAt:  model.CreatedAt,
+	}, nil
+}
+
+func marshalOptionalJSON(input map[string]any) (datatypes.JSON, error) {
+	if len(input) == 0 {
+		return datatypes.JSON([]byte("{}")), nil
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
+}
+
+func unmarshalOptionalJSON(raw datatypes.JSON) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

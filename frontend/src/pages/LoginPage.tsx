@@ -659,7 +659,7 @@ export function LoginPage() {
           status: auth.user.status,
         },
       })
-      navigate('/chat')
+      navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
     } catch (error) {
       const code = getApiErrorCode(error)
       if (!isCreateAccountPassword && code === 'AUTH_PASSWORD_NOT_SET') {
@@ -831,7 +831,7 @@ export function LoginPage() {
           status: auth.user.status,
         },
       })
-      navigate('/chat')
+      navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
     } catch (error) {
       setVerifyErrorText(getApiErrorMessage(error, 'Verification failed. Please try again.'))
     } finally {

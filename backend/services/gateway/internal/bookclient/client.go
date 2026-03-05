@@ -109,6 +109,22 @@ func (c *Client) DeleteBook(requestID, token, id string) error {
 	return c.do(req, nil)
 }
 
+func (c *Client) ReprocessBook(requestID, token, id string) (domain.Book, error) {
+	path := fmt.Sprintf("%s/books/%s/reprocess", c.baseURL, id)
+	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return domain.Book{}, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	req.Header.Set("Content-Type", "application/json")
+	var book domain.Book
+	if err := c.do(req, &book); err != nil {
+		return domain.Book{}, err
+	}
+	return book, nil
+}
+
 // DownloadResponse contains pre-signed URL and filename for download.
 type DownloadResponse struct {
 	URL      string `json:"url"`

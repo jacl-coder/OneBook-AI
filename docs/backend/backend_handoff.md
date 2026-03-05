@@ -51,6 +51,16 @@
 - `GET /api/users/me`：当前用户信息。
 - `PATCH /api/users/me`：更新邮箱。
 - `POST /api/users/me/password`：修改密码。
+- `GET /api/admin/overview`：管理员概览指标。
+- `GET /api/admin/users`：管理员用户分页列表（支持 `query/role/status/page/pageSize/sortBy/sortOrder`）。
+- `GET /api/admin/users/{id}`：管理员查看单用户。
+- `PATCH /api/admin/users/{id}`：管理员更新用户角色/状态。
+- `POST /api/admin/users/{id}/disable`：管理员禁用用户。
+- `POST /api/admin/users/{id}/enable`：管理员启用用户。
+- `GET /api/admin/books`：管理员书籍分页列表（支持 `query/status/ownerId/page/pageSize/sortBy/sortOrder`）。
+- `DELETE /api/admin/books/{id}`：管理员删除书籍。
+- `POST /api/admin/books/{id}/reprocess`：管理员重处理书籍。
+- `GET /api/admin/audit-logs`：管理员操作审计日志分页列表。
 
 ## 4. 状态机与前端交互建议
 

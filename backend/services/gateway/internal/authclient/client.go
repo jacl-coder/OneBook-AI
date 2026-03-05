@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -164,11 +165,80 @@ func (c *Client) JWKS(requestID string) ([]store.JWK, error) {
 }
 
 func (c *Client) AdminListUsers(requestID, token string) ([]domain.User, error) {
-	var resp listUsersResponse
-	if err := c.doJSON(http.MethodGet, "/auth/admin/users", requestID, token, nil, &resp); err != nil {
+	resp, err := c.AdminListUsersWithOptions(requestID, token, AdminListUsersOptions{})
+	if err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
+}
+
+type AdminListUsersOptions struct {
+	Query     string
+	Role      string
+	Status    string
+	Page      int
+	PageSize  int
+	SortBy    string
+	SortOrder string
+}
+
+type PagedUsersResponse struct {
+	Items      []domain.User `json:"items"`
+	Count      int           `json:"count"`
+	Page       int           `json:"page"`
+	PageSize   int           `json:"pageSize"`
+	Total      int           `json:"total"`
+	TotalPages int           `json:"totalPages"`
+}
+
+func (c *Client) AdminListUsersWithOptions(requestID, token string, opts AdminListUsersOptions) (PagedUsersResponse, error) {
+	query := url.Values{}
+	if v := strings.TrimSpace(opts.Query); v != "" {
+		query.Set("query", v)
+	}
+	if v := strings.TrimSpace(opts.Role); v != "" {
+		query.Set("role", v)
+	}
+	if v := strings.TrimSpace(opts.Status); v != "" {
+		query.Set("status", v)
+	}
+	if opts.Page > 0 {
+		query.Set("page", fmt.Sprintf("%d", opts.Page))
+	}
+	if opts.PageSize > 0 {
+		query.Set("pageSize", fmt.Sprintf("%d", opts.PageSize))
+	}
+	if v := strings.TrimSpace(opts.SortBy); v != "" {
+		query.Set("sortBy", v)
+	}
+	if v := strings.TrimSpace(opts.SortOrder); v != "" {
+		query.Set("sortOrder", v)
+	}
+	path := "/auth/admin/users"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var resp listUsersResponse
+	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &resp); err != nil {
+		return PagedUsersResponse{}, err
+	}
+	return PagedUsersResponse{
+		Items:      resp.Items,
+		Count:      resp.Count,
+		Page:       resp.Page,
+		PageSize:   resp.PageSize,
+		Total:      resp.Total,
+		TotalPages: resp.TotalPages,
+	}, nil
+}
+
+func (c *Client) AdminGetUser(requestID, token, userID string) (domain.User, error) {
+	var user domain.User
+	path := fmt.Sprintf("/auth/admin/users/%s", userID)
+	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &user); err != nil {
+		return domain.User{}, err
+	}
+	return user, nil
 }
 
 func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus) (domain.User, error) {
@@ -185,6 +255,108 @@ func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.U
 		return domain.User{}, err
 	}
 	return user, nil
+}
+
+func (c *Client) AdminDisableUser(requestID, token, userID string) (domain.User, error) {
+	var user domain.User
+	path := fmt.Sprintf("/auth/admin/users/%s/disable", userID)
+	if err := c.doJSON(http.MethodPost, path, requestID, token, map[string]any{}, &user); err != nil {
+		return domain.User{}, err
+	}
+	return user, nil
+}
+
+func (c *Client) AdminEnableUser(requestID, token, userID string) (domain.User, error) {
+	var user domain.User
+	path := fmt.Sprintf("/auth/admin/users/%s/enable", userID)
+	if err := c.doJSON(http.MethodPost, path, requestID, token, map[string]any{}, &user); err != nil {
+		return domain.User{}, err
+	}
+	return user, nil
+}
+
+type AdminAuditLogCreateRequest struct {
+	Action     string         `json:"action"`
+	TargetType string         `json:"targetType"`
+	TargetID   string         `json:"targetId"`
+	Before     map[string]any `json:"before,omitempty"`
+	After      map[string]any `json:"after,omitempty"`
+	RequestID  string         `json:"requestId,omitempty"`
+	IP         string         `json:"ip,omitempty"`
+	UserAgent  string         `json:"userAgent,omitempty"`
+}
+
+func (c *Client) AdminCreateAuditLog(requestID, token string, req AdminAuditLogCreateRequest) (domain.AdminAuditLog, error) {
+	var out domain.AdminAuditLog
+	if err := c.doJSON(http.MethodPost, "/auth/admin/audit-logs", requestID, token, req, &out); err != nil {
+		return domain.AdminAuditLog{}, err
+	}
+	return out, nil
+}
+
+type AdminListAuditLogsOptions struct {
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	From       string
+	To         string
+	Page       int
+	PageSize   int
+}
+
+type PagedAuditLogsResponse struct {
+	Items      []domain.AdminAuditLog `json:"items"`
+	Count      int                    `json:"count"`
+	Page       int                    `json:"page"`
+	PageSize   int                    `json:"pageSize"`
+	Total      int                    `json:"total"`
+	TotalPages int                    `json:"totalPages"`
+}
+
+func (c *Client) AdminListAuditLogs(requestID, token string, opts AdminListAuditLogsOptions) (PagedAuditLogsResponse, error) {
+	query := url.Values{}
+	if v := strings.TrimSpace(opts.ActorID); v != "" {
+		query.Set("actorId", v)
+	}
+	if v := strings.TrimSpace(opts.Action); v != "" {
+		query.Set("action", v)
+	}
+	if v := strings.TrimSpace(opts.TargetType); v != "" {
+		query.Set("targetType", v)
+	}
+	if v := strings.TrimSpace(opts.TargetID); v != "" {
+		query.Set("targetId", v)
+	}
+	if v := strings.TrimSpace(opts.From); v != "" {
+		query.Set("from", v)
+	}
+	if v := strings.TrimSpace(opts.To); v != "" {
+		query.Set("to", v)
+	}
+	if opts.Page > 0 {
+		query.Set("page", fmt.Sprintf("%d", opts.Page))
+	}
+	if opts.PageSize > 0 {
+		query.Set("pageSize", fmt.Sprintf("%d", opts.PageSize))
+	}
+	path := "/auth/admin/audit-logs"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var resp PagedAuditLogsResponse
+	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &resp); err != nil {
+		return PagedAuditLogsResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) AdminOverview(requestID, token string) (domain.AdminOverview, error) {
+	var overview domain.AdminOverview
+	if err := c.doJSON(http.MethodGet, "/auth/admin/overview", requestID, token, nil, &overview); err != nil {
+		return domain.AdminOverview{}, err
+	}
+	return overview, nil
 }
 
 func (c *Client) doJSON(method, path, requestID, token string, payload any, out any) error {
@@ -259,8 +431,12 @@ type PasswordResetVerifyResponse struct {
 }
 
 type listUsersResponse struct {
-	Items []domain.User `json:"items"`
-	Count int           `json:"count"`
+	Items      []domain.User `json:"items"`
+	Count      int           `json:"count"`
+	Page       int           `json:"page"`
+	PageSize   int           `json:"pageSize"`
+	Total      int           `json:"total"`
+	TotalPages int           `json:"totalPages"`
 }
 
 type jwksResponse struct {

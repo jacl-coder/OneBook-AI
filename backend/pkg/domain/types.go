@@ -91,3 +91,35 @@ type Chunk struct {
 	Metadata  map[string]string `json:"metadata"`
 	CreatedAt time.Time         `json:"createdAt"`
 }
+
+type AdminAuditLog struct {
+	ID         string         `json:"id"`
+	ActorID    string         `json:"actorId"`
+	Action     string         `json:"action"`
+	TargetType string         `json:"targetType"`
+	TargetID   string         `json:"targetId"`
+	Before     map[string]any `json:"before,omitempty"`
+	After      map[string]any `json:"after,omitempty"`
+	RequestID  string         `json:"requestId,omitempty"`
+	IP         string         `json:"ip,omitempty"`
+	UserAgent  string         `json:"userAgent,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+type BookStatusCount struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type AdminOverview struct {
+	TotalUsers      int               `json:"totalUsers"`
+	ActiveUsers     int               `json:"activeUsers"`
+	DisabledUsers   int               `json:"disabledUsers"`
+	TotalBooks      int               `json:"totalBooks"`
+	BooksByStatus   []BookStatusCount `json:"booksByStatus"`
+	BooksCreated24h int               `json:"booksCreated24h"`
+	BooksFailed24h  int               `json:"booksFailed24h"`
+	RefreshedAt     time.Time         `json:"refreshedAt"`
+	WindowStart     time.Time         `json:"windowStart"`
+	WindowHours     int               `json:"windowHours"`
+}

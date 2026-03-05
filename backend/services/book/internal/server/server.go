@@ -140,7 +140,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	}
 }
 
-// /books/{id} or /books/{id}/download
+// /books/{id} or /books/{id}/download or /books/{id}/reprocess
 func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user domain.User) {
 	path := strings.TrimPrefix(r.URL.Path, "/books/")
 	parts := strings.SplitN(path, "/", 2)
@@ -153,6 +153,10 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	// Check if this is a download request
 	if len(parts) == 2 && parts[1] == "download" {
 		s.handleDownloadBook(w, r, user, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "reprocess" {
+		s.handleReprocessBook(w, r, user, id)
 		return
 	}
 	if len(parts) == 2 {
@@ -185,6 +189,32 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (s *Server) handleReprocessBook(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	book, ok, err := s.app.GetBook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		notFound(w, "book not found")
+		return
+	}
+	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	updated, err := s.app.ReprocessBook(id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 // handleDownloadBook returns a pre-signed download URL for the book file.

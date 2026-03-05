@@ -52,6 +52,7 @@ VITE_API_TIMEOUT_MS=120000
 
 - `/`：`HomePage`
 - `/chat`：`ChatPage`
+- `/admin/*`：管理员后台（`AdminRouteGuard + AdminLayout + Overview/Users/Books/Audit`）
 - 认证相关路由（均由 `LoginPage` 承载）：
   - `/log-in`、`/create-account`
   - `/log-in/password`、`/create-account/password`
@@ -69,6 +70,9 @@ VITE_API_TIMEOUT_MS=120000
   - 并发请求共享单个 refresh Promise（single-flight）
   - refresh 成功后自动重放原请求
   - refresh 失败时透传原错误，由上层做登录态回收
+- 登录后默认入口：
+  - 普通用户：`/chat`
+  - 管理员：`/admin`
 
 ## 7. 样式架构
 

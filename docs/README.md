@@ -6,6 +6,7 @@
 - `docs/backend/auth_account_flow.md`：账号流程（登录/注册/验证码/修改密码）
 - `docs/backend/api_response_standard.md`：统一错误与响应语义
 - `docs/backend/backend_arch.md`：后端架构说明
+- `backend/api/rest/openapi.yaml`：最新对外接口契约（含管理员后台接口）
 
 ## frontend
 
@@ -17,6 +18,7 @@
 
 - `docs/product/requirements.md`：需求说明
 - `docs/product/functional_spec.md`：功能规格
+  - 当前已补充管理员后台产品化能力（`/admin`、强操作、审计与概览）
 
 ## architecture
 
