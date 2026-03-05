@@ -20,7 +20,7 @@
 - 解析与分块：PDF/EPUB/TXT，语义分块并保留来源元数据（`source_type/source_ref`）。
 - 索引：pgvector 向量写入，Embedding 支持批量/并发。
 - 对话：基于向量检索生成回答并附出处；保存消息并拼接最近 N 轮历史。
-- 管理员：用户/书籍列表与用户角色/状态管理。
+- 管理员：后台管理系统（`/admin`），支持用户/书籍管理、重处理、审计日志与系统概览。
 - 认证：bcrypt 密码哈希（最小 12 位，且需包含大写/小写/数字/特殊字符）、短时效 access token（默认 15 分钟，RS256 + JWKS）、refresh token 轮换与重放检测（Redis）。
 - 授权与风控：网关统一鉴权，管理员接口基于角色控制；网关与认证服务使用 Redis 分布式限流（安全优先，Redis 异常时拒绝请求）。
 - 一致性改进：refresh token 轮换采用 Redis 原子 CAS；检测到旧 token 重放会撤销整个 token family。
@@ -44,7 +44,10 @@
   - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/refresh`，`POST /api/auth/logout`，`GET /api/auth/jwks`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
   - 对话：`POST /api/chats`（body: `bookId` + `question` + 可选 `conversationId`），`GET /api/conversations`，`GET /api/conversations/{id}/messages`
-  - 管理员：`GET /api/admin/users`，`PATCH /api/admin/users/{id}`，`GET /api/admin/books`
+  - 管理员：
+    - 用户：`GET /api/admin/users`，`GET /api/admin/users/{id}`，`PATCH /api/admin/users/{id}`，`POST /api/admin/users/{id}/disable`，`POST /api/admin/users/{id}/enable`
+    - 书籍：`GET /api/admin/books`，`DELETE /api/admin/books/{id}`，`POST /api/admin/books/{id}/reprocess`
+    - 审计与概览：`GET /api/admin/audit-logs`，`GET /api/admin/overview`
   - 健康：`/healthz`
 
 ## 本地运行

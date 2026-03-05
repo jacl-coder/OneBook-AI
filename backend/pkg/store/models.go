@@ -60,3 +60,17 @@ type ChunkModel struct {
 	Embedding *pgvector.Vector `gorm:"type:vector(3072)"`
 	CreatedAt time.Time        `gorm:"not null;index"`
 }
+
+type AdminAuditLogModel struct {
+	ID         string         `gorm:"primaryKey"`
+	ActorID    string         `gorm:"not null;index"`
+	Action     string         `gorm:"not null;index"`
+	TargetType string         `gorm:"not null;index"`
+	TargetID   string         `gorm:"not null;index"`
+	Before     datatypes.JSON `gorm:"type:jsonb"`
+	After      datatypes.JSON `gorm:"type:jsonb"`
+	RequestID  string         `gorm:"index"`
+	IP         string
+	UserAgent  string
+	CreatedAt  time.Time `gorm:"not null;index"`
+}

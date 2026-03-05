@@ -2,9 +2,9 @@
 
 ## 服务划分（已落地）
 
-- **Gateway**：统一入口与鉴权校验，路由到 Auth/Book/Chat；提供 admin 查询与 healthz。
-- **Auth**：注册/登录/登出、用户自助、管理员用户管理；采用 RS256 JWT（JWKS）+ Redis（refresh token、撤销状态）。
-- **Book**：书籍元数据管理、上传校验、预签名下载 URL、删除书籍；文件存储在 MinIO。
+- **Gateway**：统一入口与鉴权校验，路由到 Auth/Book/Chat；对外提供管理员后台 API（用户/书籍/审计/概览）与 healthz。
+- **Auth**：注册/登录/登出、用户自助、管理员用户管理；管理员审计日志与概览聚合；采用 RS256 JWT（JWKS）+ Redis（refresh token、撤销状态）。
+- **Book**：书籍元数据管理、上传校验、预签名下载 URL、删除书籍、重处理（reprocess）；文件存储在 MinIO。
 - **Ingest**：拉取文件、解析 PDF/EPUB/TXT、清洗与语义分块、写入 chunks，失败回写状态。
 - **Indexer**：Embedding 生成（Ollama）、向量写入 pgvector、更新书籍状态。
 - **Chat**：向量检索 + LLM（TextGenerator，支持 Gemini/Ollama/OpenAI 兼容）生成回答，返回出处，并保存历史消息。
@@ -30,7 +30,8 @@
 - 对外接口通过 Gateway 统一鉴权（浏览器会话 Cookie；前端不注入 Bearer）。
 - 内部服务接口通过短时效服务 JWT（Bearer）保护，并校验 `iss/aud/exp`。
 - 用户 Access Token 由业务服务通过 JWKS 本地验签。
-- 管理员角色可查看全量用户/书籍数据。
+- 管理员角色可查看全量用户/书籍数据并执行后台强操作（用户启停、书籍删除/重处理）。
+- 管理后台强操作记录审计日志，支持按操作者/动作/目标追溯。
 - Refresh token 使用轮换与重放检测；检测到旧 token 重放后撤销整个 token family。
 
 ## 一致性与可靠性（当前）

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -134,6 +135,8 @@ func (s *Server) routes() {
 	// admin
 	s.mux.Handle("/auth/admin/users", s.adminOnly(s.handleAdminUsers))
 	s.mux.Handle("/auth/admin/users/", s.adminOnly(s.handleAdminUserByID))
+	s.mux.Handle("/auth/admin/audit-logs", s.adminOnly(s.handleAdminAuditLogs))
+	s.mux.Handle("/auth/admin/overview", s.adminOnly(s.handleAdminOverview))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -722,24 +725,92 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, user d
 		methodNotAllowed(w)
 		return
 	}
-	users, err := s.app.ListUsers()
+	page, pageSize, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sortBy"))
+	if sortBy != "" && !isAllowedValue(strings.ToLower(sortBy), "createdat", "created_at", "updatedat", "updated_at", "email") {
+		writeError(w, http.StatusBadRequest, "invalid sort")
+		return
+	}
+	sortOrder := strings.TrimSpace(r.URL.Query().Get("sortOrder"))
+	if sortOrder != "" && !isAllowedValue(strings.ToLower(sortOrder), "asc", "desc") {
+		writeError(w, http.StatusBadRequest, "invalid sort")
+		return
+	}
+	users, total, err := s.app.ListUsersWithOptions(store.UserListOptions{
+		Query:     strings.TrimSpace(r.URL.Query().Get("query")),
+		Role:      strings.TrimSpace(r.URL.Query().Get("role")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": users,
-		"count": len(users),
+		"items":      users,
+		"count":      len(users),
+		"page":       page,
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": totalPages,
 	})
 }
 
 func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, user domain.User) {
-	id := strings.TrimPrefix(r.URL.Path, "/auth/admin/users/")
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.TrimPrefix(r.URL.Path, "/auth/admin/users/")
+	path = strings.Trim(path, "/")
+	if path == "" {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if r.Method != http.MethodPatch {
+	parts := strings.Split(path, "/")
+	if len(parts) > 2 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id := strings.TrimSpace(parts[0])
+	action := ""
+	if len(parts) == 2 {
+		action = strings.TrimSpace(strings.ToLower(parts[1]))
+	}
+	if id == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method == http.MethodGet && action == "" {
+		target, err := s.app.AdminGetUser(id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, target)
+		return
+	}
+	if r.Method == http.MethodPost && (action == "disable" || action == "enable") {
+		status := domain.StatusDisabled
+		if action == "enable" {
+			status = domain.StatusActive
+		}
+		updated, err := s.app.AdminUpdateUser(user, id, nil, &status)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if r.Method != http.MethodPatch || action != "" {
 		methodNotAllowed(w)
 		return
 	}
@@ -776,6 +847,99 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request, user domain.User) {
+	switch r.Method {
+	case http.MethodGet:
+		page, pageSize, err := parsePageParams(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		from, err := parseOptionalRFC3339(strings.TrimSpace(r.URL.Query().Get("from")))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid from")
+			return
+		}
+		to, err := parseOptionalRFC3339(strings.TrimSpace(r.URL.Query().Get("to")))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid to")
+			return
+		}
+		items, total, err := s.app.ListAdminAuditLogs(store.AdminAuditLogListOptions{
+			ActorID:    strings.TrimSpace(r.URL.Query().Get("actorId")),
+			Action:     strings.TrimSpace(r.URL.Query().Get("action")),
+			TargetType: strings.TrimSpace(r.URL.Query().Get("targetType")),
+			TargetID:   strings.TrimSpace(r.URL.Query().Get("targetId")),
+			From:       from,
+			To:         to,
+			Page:       page,
+			PageSize:   pageSize,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		totalPages := 0
+		if pageSize > 0 {
+			totalPages = (total + pageSize - 1) / pageSize
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items":      items,
+			"count":      len(items),
+			"page":       page,
+			"pageSize":   pageSize,
+			"total":      total,
+			"totalPages": totalPages,
+		})
+	case http.MethodPost:
+		var req adminAuditLogCreateRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		entry, err := s.app.SaveAdminAuditLog(domain.AdminAuditLog{
+			ActorID:    user.ID,
+			Action:     req.Action,
+			TargetType: req.TargetType,
+			TargetID:   req.TargetID,
+			Before:     req.Before,
+			After:      req.After,
+			RequestID:  req.RequestID,
+			IP:         req.IP,
+			UserAgent:  req.UserAgent,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, entry)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request, _ domain.User) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	windowHours := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("windowHours")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 || n > 720 {
+			writeError(w, http.StatusBadRequest, "invalid pagination")
+			return
+		}
+		windowHours = n
+	}
+	overview, err := s.app.GetAdminOverview(time.Now().UTC().Add(-time.Duration(windowHours)*time.Hour), windowHours)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
 }
 
 func methodNotAllowed(w http.ResponseWriter) {
@@ -860,6 +1024,17 @@ type adminUserUpdateRequest struct {
 	Status string `json:"status"`
 }
 
+type adminAuditLogCreateRequest struct {
+	Action     string         `json:"action"`
+	TargetType string         `json:"targetType"`
+	TargetID   string         `json:"targetId"`
+	Before     map[string]any `json:"before"`
+	After      map[string]any `json:"after"`
+	RequestID  string         `json:"requestId"`
+	IP         string         `json:"ip"`
+	UserAgent  string         `json:"userAgent"`
+}
+
 type jwksResponse struct {
 	Keys []store.JWK `json:"keys"`
 }
@@ -898,6 +1073,46 @@ func parseUserStatus(status string) (domain.UserStatus, bool) {
 	default:
 		return "", false
 	}
+}
+
+func parsePageParams(r *http.Request) (int, int, error) {
+	page := 1
+	pageSize := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			return 0, 0, fmt.Errorf("invalid pagination")
+		}
+		page = n
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("pageSize")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 || n > 100 {
+			return 0, 0, fmt.Errorf("invalid pagination")
+		}
+		pageSize = n
+	}
+	return page, pageSize, nil
+}
+
+func parseOptionalRFC3339(value string) (time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
+}
+
+func isAllowedValue(value string, allowed ...string) bool {
+	for _, item := range allowed {
+		if value == item {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) allowRate(w http.ResponseWriter, r *http.Request, limiter *ratelimit.FixedWindowLimiter, msg string) bool {
@@ -1031,6 +1246,12 @@ func errorCodeForAuth(status int, msg string) string {
 		return "ADMIN_INVALID_STATUS"
 	case message == "role or status is required":
 		return "ADMIN_UPDATE_FIELDS_REQUIRED"
+	case message == "invalid pagination":
+		return "ADMIN_INVALID_PAGINATION"
+	case message == "invalid sort":
+		return "ADMIN_INVALID_SORT"
+	case strings.Contains(message, "save admin audit log"):
+		return "ADMIN_AUDIT_WRITE_FAILED"
 	case message == "too many signup attempts":
 		return "AUTH_SIGNUP_RATE_LIMITED"
 	case message == "too many login attempts":

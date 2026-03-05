@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
@@ -900,6 +900,10 @@ export function ChatPage() {
     </div>
   )
 
+  if (sessionUser?.role === 'admin') {
+    return <Navigate to="/admin" replace />
+  }
+
   if (sessionUser) {
     return (
       <div
@@ -930,7 +934,7 @@ export function ChatPage() {
           libraryShortcutKeys={libraryShortcutKeys}
           getShortcutAriaLabel={getShortcutAriaLabel}
           accountEmail={sessionUser.email}
-          accountRoleLabel={sessionUser.role === 'admin' ? '管理员' : '普通用户'}
+          accountRoleLabel="普通用户"
           onLogout={() => void handleLogout()}
           closeButtonTestId="close-sidebar-button"
           scrollAreaRole="listbox"
@@ -964,8 +968,9 @@ export function ChatPage() {
             </div>
 
             <div className={chatTw.chatTopBarRight}>
-              <button type="button" className={chatTw.topActionPill}>临时</button>
-              <button type="button" className={chatTw.topActionPill}>分享</button>
+              <button type="button" className={chatTw.topActionPill} onClick={handleOpenLibraryManagement}>
+                书库管理
+              </button>
             </div>
           </header>
 

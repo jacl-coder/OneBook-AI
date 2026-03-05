@@ -133,6 +133,10 @@
 - `ADMIN_INVALID_ROLE`：角色参数不合法
 - `ADMIN_INVALID_STATUS`：状态参数不合法
 - `ADMIN_UPDATE_FIELDS_REQUIRED`：至少需要 role/status 之一
+- `ADMIN_INVALID_PAGINATION`：分页参数不合法
+- `ADMIN_INVALID_SORT`：排序参数不合法
+- `ADMIN_ACTION_CONFLICT`：管理动作与当前资源状态冲突
+- `ADMIN_AUDIT_WRITE_FAILED`：审计日志写入失败
 - `ADMIN_FORBIDDEN`：非管理员访问
 - `ADMIN_NOT_FOUND`：管理员域资源不存在
 - `ADMIN_INVALID_REQUEST`：Admin 域通用参数错误

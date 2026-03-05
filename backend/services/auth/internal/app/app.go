@@ -310,6 +310,27 @@ func (a *App) ListUsers() ([]domain.User, error) {
 	return a.store.ListUsers()
 }
 
+// ListUsersWithOptions returns users with filtering and pagination.
+func (a *App) ListUsersWithOptions(opts store.UserListOptions) ([]domain.User, int, error) {
+	return a.store.ListUsersWithOptions(opts)
+}
+
+// AdminGetUser returns a single user by id.
+func (a *App) AdminGetUser(userID string) (domain.User, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return domain.User{}, fmt.Errorf("user id required")
+	}
+	user, ok, err := a.store.GetUserByID(userID)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok {
+		return domain.User{}, fmt.Errorf("user not found")
+	}
+	return user, nil
+}
+
 // UpdateMyEmail updates the current user's email.
 func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, error) {
 	email := strings.TrimSpace(strings.ToLower(newEmail))
@@ -465,6 +486,39 @@ func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.Use
 		}
 	}
 	return target, nil
+}
+
+// SaveAdminAuditLog persists an admin audit event.
+func (a *App) SaveAdminAuditLog(entry domain.AdminAuditLog) (domain.AdminAuditLog, error) {
+	entry.ActorID = strings.TrimSpace(entry.ActorID)
+	entry.Action = strings.TrimSpace(entry.Action)
+	entry.TargetType = strings.TrimSpace(entry.TargetType)
+	entry.TargetID = strings.TrimSpace(entry.TargetID)
+	if entry.ActorID == "" || entry.Action == "" || entry.TargetType == "" || entry.TargetID == "" {
+		return domain.AdminAuditLog{}, fmt.Errorf("actorId, action, targetType and targetId are required")
+	}
+	if strings.TrimSpace(entry.ID) == "" {
+		entry.ID = util.NewID()
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	} else {
+		entry.CreatedAt = entry.CreatedAt.UTC()
+	}
+	if err := a.store.SaveAdminAuditLog(entry); err != nil {
+		return domain.AdminAuditLog{}, fmt.Errorf("save admin audit log: %w", err)
+	}
+	return entry, nil
+}
+
+// ListAdminAuditLogs returns paginated admin audit logs.
+func (a *App) ListAdminAuditLogs(opts store.AdminAuditLogListOptions) ([]domain.AdminAuditLog, int, error) {
+	return a.store.ListAdminAuditLogs(opts)
+}
+
+// GetAdminOverview returns aggregate admin metrics.
+func (a *App) GetAdminOverview(windowStart time.Time, windowHours int) (domain.AdminOverview, error) {
+	return a.store.GetAdminOverview(windowStart, windowHours)
 }
 
 // JWKS returns public signing keys when session store supports it.

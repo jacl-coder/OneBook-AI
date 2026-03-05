@@ -186,6 +186,32 @@ func (a *App) DeleteBook(id string) error {
 	return nil
 }
 
+// ReprocessBook re-enqueues ingest for an existing book and resets status to queued.
+func (a *App) ReprocessBook(id string) (domain.Book, error) {
+	_, ok, err := a.store.GetBook(id)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	if !ok {
+		return domain.Book{}, fmt.Errorf("book not found")
+	}
+	if err := a.store.SetStatus(id, domain.StatusQueued, ""); err != nil {
+		return domain.Book{}, err
+	}
+	if err := a.ingest.Enqueue(id); err != nil {
+		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
+		return domain.Book{}, fmt.Errorf("enqueue ingest: %w", err)
+	}
+	updated, ok, err := a.store.GetBook(id)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	if !ok {
+		return domain.Book{}, fmt.Errorf("book not found")
+	}
+	return updated, nil
+}
+
 func titleFromName(name string) string {
 	base := filepath.Base(name)
 	ext := filepath.Ext(base)

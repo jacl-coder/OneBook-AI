@@ -476,6 +476,11 @@ export function LibraryPage() {
           </div>
 
           <div className={libraryTw.topBarRight}>
+            {sessionUser.role === 'admin' ? (
+              <Link to="/admin" className={libraryTw.actionBtn}>
+                管理后台
+              </Link>
+            ) : null}
             <input
               ref={uploadInputRef}
               className="hidden"

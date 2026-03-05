@@ -6,6 +6,37 @@ import (
 	"onebookai/pkg/domain"
 )
 
+type UserListOptions struct {
+	Query     string
+	Role      string
+	Status    string
+	SortBy    string
+	SortOrder string
+	Page      int
+	PageSize  int
+}
+
+type BookListOptions struct {
+	Query     string
+	OwnerID   string
+	Status    string
+	SortBy    string
+	SortOrder string
+	Page      int
+	PageSize  int
+}
+
+type AdminAuditLogListOptions struct {
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	From       time.Time
+	To         time.Time
+	Page       int
+	PageSize   int
+}
+
 // Store defines persistence operations for users, books, and messages.
 type Store interface {
 	// users
@@ -14,12 +45,14 @@ type Store interface {
 	GetUserByEmail(email string) (domain.User, bool, error)
 	GetUserByID(id string) (domain.User, bool, error)
 	ListUsers() ([]domain.User, error)
+	ListUsersWithOptions(UserListOptions) ([]domain.User, int, error)
 	UserCount() (int, error)
 
 	// books
 	SaveBook(domain.Book) error
 	SetStatus(id string, status domain.BookStatus, errMsg string) error
 	ListBooks() ([]domain.Book, error)
+	ListBooksWithOptions(BookListOptions) ([]domain.Book, int, error)
 	ListBooksByOwner(ownerID string) ([]domain.Book, error)
 	GetBook(id string) (domain.Book, bool, error)
 	DeleteBook(id string) error
@@ -39,6 +72,11 @@ type Store interface {
 	ListChunksByBook(bookID string) ([]domain.Chunk, error)
 	SetChunkEmbedding(id string, embedding []float32) error
 	SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error)
+
+	// admin
+	SaveAdminAuditLog(domain.AdminAuditLog) error
+	ListAdminAuditLogs(AdminAuditLogListOptions) ([]domain.AdminAuditLog, int, error)
+	GetAdminOverview(windowStart time.Time, windowHours int) (domain.AdminOverview, error)
 }
 
 // SessionStore persists session tokens.

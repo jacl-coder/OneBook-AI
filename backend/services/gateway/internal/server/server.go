@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -202,6 +203,9 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/admin/users", s.adminOnly(s.handleAdminUsers))
 	s.mux.Handle("/api/admin/users/", s.adminOnly(s.handleAdminUserByID))
 	s.mux.Handle("/api/admin/books", s.adminOnly(s.handleAdminBooks))
+	s.mux.Handle("/api/admin/books/", s.adminOnly(s.handleAdminBookByID))
+	s.mux.Handle("/api/admin/audit-logs", s.adminOnly(s.handleAdminAuditLogs))
+	s.mux.Handle("/api/admin/overview", s.adminOnly(s.handleAdminOverview))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -852,24 +856,100 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, ctx au
 		methodNotAllowed(w, r)
 		return
 	}
-	users, err := s.auth.AdminListUsers(util.RequestIDFromRequest(r), ctx.AccessToken)
+	page, pageSize, err := parseAdminPageParams(r)
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid pagination", "ADMIN_INVALID_PAGINATION")
+		return
+	}
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sortBy"))
+	sortOrder := strings.TrimSpace(r.URL.Query().Get("sortOrder"))
+	if sortBy != "" && !isAllowedValue(strings.ToLower(sortBy), "createdat", "created_at", "updatedat", "updated_at", "email") {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid sort", "ADMIN_INVALID_SORT")
+		return
+	}
+	if sortOrder != "" && !isAllowedValue(strings.ToLower(sortOrder), "asc", "desc") {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid sort", "ADMIN_INVALID_SORT")
+		return
+	}
+	resp, err := s.auth.AdminListUsersWithOptions(util.RequestIDFromRequest(r), ctx.AccessToken, authclient.AdminListUsersOptions{
+		Query:     strings.TrimSpace(r.URL.Query().Get("query")),
+		Role:      strings.TrimSpace(r.URL.Query().Get("role")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		Page:      page,
+		PageSize:  pageSize,
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+	})
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": users,
-		"count": len(users),
-	})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	path = strings.Trim(path, "/")
+	if path == "" {
 		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
 		return
 	}
-	if r.Method != http.MethodPatch {
+	parts := strings.Split(path, "/")
+	if len(parts) > 2 {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
+		return
+	}
+	id := strings.TrimSpace(parts[0])
+	action := ""
+	if len(parts) == 2 {
+		action = strings.TrimSpace(strings.ToLower(parts[1]))
+	}
+	if id == "" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
+		return
+	}
+	if r.Method == http.MethodGet && action == "" {
+		item, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+	if r.Method == http.MethodPost && (action == "disable" || action == "enable") {
+		before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		var updated domain.User
+		if action == "disable" {
+			updated, err = s.auth.AdminDisableUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		} else {
+			updated, err = s.auth.AdminEnableUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		}
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+			Action:     "admin.user." + action,
+			TargetType: "user",
+			TargetID:   id,
+			Before:     toMap(before),
+			After:      toMap(updated),
+			RequestID:  util.RequestIDFromRequest(r),
+			IP:         util.ClientIP(r, s.trustedProxies),
+			UserAgent:  strings.TrimSpace(r.UserAgent()),
+		}); err != nil {
+			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if r.Method != http.MethodPatch || action != "" {
 		methodNotAllowed(w, r)
 		return
 	}
@@ -900,9 +980,27 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		writeErrorWithCode(w, r, http.StatusBadRequest, "role or status is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
 		return
 	}
+	before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
 	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status)
 	if err != nil {
 		writeAuthError(w, r, err)
+		return
+	}
+	if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+		Action:     "admin.user.update",
+		TargetType: "user",
+		TargetID:   id,
+		Before:     toMap(before),
+		After:      toMap(updated),
+		RequestID:  util.RequestIDFromRequest(r),
+		IP:         util.ClientIP(r, s.trustedProxies),
+		UserAgent:  strings.TrimSpace(r.UserAgent()),
+	}); err != nil {
+		writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
@@ -913,15 +1011,205 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, ctx au
 		methodNotAllowed(w, r)
 		return
 	}
+	page, pageSize, err := parseAdminPageParams(r)
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid pagination", "ADMIN_INVALID_PAGINATION")
+		return
+	}
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sortBy"))
+	sortOrder := strings.TrimSpace(r.URL.Query().Get("sortOrder"))
+	if sortBy != "" && !isAllowedValue(strings.ToLower(sortBy), "updatedat", "updated_at", "createdat", "created_at", "title") {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid sort", "ADMIN_INVALID_SORT")
+		return
+	}
+	if sortOrder != "" && !isAllowedValue(strings.ToLower(sortOrder), "asc", "desc") {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid sort", "ADMIN_INVALID_SORT")
+		return
+	}
 	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), ctx.AccessToken)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": books,
-		"count": len(books),
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+	status := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	ownerID := strings.TrimSpace(r.URL.Query().Get("ownerId"))
+	filtered := make([]domain.Book, 0, len(books))
+	for _, item := range books {
+		if ownerID != "" && item.OwnerID != ownerID {
+			continue
+		}
+		if status != "" && strings.ToLower(string(item.Status)) != status {
+			continue
+		}
+		if query != "" {
+			title := strings.ToLower(item.Title)
+			name := strings.ToLower(item.OriginalFilename)
+			id := strings.ToLower(item.ID)
+			if !strings.Contains(title, query) && !strings.Contains(name, query) && !strings.Contains(id, query) {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	orderDesc := strings.ToLower(strings.TrimSpace(sortOrder)) != "asc"
+	sortKey := strings.ToLower(strings.TrimSpace(sortBy))
+	if sortKey == "" {
+		sortKey = "updated_at"
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		left, right := filtered[i], filtered[j]
+		switch sortKey {
+		case "title":
+			if orderDesc {
+				return strings.ToLower(left.Title) > strings.ToLower(right.Title)
+			}
+			return strings.ToLower(left.Title) < strings.ToLower(right.Title)
+		case "createdat", "created_at":
+			if orderDesc {
+				return left.CreatedAt.After(right.CreatedAt)
+			}
+			return left.CreatedAt.Before(right.CreatedAt)
+		default:
+			if orderDesc {
+				return left.UpdatedAt.After(right.UpdatedAt)
+			}
+			return left.UpdatedAt.Before(right.UpdatedAt)
+		}
 	})
+	total := len(filtered)
+	paged := paginateBooks(filtered, page, pageSize)
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":      paged,
+		"count":      len(paged),
+		"page":       page,
+		"pageSize":   pageSize,
+		"total":      total,
+		"totalPages": totalPages,
+	})
+}
+
+func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/books/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
+		return
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > 2 {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
+		return
+	}
+	id := strings.TrimSpace(parts[0])
+	action := ""
+	if len(parts) == 2 {
+		action = strings.TrimSpace(strings.ToLower(parts[1]))
+	}
+	if id == "" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
+		return
+	}
+	before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+	if err != nil {
+		writeBookError(w, r, err)
+		return
+	}
+	if r.Method == http.MethodDelete && action == "" {
+		if err := s.books.DeleteBook(util.RequestIDFromRequest(r), ctx.AccessToken, id); err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+			Action:     "admin.book.delete",
+			TargetType: "book",
+			TargetID:   id,
+			Before:     toMap(before),
+			After: map[string]any{
+				"deleted": true,
+			},
+			RequestID: util.RequestIDFromRequest(r),
+			IP:        util.ClientIP(r, s.trustedProxies),
+			UserAgent: strings.TrimSpace(r.UserAgent()),
+		}); err != nil {
+			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		return
+	}
+	if r.Method == http.MethodPost && action == "reprocess" {
+		updated, err := s.books.ReprocessBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+			Action:     "admin.book.reprocess",
+			TargetType: "book",
+			TargetID:   id,
+			Before:     toMap(before),
+			After:      toMap(updated),
+			RequestID:  util.RequestIDFromRequest(r),
+			IP:         util.ClientIP(r, s.trustedProxies),
+			UserAgent:  strings.TrimSpace(r.UserAgent()),
+		}); err != nil {
+			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	methodNotAllowed(w, r)
+}
+
+func (s *Server) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	page, pageSize, err := parseAdminPageParams(r)
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid pagination", "ADMIN_INVALID_PAGINATION")
+		return
+	}
+	resp, err := s.auth.AdminListAuditLogs(util.RequestIDFromRequest(r), ctx.AccessToken, authclient.AdminListAuditLogsOptions{
+		ActorID:    strings.TrimSpace(r.URL.Query().Get("actorId")),
+		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType: strings.TrimSpace(r.URL.Query().Get("targetType")),
+		TargetID:   strings.TrimSpace(r.URL.Query().Get("targetId")),
+		From:       strings.TrimSpace(r.URL.Query().Get("from")),
+		To:         strings.TrimSpace(r.URL.Query().Get("to")),
+		Page:       page,
+		PageSize:   pageSize,
+	})
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	overview, err := s.auth.AdminOverview(util.RequestIDFromRequest(r), ctx.AccessToken)
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+func (s *Server) writeAdminAuditLog(r *http.Request, ctx authContext, req authclient.AdminAuditLogCreateRequest) error {
+	_, err := s.auth.AdminCreateAuditLog(util.RequestIDFromRequest(r), ctx.AccessToken, req)
+	return err
 }
 
 func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
@@ -941,6 +1229,62 @@ func parsePositiveIntWithMax(raw string, fallback int, max int) int {
 		return max
 	}
 	return n
+}
+
+func parseAdminPageParams(r *http.Request) (int, int, error) {
+	page := 1
+	pageSize := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			return 0, 0, fmt.Errorf("invalid pagination")
+		}
+		page = n
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("pageSize")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 || n > 100 {
+			return 0, 0, fmt.Errorf("invalid pagination")
+		}
+		pageSize = n
+	}
+	return page, pageSize, nil
+}
+
+func paginateBooks(items []domain.Book, page, pageSize int) []domain.Book {
+	if len(items) == 0 {
+		return []domain.Book{}
+	}
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		return []domain.Book{}
+	}
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
+}
+
+func toMap(input any) map[string]any {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+func isAllowedValue(value string, allowed ...string) bool {
+	for _, item := range allowed {
+		if value == item {
+			return true
+		}
+	}
+	return false
 }
 
 type chatRequest struct {

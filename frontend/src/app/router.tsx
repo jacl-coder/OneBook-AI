@@ -1,10 +1,16 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { Navigate, createBrowserRouter } from 'react-router-dom'
 
 import { ChatPage } from '@/pages/ChatPage'
 import { HomePage } from '@/pages/HomePage'
 import { LibraryPage } from '@/pages/LibraryPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { AdminRouteGuard } from '@/pages/admin/AdminRouteGuard'
+import { AdminLayout } from '@/pages/admin/AdminLayout'
+import { AdminOverviewPage } from '@/pages/admin/AdminOverviewPage'
+import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
+import { AdminBooksPage } from '@/pages/admin/AdminBooksPage'
+import { AdminAuditPage } from '@/pages/admin/AdminAuditPage'
 
 export const router = createBrowserRouter([
   {
@@ -62,6 +68,22 @@ export const router = createBrowserRouter([
   {
     path: '/library',
     element: <LibraryPage />,
+  },
+  {
+    path: '/admin',
+    element: <AdminRouteGuard />,
+    children: [
+      {
+        element: <AdminLayout />,
+        children: [
+          { index: true, element: <Navigate to="/admin/overview" replace /> },
+          { path: 'overview', element: <AdminOverviewPage /> },
+          { path: 'users', element: <AdminUsersPage /> },
+          { path: 'books', element: <AdminBooksPage /> },
+          { path: 'audit', element: <AdminAuditPage /> },
+        ],
+      },
+    ],
   },
   {
     path: '*',
