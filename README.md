@@ -153,6 +153,9 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 - 后端测试：`cd backend && go test ./...`
 - Embedding 基准：`cd backend && go run ./cmd/bench_embed -text "你好" -dim 3072`
+- RAG 评测（6 类首版）：
+  - `cd backend && go run ./cmd/rag_eval all --chunks internal/eval/testdata/chunks.jsonl --queries internal/eval/testdata/queries.jsonl --qrels internal/eval/testdata/qrels.tsv --predictions internal/eval/testdata/predictions.jsonl --run internal/eval/testdata/run.jsonl --embeddings internal/eval/testdata/embeddings.jsonl`
+  - 或使用一键脚本：`./scripts/run-rag-eval.sh`
 - 可选 OCR（扫描版 PDF）：
   - OCR 服务随后端一同启动（`./run.sh` 会自动 `docker compose up -d ocr-service`）
   - 首次启动需构建镜像并下载模型，耗时较长，后续启动使用缓存
