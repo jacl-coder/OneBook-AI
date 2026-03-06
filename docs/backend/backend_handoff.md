@@ -40,9 +40,10 @@
 
 ## 3. 主要业务接口（给前端）
 - `GET /healthz`：服务健康检查。
-- `POST /api/books`：上传书籍（`multipart/form-data`，字段名 `file`）。
-- `GET /api/books`：获取书库列表（返回 `items` + `count`）。
+- `POST /api/books`：上传书籍（`multipart/form-data`，字段名 `file`，支持 `primaryCategory` 与 `tags[]`）。
+- `GET /api/books`：获取书库列表（返回 `items` + `count`，支持 `query/status/primaryCategory/tag/format/language` 筛选）。
 - `GET /api/books/{id}`：查询单本书状态与元数据。
+- `PATCH /api/books/{id}`：更新书名、主分类、标签。
 - `GET /api/books/{id}/download`：获取预签名下载链接。
 - `DELETE /api/books/{id}`：删除书籍。
 - `POST /api/chats`：问答（body: `bookId`, `question`, 可选 `conversationId`, `debug`）。
@@ -57,7 +58,7 @@
 - `PATCH /api/admin/users/{id}`：管理员更新用户角色/状态。
 - `POST /api/admin/users/{id}/disable`：管理员禁用用户。
 - `POST /api/admin/users/{id}/enable`：管理员启用用户。
-- `GET /api/admin/books`：管理员书籍分页列表（支持 `query/status/ownerId/page/pageSize/sortBy/sortOrder`）。
+- `GET /api/admin/books`：管理员书籍分页列表（支持 `query/status/ownerId/primaryCategory/tag/format/language/page/pageSize/sortBy/sortOrder`）。
 - `DELETE /api/admin/books/{id}`：管理员删除书籍。
 - `POST /api/admin/books/{id}/reprocess`：管理员重处理书籍。
 - `GET /api/admin/audit-logs`：管理员操作审计日志分页列表。
@@ -74,6 +75,11 @@
 
 ### 4.1 书籍状态
 - 状态流转：`queued -> processing -> ready | failed`
+- 书籍元数据：
+  - `primaryCategory`：固定单选分类。
+  - `tags`：补充标签，最多 5 个。
+  - `format`：系统字段，当前为 `pdf/epub/txt`。
+  - `language`：系统字段，当前为 `zh/en/other/unknown`。
 - 推荐前端策略：
   - 上传后立即进入详情页或列表轮询。
   - 每 2~3 秒轮询 `GET /api/books/{id}`。

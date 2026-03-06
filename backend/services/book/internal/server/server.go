@@ -10,6 +10,7 @@ import (
 	"onebookai/internal/usertoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/store"
 	"onebookai/services/book/internal/app"
 	"onebookai/services/book/internal/authclient"
 )
@@ -134,7 +135,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	case http.MethodPost:
 		s.handleUploadBook(w, r, user)
 	case http.MethodGet:
-		s.handleListBooks(w, user)
+		s.handleListBooks(w, r, user)
 	default:
 		methodNotAllowed(w)
 	}
@@ -199,6 +200,31 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	case http.MethodPatch:
+		var req updateBookRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		book, ok, err := s.app.GetBook(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			notFound(w, "book not found")
+			return
+		}
+		if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		updated, err := s.app.UpdateBook(id, req.Title, req.PrimaryCategory, req.Tags)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
 	default:
 		methodNotAllowed(w)
 	}
@@ -354,7 +380,15 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 		writeError(w, http.StatusBadRequest, "idempotency key required")
 		return
 	}
-	book, replayed, err := s.app.UploadBook(user, header.Filename, file, header.Size, idempotencyKey)
+	book, replayed, err := s.app.UploadBook(
+		user,
+		header.Filename,
+		file,
+		header.Size,
+		r.FormValue("primaryCategory"),
+		r.MultipartForm.Value["tags[]"],
+		idempotencyKey,
+	)
 	if err != nil {
 		status := http.StatusBadRequest
 		lower := strings.ToLower(strings.TrimSpace(err.Error()))
@@ -372,8 +406,18 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 	writeJSON(w, http.StatusCreated, book)
 }
 
-func (s *Server) handleListBooks(w http.ResponseWriter, user domain.User) {
-	books, err := s.app.ListBooks(user)
+func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, user domain.User) {
+	books, err := s.app.ListBooks(user, store.BookListOptions{
+		Query:           strings.TrimSpace(r.URL.Query().Get("query")),
+		OwnerID:         strings.TrimSpace(r.URL.Query().Get("ownerId")),
+		Status:          strings.TrimSpace(r.URL.Query().Get("status")),
+		PrimaryCategory: strings.TrimSpace(r.URL.Query().Get("primaryCategory")),
+		Tag:             strings.TrimSpace(r.URL.Query().Get("tag")),
+		Format:          strings.TrimSpace(r.URL.Query().Get("format")),
+		Language:        strings.TrimSpace(r.URL.Query().Get("language")),
+		SortBy:          strings.TrimSpace(r.URL.Query().Get("sortBy")),
+		SortOrder:       strings.TrimSpace(r.URL.Query().Get("sortOrder")),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -486,6 +530,12 @@ func errorCodeForBook(status int, msg string) string {
 type statusRequest struct {
 	Status       string `json:"status"`
 	ErrorMessage string `json:"errorMessage"`
+}
+
+type updateBookRequest struct {
+	Title           string   `json:"title"`
+	PrimaryCategory string   `json:"primaryCategory"`
+	Tags            []string `json:"tags"`
 }
 
 func bearerToken(r *http.Request) (string, bool) {

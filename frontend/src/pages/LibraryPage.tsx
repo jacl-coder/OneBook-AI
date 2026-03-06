@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
@@ -17,9 +17,21 @@ import {
   libraryQueryKeys,
   listBooks,
   type LibraryBook,
+  type ListBooksParams,
+  updateBook,
   uploadBook,
 } from '@/features/library/api/library'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
+import {
+  bookFormatOptions,
+  bookLanguageOptions,
+  bookPrimaryCategoryOptions,
+  getBookFormatLabel,
+  getBookLanguageLabel,
+  getBookPrimaryCategoryLabel,
+  normalizeTagInput,
+  type BookPrimaryCategory,
+} from '@/features/library/books'
 
 const cx = (...values: Array<string | false | null | undefined>) =>
   values.filter(Boolean).join(' ')
@@ -97,6 +109,34 @@ const libraryTw = {
   sectionWrap: 'mx-auto w-full max-w-[920px]',
   notice:
     'mb-4 rounded-[12px] border border-[#f4b0b4] bg-[#fff5f6] px-3 py-[10px] text-[13px] text-[#9f1820]',
+  panel:
+    'mb-4 rounded-[14px] border border-[rgba(0,0,0,0.08)] bg-white p-4',
+  panelTitle: 'text-[15px] font-medium text-[#0d0d0d]',
+  panelDesc: 'mt-1 text-[12px] text-[#6f6f6f]',
+  filterGrid: 'mt-3 grid gap-2 md:grid-cols-5',
+  formGrid: 'mt-3 grid gap-3 md:grid-cols-3',
+  input:
+    'h-10 rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 text-[13px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  select:
+    'h-10 rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 text-[13px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  textarea:
+    'min-h-[92px] rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-[13px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  secondaryBtn:
+    'inline-flex h-10 cursor-pointer items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 text-[13px] font-medium text-[#2f2f2f] hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:opacity-50',
+  primaryBtn:
+    'inline-flex h-10 cursor-pointer items-center justify-center rounded-[10px] border border-[#0d0d0d] bg-[#0d0d0d] px-3 text-[13px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50',
+  fileMeta: 'mt-2 text-[12px] text-[#6f6f6f]',
+  groupWrap: 'mb-4 rounded-[14px] border border-[rgba(0,0,0,0.08)] bg-white',
+  groupHeader: 'border-b border-[rgba(0,0,0,0.06)] px-4 py-3',
+  groupTitle: 'text-[14px] font-medium text-[#0d0d0d]',
+  groupCount: 'mt-1 text-[12px] text-[#6f6f6f]',
+  metaRow: 'mt-2 flex flex-wrap items-center gap-2',
+  metaPill:
+    'inline-flex items-center rounded-[9999px] bg-[#f4f4f4] px-2 py-[3px] text-[11px] font-medium text-[#4f4f4f]',
+  tagPill:
+    'inline-flex items-center rounded-[9999px] border border-[rgba(0,0,0,0.08)] bg-[#fafafa] px-2 py-[3px] text-[11px] text-[#4f4f4f]',
+  editPanel:
+    'mt-3 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-[#fafafa] p-3',
   empty:
     'grid min-h-[300px] place-items-center rounded-[14px] border border-dashed border-[rgba(0,0,0,0.16)] bg-[#fcfcfc] p-6 text-center',
   emptyTitle: 'text-[18px] font-medium text-[#0d0d0d]',
@@ -169,6 +209,17 @@ function statusClass(status: LibraryBook['status']): string {
   }
 }
 
+function initialLibraryFilters(): ListBooksParams {
+  return {
+    query: '',
+    status: '',
+    primaryCategory: '',
+    tag: '',
+    format: '',
+    language: '',
+  }
+}
+
 export function LibraryPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -181,6 +232,14 @@ export function LibraryPage() {
 
   const [actionErrorText, setActionErrorText] = useState('')
   const [deletingBookID, setDeletingBookID] = useState('')
+  const [filters, setFilters] = useState<ListBooksParams>(initialLibraryFilters)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploadPrimaryCategory, setUploadPrimaryCategory] = useState<BookPrimaryCategory>('other')
+  const [uploadTagsInput, setUploadTagsInput] = useState('')
+  const [editingBookID, setEditingBookID] = useState('')
+  const [editingTitle, setEditingTitle] = useState('')
+  const [editingPrimaryCategory, setEditingPrimaryCategory] = useState<BookPrimaryCategory>('other')
+  const [editingTagsInput, setEditingTagsInput] = useState('')
 
   const {
     searchValue: chatSearch,
@@ -201,8 +260,8 @@ export function LibraryPage() {
   } = useChatSidebarState()
 
   const booksQuery = useQuery({
-    queryKey: libraryQueryKeys.books,
-    queryFn: listBooks,
+    queryKey: libraryQueryKeys.books(filters),
+    queryFn: () => listBooks(filters),
   })
   const conversationsQuery = useQuery({
     queryKey: conversationQueryKeys.list(sessionUser?.id ?? '', 100),
@@ -217,7 +276,10 @@ export function LibraryPage() {
     mutationFn: uploadBook,
     onSuccess: async () => {
       setActionErrorText('')
-      await queryClient.invalidateQueries({ queryKey: libraryQueryKeys.books })
+      setSelectedFile(null)
+      setUploadPrimaryCategory('other')
+      setUploadTagsInput('')
+      await queryClient.invalidateQueries({ queryKey: ['library', 'books'] })
     },
     onError: (error) => {
       setActionErrorText(getApiErrorMessage(error, '上传失败，请稍后重试。'))
@@ -228,10 +290,23 @@ export function LibraryPage() {
     mutationFn: deleteBook,
     onSuccess: async () => {
       setActionErrorText('')
-      await queryClient.invalidateQueries({ queryKey: libraryQueryKeys.books })
+      await queryClient.invalidateQueries({ queryKey: ['library', 'books'] })
     },
     onError: (error) => {
       setActionErrorText(getApiErrorMessage(error, '删除失败，请稍后重试。'))
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, book }: { id: string; book: { title: string; primaryCategory: BookPrimaryCategory; tags: string[] } }) =>
+      updateBook(id, book),
+    onSuccess: async () => {
+      setActionErrorText('')
+      setEditingBookID('')
+      await queryClient.invalidateQueries({ queryKey: ['library', 'books'] })
+    },
+    onError: (error) => {
+      setActionErrorText(getApiErrorMessage(error, '更新分类失败，请稍后重试。'))
     },
   })
 
@@ -243,6 +318,18 @@ export function LibraryPage() {
       return Number.isNaN(right) || Number.isNaN(left) ? 0 : right - left
     })
   }, [booksQuery.data?.items])
+  const groupedBooks = useMemo(() => {
+    const groups = new Map<string, LibraryBook[]>()
+    for (const book of books) {
+      const key = book.primaryCategory || 'other'
+      const current = groups.get(key) ?? []
+      current.push(book)
+      groups.set(key, current)
+    }
+    return bookPrimaryCategoryOptions
+      .map((option) => ({ category: option.value, label: option.label, items: groups.get(option.value) ?? [] }))
+      .filter((group) => group.items.length > 0)
+  }, [books])
 
   const hasPendingBooks = useMemo(
     () => books.some((book) => isBookPending(book.status)),
@@ -360,18 +447,26 @@ export function LibraryPage() {
   }, [])
 
   const handleUploadChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      if (!file) return
-      setActionErrorText('')
-      try {
-        await uploadMutation.mutateAsync(file)
-      } finally {
-        event.target.value = ''
-      }
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null
+      setSelectedFile(file)
+      event.target.value = ''
     },
-    [uploadMutation],
+    [],
   )
+
+  const handleUploadSubmit = useCallback(async () => {
+    if (!selectedFile) {
+      setActionErrorText('请先选择要上传的书籍文件。')
+      return
+    }
+    setActionErrorText('')
+    await uploadMutation.mutateAsync({
+      file: selectedFile,
+      primaryCategory: uploadPrimaryCategory,
+      tags: normalizeTagInput(uploadTagsInput),
+    })
+  }, [selectedFile, uploadMutation, uploadPrimaryCategory, uploadTagsInput])
 
   const handleDownload = useCallback(async (book: LibraryBook) => {
     try {
@@ -400,6 +495,26 @@ export function LibraryPage() {
     [deleteMutation],
   )
 
+  const beginEditBook = useCallback((book: LibraryBook) => {
+    setEditingBookID(book.id)
+    setEditingTitle(book.title)
+    setEditingPrimaryCategory(book.primaryCategory || 'other')
+    setEditingTagsInput(book.tags.join(', '))
+  }, [])
+
+  const handleEditSubmit = useCallback(async () => {
+    if (!editingBookID) return
+    setActionErrorText('')
+    await updateMutation.mutateAsync({
+      id: editingBookID,
+      book: {
+        title: editingTitle,
+        primaryCategory: editingPrimaryCategory,
+        tags: normalizeTagInput(editingTagsInput),
+      },
+    })
+  }, [editingBookID, editingPrimaryCategory, editingTagsInput, editingTitle, updateMutation])
+
   if (!sessionUser) {
     return (
       <div className="grid min-h-screen place-items-center bg-white p-6 text-[#0d0d0d]" style={uiSansStyle}>
@@ -417,6 +532,10 @@ export function LibraryPage() {
         </div>
       </div>
     )
+  }
+
+  if (sessionUser.role === 'admin') {
+    return <Navigate to="/admin" replace />
   }
 
   return (
@@ -449,7 +568,7 @@ export function LibraryPage() {
         libraryShortcutKeys={libraryShortcutKeys}
         getShortcutAriaLabel={getShortcutAriaLabel}
         accountEmail={sessionUser.email}
-        accountRoleLabel={sessionUser.role === 'admin' ? '管理员' : '普通用户'}
+        accountRoleLabel="普通用户"
         onLogout={() => void handleLogout()}
         libraryButtonRef={libraryNavButtonRef}
       />
@@ -476,11 +595,6 @@ export function LibraryPage() {
           </div>
 
           <div className={libraryTw.topBarRight}>
-            {sessionUser.role === 'admin' ? (
-              <Link to="/admin" className={libraryTw.actionBtn}>
-                管理后台
-              </Link>
-            ) : null}
             <input
               ref={uploadInputRef}
               className="hidden"
@@ -498,7 +612,7 @@ export function LibraryPage() {
               <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={libraryTw.iconBlockH14W14} aria-hidden="true">
                 <use href={`${CHAT_ICON_SPRITE_URL}#chat-attach`} fill="currentColor" />
               </svg>
-              <span>{uploadMutation.isPending ? '上传中...' : '上传书籍'}</span>
+              <span>{selectedFile ? '重新选择文件' : '选择书籍文件'}</span>
             </button>
           </div>
         </header>
@@ -511,6 +625,139 @@ export function LibraryPage() {
                 {getApiErrorMessage(booksQuery.error, '书籍列表加载失败，请稍后刷新重试。')}
               </div>
             ) : null}
+
+            <div className={libraryTw.panel}>
+              <h2 className={libraryTw.panelTitle}>上传书籍</h2>
+              <p className={libraryTw.panelDesc}>先选文件，再补充主分类和标签。标签用中英文逗号分隔，最多 5 个。</p>
+              <div className={libraryTw.formGrid}>
+                <div className="md:col-span-1">
+                  <label className="mb-1 block text-[12px] text-[#6f6f6f]">主分类</label>
+                  <select
+                    className={libraryTw.select}
+                    value={uploadPrimaryCategory}
+                    onChange={(event) => setUploadPrimaryCategory(event.target.value as BookPrimaryCategory)}
+                  >
+                    {bookPrimaryCategoryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-[12px] text-[#6f6f6f]">标签</label>
+                  <input
+                    className={libraryTw.input}
+                    placeholder="例如：财务，制度，研究生"
+                    value={uploadTagsInput}
+                    onChange={(event) => setUploadTagsInput(event.target.value)}
+                  />
+                </div>
+              </div>
+              {selectedFile ? (
+                <p className={libraryTw.fileMeta}>
+                  已选择：{selectedFile.name} · {formatSize(selectedFile.size)}
+                </p>
+              ) : (
+                <p className={libraryTw.fileMeta}>支持 PDF / EPUB / TXT。</p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button type="button" className={libraryTw.secondaryBtn} onClick={handleUploadClick}>
+                  选择文件
+                </button>
+                <button
+                  type="button"
+                  className={libraryTw.primaryBtn}
+                  onClick={() => void handleUploadSubmit()}
+                  disabled={uploadMutation.isPending || !selectedFile}
+                >
+                  {uploadMutation.isPending ? '上传中...' : '开始上传'}
+                </button>
+              </div>
+            </div>
+
+            <div className={libraryTw.panel}>
+              <h2 className={libraryTw.panelTitle}>筛选书库</h2>
+              <div className={libraryTw.filterGrid}>
+                <input
+                  className={libraryTw.input}
+                  placeholder="搜索标题 / 文件名"
+                  value={filters.query ?? ''}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, query: event.target.value }))}
+                />
+                <select
+                  className={libraryTw.select}
+                  value={filters.primaryCategory ?? ''}
+                  onChange={(event) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      primaryCategory: event.target.value as ListBooksParams['primaryCategory'],
+                    }))
+                  }
+                >
+                  <option value="">全部分类</option>
+                  {bookPrimaryCategoryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className={libraryTw.input}
+                  placeholder="按标签筛选"
+                  value={filters.tag ?? ''}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, tag: event.target.value }))}
+                />
+                <select
+                  className={libraryTw.select}
+                  value={filters.status ?? ''}
+                  onChange={(event) =>
+                    setFilters((prev) => ({ ...prev, status: event.target.value as ListBooksParams['status'] }))
+                  }
+                >
+                  <option value="">全部状态</option>
+                  <option value="queued">排队中</option>
+                  <option value="processing">处理中</option>
+                  <option value="ready">可对话</option>
+                  <option value="failed">处理失败</option>
+                </select>
+                <select
+                  className={libraryTw.select}
+                  value={filters.format ?? ''}
+                  onChange={(event) =>
+                    setFilters((prev) => ({ ...prev, format: event.target.value as ListBooksParams['format'] }))
+                  }
+                >
+                  <option value="">全部格式</option>
+                  {bookFormatOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={libraryTw.select}
+                  value={filters.language ?? ''}
+                  onChange={(event) =>
+                    setFilters((prev) => ({ ...prev, language: event.target.value as ListBooksParams['language'] }))
+                  }
+                >
+                  <option value="">全部语言</option>
+                  {bookLanguageOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={libraryTw.secondaryBtn}
+                  onClick={() => setFilters(initialLibraryFilters())}
+                >
+                  重置筛选
+                </button>
+              </div>
+            </div>
 
             {booksQuery.isLoading ? (
               <div className={libraryTw.empty}>
@@ -526,61 +773,136 @@ export function LibraryPage() {
                 </div>
               </div>
             ) : (
-              <div className={libraryTw.table}>
-                <div className={libraryTw.tableHeader}>
-                  <span>书籍</span>
-                  <span>状态</span>
-                  <span>大小</span>
-                  <span>操作</span>
-                </div>
-
-                {books.map((book) => (
-                  <div key={book.id} className={libraryTw.row}>
-                    <div className={libraryTw.titleCell}>
-                      <span className={libraryTw.cellLabel}>书籍</span>
-                      <span className={libraryTw.titleText}>{book.title}</span>
-                      <p className={libraryTw.subText}>{book.originalFilename}</p>
-                      {book.status === 'failed' && book.errorMessage ? (
-                        <p className="mt-1 text-[12px] text-[#b42318]">{book.errorMessage}</p>
-                      ) : null}
+              <div className="grid gap-4">
+                {groupedBooks.map((group) => (
+                  <div key={group.category} className={libraryTw.groupWrap}>
+                    <div className={libraryTw.groupHeader}>
+                      <h3 className={libraryTw.groupTitle}>{group.label}</h3>
+                      <p className={libraryTw.groupCount}>{group.items.length} 本书</p>
                     </div>
+                    <div className={libraryTw.table}>
+                      <div className={libraryTw.tableHeader}>
+                        <span>书籍</span>
+                        <span>状态</span>
+                        <span>大小</span>
+                        <span>操作</span>
+                      </div>
 
-                    <div>
-                      <span className={libraryTw.cellLabel}>状态</span>
-                      <span className={cx(libraryTw.statusChip, statusClass(book.status))}>
-                        {statusLabel(book.status)}
-                      </span>
-                    </div>
+                      {group.items.map((book) => (
+                        <div key={book.id} className={libraryTw.row}>
+                          <div className={libraryTw.titleCell}>
+                            <span className={libraryTw.cellLabel}>书籍</span>
+                            <span className={libraryTw.titleText}>{book.title}</span>
+                            <p className={libraryTw.subText}>{book.originalFilename}</p>
+                            <div className={libraryTw.metaRow}>
+                              <span className={libraryTw.metaPill}>{getBookPrimaryCategoryLabel(book.primaryCategory)}</span>
+                              <span className={libraryTw.metaPill}>{getBookFormatLabel(book.format)}</span>
+                              <span className={libraryTw.metaPill}>{getBookLanguageLabel(book.language)}</span>
+                              {book.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className={libraryTw.tagPill}>
+                                  #{tag}
+                                </span>
+                              ))}
+                              {book.tags.length > 3 ? (
+                                <span className={libraryTw.tagPill}>+{book.tags.length - 3}</span>
+                              ) : null}
+                            </div>
+                            {book.status === 'failed' && book.errorMessage ? (
+                              <p className="mt-1 text-[12px] text-[#b42318]">{book.errorMessage}</p>
+                            ) : null}
+                            {editingBookID === book.id ? (
+                              <div className={libraryTw.editPanel}>
+                                <div className="grid gap-2 md:grid-cols-3">
+                                  <input
+                                    className={libraryTw.input}
+                                    value={editingTitle}
+                                    onChange={(event) => setEditingTitle(event.target.value)}
+                                  />
+                                  <select
+                                    className={libraryTw.select}
+                                    value={editingPrimaryCategory}
+                                    onChange={(event) => setEditingPrimaryCategory(event.target.value as BookPrimaryCategory)}
+                                  >
+                                    {bookPrimaryCategoryOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    className={libraryTw.input}
+                                    placeholder="标签，逗号分隔"
+                                    value={editingTagsInput}
+                                    onChange={(event) => setEditingTagsInput(event.target.value)}
+                                  />
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className={libraryTw.primaryBtn}
+                                    disabled={updateMutation.isPending}
+                                    onClick={() => void handleEditSubmit()}
+                                  >
+                                    {updateMutation.isPending ? '保存中...' : '保存分类'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={libraryTw.secondaryBtn}
+                                    onClick={() => setEditingBookID('')}
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
 
-                    <div>
-                      <span className={libraryTw.cellLabel}>大小</span>
-                      <span className="text-[13px] text-[#4f4f4f]">{formatSize(book.sizeBytes)}</span>
-                    </div>
+                          <div>
+                            <span className={libraryTw.cellLabel}>状态</span>
+                            <span className={cx(libraryTw.statusChip, statusClass(book.status))}>
+                              {statusLabel(book.status)}
+                            </span>
+                          </div>
 
-                    <div className={libraryTw.actions}>
-                      <button
-                        type="button"
-                        className={libraryTw.actionBtn}
-                        onClick={() => handleGoChat(book.id)}
-                        disabled={book.status !== 'ready'}
-                      >
-                        去对话
-                      </button>
-                      <button
-                        type="button"
-                        className={libraryTw.actionBtn}
-                        onClick={() => void handleDownload(book)}
-                      >
-                        下载
-                      </button>
-                      <button
-                        type="button"
-                        className={cx(libraryTw.actionBtn, libraryTw.actionDanger)}
-                        onClick={() => void handleDelete(book)}
-                        disabled={deleteMutation.isPending && deletingBookID === book.id}
-                      >
-                        {deleteMutation.isPending && deletingBookID === book.id ? '删除中...' : '删除'}
-                      </button>
+                          <div>
+                            <span className={libraryTw.cellLabel}>大小</span>
+                            <span className="text-[13px] text-[#4f4f4f]">{formatSize(book.sizeBytes)}</span>
+                          </div>
+
+                          <div className={libraryTw.actions}>
+                            <button
+                              type="button"
+                              className={libraryTw.actionBtn}
+                              onClick={() => handleGoChat(book.id)}
+                              disabled={book.status !== 'ready'}
+                            >
+                              去对话
+                            </button>
+                            <button
+                              type="button"
+                              className={libraryTw.actionBtn}
+                              onClick={() => beginEditBook(book)}
+                            >
+                              编辑分类
+                            </button>
+                            <button
+                              type="button"
+                              className={libraryTw.actionBtn}
+                              onClick={() => void handleDownload(book)}
+                            >
+                              下载
+                            </button>
+                            <button
+                              type="button"
+                              className={cx(libraryTw.actionBtn, libraryTw.actionDanger)}
+                              onClick={() => void handleDelete(book)}
+                              disabled={deleteMutation.isPending && deletingBookID === book.id}
+                            >
+                              {deleteMutation.isPending && deletingBookID === book.id ? '删除中...' : '删除'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

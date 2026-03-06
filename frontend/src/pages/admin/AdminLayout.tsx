@@ -23,9 +23,6 @@ const layoutTw = {
   main: 'grid min-h-screen grid-rows-[52px_minmax(0,1fr)]',
   topBar: 'flex h-[52px] items-center justify-between border-b border-[rgba(0,0,0,0.08)] bg-white px-4',
   topTitle: 'text-[16px] font-medium',
-  topLinks: 'inline-flex items-center gap-2',
-  topLink:
-    'inline-flex h-8 items-center rounded-[9999px] border border-[rgba(0,0,0,0.12)] px-[10px] text-[12px] hover:bg-[#f4f4f4]',
   body: 'overflow-auto bg-white px-4 py-4 max-[767px]:px-3',
 }
 
@@ -83,14 +80,6 @@ export function AdminLayout() {
       <main className={layoutTw.main}>
         <header className={layoutTw.topBar}>
           <h1 className={layoutTw.topTitle}>后台管理</h1>
-          <div className={layoutTw.topLinks}>
-            <Link className={layoutTw.topLink} to="/library">
-              书库
-            </Link>
-            <Link className={layoutTw.topLink} to="/chat">
-              聊天
-            </Link>
-          </div>
         </header>
 
         <section className={layoutTw.body}>

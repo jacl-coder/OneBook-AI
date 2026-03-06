@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm/clause"
 	gormlogger "gorm.io/gorm/logger"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/retrieval"
 )
 
 const migrateLockID int64 = 73217321
@@ -332,7 +333,7 @@ func (s *GormStore) SaveBook(b domain.Book) error {
 	model := bookToModel(b)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at"}),
 	}).Create(&model).Error
 }
 
@@ -359,7 +360,6 @@ func (s *GormStore) ListBooksByOwner(ownerID string) ([]domain.Book, error) {
 
 // ListBooksWithOptions returns books with filtering and pagination.
 func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, int, error) {
-	page, pageSize := normalizePage(opts.Page, opts.PageSize)
 	tx := s.db.Model(&BookModel{})
 	tx = tx.Where("deleted_at IS NULL")
 	query := strings.TrimSpace(opts.Query)
@@ -375,6 +375,22 @@ func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, i
 	if status != "" {
 		tx = tx.Where("status = ?", status)
 	}
+	category := strings.TrimSpace(strings.ToLower(opts.PrimaryCategory))
+	if category != "" {
+		tx = tx.Where("primary_category = ?", category)
+	}
+	tag := strings.TrimSpace(opts.Tag)
+	if tag != "" {
+		tx = tx.Where("tags @> ?", datatypes.JSON([]byte(fmt.Sprintf("[%q]", tag))))
+	}
+	format := strings.TrimSpace(strings.ToLower(opts.Format))
+	if format != "" {
+		tx = tx.Where("format = ?", format)
+	}
+	language := strings.TrimSpace(strings.ToLower(opts.Language))
+	if language != "" {
+		tx = tx.Where("language = ?", language)
+	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -382,10 +398,12 @@ func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, i
 	sortBy := normalizeBookSortBy(opts.SortBy)
 	sortOrder := normalizeSortOrder(opts.SortOrder)
 	var models []BookModel
-	if err := tx.Order(sortBy + " " + sortOrder).
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&models).Error; err != nil {
+	queryTx := tx.Order(sortBy + " " + sortOrder)
+	if opts.PageSize > 0 {
+		page, pageSize := normalizePage(opts.Page, opts.PageSize)
+		queryTx = queryTx.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+	if err := queryTx.Find(&models).Error; err != nil {
 		return nil, 0, err
 	}
 	items := make([]domain.Book, 0, len(models))
@@ -610,6 +628,15 @@ func (s *GormStore) ListConversationMessages(conversationID string, limit int) (
 func (s *GormStore) ReplaceChunks(bookID string, chunks []domain.Chunk) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&ChunkModel{}, "book_id = ?", bookID).Error; err != nil {
+			return err
+		}
+		language := summarizeBookLanguage(chunks)
+		if err := tx.Model(&BookModel{}).
+			Where("id = ?", bookID).
+			Updates(map[string]any{
+				"language":   string(language),
+				"updated_at": time.Now().UTC(),
+			}).Error; err != nil {
 			return err
 		}
 		if len(chunks) == 0 {
@@ -1153,11 +1180,16 @@ func userFromModel(m UserModel) domain.User {
 }
 
 func bookToModel(b domain.Book) BookModel {
+	tags, _ := marshalStringSliceJSON(b.Tags)
 	return BookModel{
 		ID:               b.ID,
 		OwnerID:          b.OwnerID,
 		Title:            b.Title,
 		OriginalFilename: b.OriginalFilename,
+		PrimaryCategory:  string(domain.NormalizeBookPrimaryCategory(b.PrimaryCategory)),
+		Tags:             tags,
+		Format:           string(domain.NormalizeBookFormat(b.Format)),
+		Language:         string(domain.NormalizeBookLanguage(b.Language)),
 		StorageKey:       b.StorageKey,
 		Status:           string(b.Status),
 		ErrorMessage:     b.ErrorMessage,
@@ -1173,11 +1205,16 @@ func bookToModel(b domain.Book) BookModel {
 }
 
 func bookFromModel(m BookModel) domain.Book {
+	tags, _ := unmarshalStringSliceJSON(m.Tags)
 	return domain.Book{
 		ID:               m.ID,
 		OwnerID:          m.OwnerID,
 		Title:            m.Title,
 		OriginalFilename: m.OriginalFilename,
+		PrimaryCategory:  string(domain.NormalizeBookPrimaryCategory(m.PrimaryCategory)),
+		Tags:             tags,
+		Format:           string(domain.NormalizeBookFormat(m.Format)),
+		Language:         string(domain.NormalizeBookLanguage(m.Language)),
 		StorageKey:       m.StorageKey,
 		Status:           domain.BookStatus(m.Status),
 		ErrorMessage:     m.ErrorMessage,
@@ -1190,6 +1227,51 @@ func bookFromModel(m BookModel) domain.Book {
 		CleanupAttempts:  m.CleanupAttempts,
 		CleanupUpdatedAt: m.CleanupUpdatedAt,
 	}
+}
+
+func marshalStringSliceJSON(values []string) (datatypes.JSON, error) {
+	if len(values) == 0 {
+		return datatypes.JSON([]byte("[]")), nil
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(payload), nil
+}
+
+func unmarshalStringSliceJSON(raw datatypes.JSON) ([]string, error) {
+	if len(raw) == 0 {
+		return []string{}, nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func summarizeBookLanguage(chunks []domain.Chunk) domain.BookLanguage {
+	if len(chunks) == 0 {
+		return domain.BookLanguageUnknown
+	}
+	counts := map[domain.BookLanguage]int{}
+	for _, chunk := range chunks {
+		language := domain.NormalizeBookLanguage(chunk.Metadata["language"])
+		if language == domain.BookLanguageUnknown {
+			language = domain.NormalizeBookLanguage(retrieval.DetectLanguage(chunk.Content))
+		}
+		counts[language]++
+	}
+	best := domain.BookLanguageUnknown
+	bestCount := -1
+	for _, language := range []domain.BookLanguage{domain.BookLanguageZH, domain.BookLanguageEN, domain.BookLanguageOther, domain.BookLanguageUnknown} {
+		if counts[language] > bestCount {
+			best = language
+			bestCount = counts[language]
+		}
+	}
+	return best
 }
 
 func conversationToModel(c domain.Conversation) ConversationModel {
