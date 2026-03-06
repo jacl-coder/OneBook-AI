@@ -15,3 +15,5 @@ queueMaxRetries: 3
 queueRetryDelaySeconds: 2
 embeddingBatchSize: 4
 embeddingConcurrency: 2
+qdrantURL: "http://localhost:6333"
+qdrantCollection: "onebook_chunks"

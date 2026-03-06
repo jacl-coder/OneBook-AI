@@ -137,6 +137,11 @@ func (s *Server) routes() {
 	s.mux.Handle("/auth/admin/users/", s.adminOnly(s.handleAdminUserByID))
 	s.mux.Handle("/auth/admin/audit-logs", s.adminOnly(s.handleAdminAuditLogs))
 	s.mux.Handle("/auth/admin/overview", s.adminOnly(s.handleAdminOverview))
+	s.mux.Handle("/auth/admin/evals/overview", s.adminOnly(s.handleAdminEvalOverview))
+	s.mux.Handle("/auth/admin/evals/datasets", s.adminOnly(s.handleAdminEvalDatasets))
+	s.mux.Handle("/auth/admin/evals/datasets/", s.adminOnly(s.handleAdminEvalDatasetByID))
+	s.mux.Handle("/auth/admin/evals/runs", s.adminOnly(s.handleAdminEvalRuns))
+	s.mux.Handle("/auth/admin/evals/runs/", s.adminOnly(s.handleAdminEvalRunByID))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

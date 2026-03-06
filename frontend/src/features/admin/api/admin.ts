@@ -52,6 +52,77 @@ export type AdminOverview = {
   windowHours: number
 }
 
+export type EvalDatasetSourceType = 'upload' | 'book'
+export type EvalDatasetStatus = 'active' | 'archived'
+export type EvalRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+export type EvalRunMode = 'retrieval' | 'post_retrieval' | 'answer' | 'all'
+export type EvalRetrievalMode = 'hybrid' | 'dense_only' | 'sparse_only'
+export type EvalGateStatus = 'passed' | 'warn' | 'failed'
+
+export type AdminEvalDataset = {
+  id: string
+  name: string
+  sourceType: EvalDatasetSourceType
+  bookId?: string
+  version: number
+  status: EvalDatasetStatus
+  description?: string
+  files: Record<string, string>
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type AdminEvalRunArtifact = {
+  name: string
+  path?: string
+  contentType?: string
+  sizeBytes: number
+  createdAt: string
+}
+
+export type AdminEvalRunStageSummary = {
+  stage: string
+  metrics: Record<string, unknown>
+}
+
+export type AdminEvalRun = {
+  id: string
+  datasetId: string
+  status: EvalRunStatus
+  mode: EvalRunMode
+  retrievalMode: EvalRetrievalMode
+  params?: Record<string, unknown>
+  gateMode: string
+  gateStatus: EvalGateStatus
+  summaryMetrics?: Record<string, unknown>
+  warnings?: string[]
+  artifacts?: AdminEvalRunArtifact[]
+  stageSummaries?: AdminEvalRunStageSummary[]
+  progress: number
+  errorMessage?: string
+  startedAt?: string
+  finishedAt?: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type AdminEvalOverview = {
+  totalDatasets: number
+  activeDatasets: number
+  totalRuns: number
+  queuedRuns: number
+  runningRuns: number
+  successfulRuns: number
+  failedRuns: number
+  canceledRuns: number
+  recentRuns: number
+  recentGateFailed: number
+  successRate: number
+  refreshedAt: string
+}
+
 export type PagedResponse<T> = {
   items: T[]
   count: number
@@ -95,6 +166,51 @@ export type ListAdminAuditLogsParams = {
 export type AdminUserUpdatePayload = {
   role?: 'user' | 'admin'
   status?: 'active' | 'disabled'
+}
+
+export type ListAdminEvalDatasetsParams = {
+  query?: string
+  sourceType?: EvalDatasetSourceType | ''
+  status?: EvalDatasetStatus | ''
+  bookId?: string
+  page?: number
+  pageSize?: number
+}
+
+export type ListAdminEvalRunsParams = {
+  datasetId?: string
+  status?: EvalRunStatus | ''
+  mode?: EvalRunMode | ''
+  retrievalMode?: EvalRetrievalMode | ''
+  page?: number
+  pageSize?: number
+}
+
+export type CreateAdminEvalDatasetPayload = {
+  name: string
+  sourceType: EvalDatasetSourceType
+  bookId?: string
+  version?: number
+  description?: string
+  chunks?: File | null
+  queries?: File | null
+  qrels?: File | null
+  predictions?: File | null
+  metadata?: File | null
+}
+
+export type UpdateAdminEvalDatasetPayload = {
+  name?: string
+  description?: string
+  status?: EvalDatasetStatus
+}
+
+export type CreateAdminEvalRunPayload = {
+  datasetId: string
+  mode: EvalRunMode
+  retrievalMode: EvalRetrievalMode
+  gateMode: 'warn' | 'strict' | 'off'
+  params?: Record<string, unknown>
 }
 
 function toQuery(params: Record<string, unknown>): string {
@@ -160,9 +276,87 @@ export async function listAdminAuditLogs(
   return data
 }
 
+export async function getAdminEvalOverview(): Promise<AdminEvalOverview> {
+  const { data } = await http.get<AdminEvalOverview>('/api/admin/evals/overview')
+  return data
+}
+
+export async function listAdminEvalDatasets(
+  params: ListAdminEvalDatasetsParams,
+): Promise<PagedResponse<AdminEvalDataset>> {
+  const { data } = await http.get<PagedResponse<AdminEvalDataset>>(`/api/admin/evals/datasets${toQuery(params)}`)
+  return data
+}
+
+export async function createAdminEvalDataset(payload: CreateAdminEvalDatasetPayload): Promise<AdminEvalDataset> {
+  const form = new FormData()
+  form.set('name', payload.name)
+  form.set('sourceType', payload.sourceType)
+  if (payload.bookId?.trim()) form.set('bookId', payload.bookId.trim())
+  if (payload.description?.trim()) form.set('description', payload.description.trim())
+  if (payload.version) form.set('version', String(payload.version))
+  if (payload.chunks) form.set('chunks', payload.chunks)
+  if (payload.queries) form.set('queries', payload.queries)
+  if (payload.qrels) form.set('qrels', payload.qrels)
+  if (payload.predictions) form.set('predictions', payload.predictions)
+  if (payload.metadata) form.set('metadata', payload.metadata)
+  const { data } = await http.post<AdminEvalDataset>('/api/admin/evals/datasets', form)
+  return data
+}
+
+export async function getAdminEvalDataset(id: string): Promise<AdminEvalDataset> {
+  const { data } = await http.get<AdminEvalDataset>(`/api/admin/evals/datasets/${id}`)
+  return data
+}
+
+export async function updateAdminEvalDataset(
+  id: string,
+  payload: UpdateAdminEvalDatasetPayload,
+): Promise<AdminEvalDataset> {
+  const { data } = await http.patch<AdminEvalDataset>(`/api/admin/evals/datasets/${id}`, payload)
+  return data
+}
+
+export async function deleteAdminEvalDataset(id: string): Promise<{ status: string }> {
+  const { data } = await http.delete<{ status: string }>(`/api/admin/evals/datasets/${id}`)
+  return data
+}
+
+export async function listAdminEvalRuns(params: ListAdminEvalRunsParams): Promise<PagedResponse<AdminEvalRun>> {
+  const { data } = await http.get<PagedResponse<AdminEvalRun>>(`/api/admin/evals/runs${toQuery(params)}`)
+  return data
+}
+
+export async function createAdminEvalRun(payload: CreateAdminEvalRunPayload): Promise<AdminEvalRun> {
+  const { data } = await http.post<AdminEvalRun>('/api/admin/evals/runs', payload)
+  return data
+}
+
+export async function getAdminEvalRun(id: string): Promise<AdminEvalRun> {
+  const { data } = await http.get<AdminEvalRun>(`/api/admin/evals/runs/${id}`)
+  return data
+}
+
+export async function cancelAdminEvalRun(id: string): Promise<AdminEvalRun> {
+  const { data } = await http.post<AdminEvalRun>(`/api/admin/evals/runs/${id}/cancel`, {})
+  return data
+}
+
+export async function getAdminEvalPerQuery(id: string): Promise<{ items: Record<string, unknown>[]; count: number }> {
+  const { data } = await http.get<{ items: Record<string, unknown>[]; count: number }>(
+    `/api/admin/evals/runs/${id}/per-query`,
+  )
+  return data
+}
+
 export const adminQueryKeys = {
   users: (params: ListAdminUsersParams) => ['admin', 'users', params] as const,
   books: (params: ListAdminBooksParams) => ['admin', 'books', params] as const,
   overview: ['admin', 'overview'] as const,
   auditLogs: (params: ListAdminAuditLogsParams) => ['admin', 'audit', params] as const,
+  evalOverview: ['admin', 'evals', 'overview'] as const,
+  evalDatasets: (params: ListAdminEvalDatasetsParams) => ['admin', 'evals', 'datasets', params] as const,
+  evalRuns: (params: ListAdminEvalRunsParams) => ['admin', 'evals', 'runs', params] as const,
+  evalRun: (id: string) => ['admin', 'evals', 'run', id] as const,
+  evalPerQuery: (id: string) => ['admin', 'evals', 'per-query', id] as const,
 }

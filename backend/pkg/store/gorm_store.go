@@ -76,7 +76,7 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
 			return fmt.Errorf("create pgvector extension: %w", err)
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf(`
@@ -171,6 +171,12 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 			ON admin_audit_log_models (target_type, target_id, created_at DESC);
 		`).Error; err != nil {
 			return fmt.Errorf("ensure admin audit target index: %w", err)
+		}
+		if err := tx.Exec(`
+			CREATE INDEX IF NOT EXISTS idx_eval_runs_dataset_status
+			ON eval_run_models (dataset_id, status, created_at DESC);
+		`).Error; err != nil {
+			return fmt.Errorf("ensure eval run index: %w", err)
 		}
 		return nil
 	}); err != nil {
@@ -716,6 +722,243 @@ func (s *GormStore) GetAdminOverview(windowStart time.Time, windowHours int) (do
 	}, nil
 }
 
+// SaveEvalDataset persists an eval dataset.
+func (s *GormStore) SaveEvalDataset(dataset domain.EvalDataset) error {
+	model, err := evalDatasetToModel(dataset)
+	if err != nil {
+		return err
+	}
+	return s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "source_type", "book_id", "version", "status", "description", "files", "created_by", "updated_at",
+		}),
+	}).Create(&model).Error
+}
+
+// GetEvalDataset fetches a dataset by ID.
+func (s *GormStore) GetEvalDataset(id string) (domain.EvalDataset, bool, error) {
+	var model EvalDatasetModel
+	if err := s.db.First(&model, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.EvalDataset{}, false, nil
+		}
+		return domain.EvalDataset{}, false, err
+	}
+	item, err := evalDatasetFromModel(model)
+	if err != nil {
+		return domain.EvalDataset{}, false, err
+	}
+	return item, true, nil
+}
+
+// ListEvalDatasets lists eval datasets with filtering.
+func (s *GormStore) ListEvalDatasets(opts EvalDatasetListOptions) ([]domain.EvalDataset, int, error) {
+	page, pageSize := normalizePage(opts.Page, opts.PageSize)
+	tx := s.db.Model(&EvalDatasetModel{})
+	if query := strings.TrimSpace(strings.ToLower(opts.Query)); query != "" {
+		like := "%" + query + "%"
+		tx = tx.Where("LOWER(name) LIKE ? OR LOWER(id) LIKE ?", like, like)
+	}
+	if sourceType := strings.TrimSpace(strings.ToLower(opts.SourceType)); sourceType != "" {
+		tx = tx.Where("source_type = ?", sourceType)
+	}
+	if status := strings.TrimSpace(strings.ToLower(opts.Status)); status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	if bookID := strings.TrimSpace(opts.BookID); bookID != "" {
+		tx = tx.Where("book_id = ?", bookID)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var models []EvalDatasetModel
+	if err := tx.Order("updated_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]domain.EvalDataset, 0, len(models))
+	for _, model := range models {
+		item, err := evalDatasetFromModel(model)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, int(total), nil
+}
+
+// DeleteEvalDataset hard-deletes a dataset.
+func (s *GormStore) DeleteEvalDataset(id string) error {
+	return s.db.Delete(&EvalDatasetModel{}, "id = ?", strings.TrimSpace(id)).Error
+}
+
+// ArchiveEvalDataset marks a dataset archived.
+func (s *GormStore) ArchiveEvalDataset(id string) error {
+	return s.db.Model(&EvalDatasetModel{}).
+		Where("id = ?", strings.TrimSpace(id)).
+		Updates(map[string]any{
+			"status":     string(domain.EvalDatasetStatusArchived),
+			"updated_at": time.Now().UTC(),
+		}).Error
+}
+
+// SaveEvalRun persists an eval run.
+func (s *GormStore) SaveEvalRun(run domain.EvalRun) error {
+	model, err := evalRunToModel(run)
+	if err != nil {
+		return err
+	}
+	return s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"dataset_id", "status", "mode", "retrieval_mode", "params", "gate_mode", "gate_status",
+			"summary_metrics", "warnings", "artifacts", "stage_summaries", "progress", "error_message",
+			"started_at", "finished_at", "created_by", "updated_at",
+		}),
+	}).Create(&model).Error
+}
+
+// GetEvalRun fetches an eval run by ID.
+func (s *GormStore) GetEvalRun(id string) (domain.EvalRun, bool, error) {
+	var model EvalRunModel
+	if err := s.db.First(&model, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.EvalRun{}, false, nil
+		}
+		return domain.EvalRun{}, false, err
+	}
+	item, err := evalRunFromModel(model)
+	if err != nil {
+		return domain.EvalRun{}, false, err
+	}
+	return item, true, nil
+}
+
+// ListEvalRuns lists eval runs with filtering.
+func (s *GormStore) ListEvalRuns(opts EvalRunListOptions) ([]domain.EvalRun, int, error) {
+	page, pageSize := normalizePage(opts.Page, opts.PageSize)
+	tx := s.db.Model(&EvalRunModel{})
+	if datasetID := strings.TrimSpace(opts.DatasetID); datasetID != "" {
+		tx = tx.Where("dataset_id = ?", datasetID)
+	}
+	if status := strings.TrimSpace(strings.ToLower(opts.Status)); status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	if mode := strings.TrimSpace(strings.ToLower(opts.Mode)); mode != "" {
+		tx = tx.Where("mode = ?", mode)
+	}
+	if retrievalMode := strings.TrimSpace(strings.ToLower(opts.RetrievalMode)); retrievalMode != "" {
+		tx = tx.Where("retrieval_mode = ?", retrievalMode)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var models []EvalRunModel
+	if err := tx.Order("created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]domain.EvalRun, 0, len(models))
+	for _, model := range models {
+		item, err := evalRunFromModel(model)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, int(total), nil
+}
+
+// CountEvalRunsByDataset counts runs for a dataset.
+func (s *GormStore) CountEvalRunsByDataset(datasetID string) (int, error) {
+	var count int64
+	if err := s.db.Model(&EvalRunModel{}).
+		Where("dataset_id = ?", strings.TrimSpace(datasetID)).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// GetAdminEvalOverview returns aggregate eval dashboard metrics.
+func (s *GormStore) GetAdminEvalOverview(windowStart time.Time) (domain.AdminEvalOverview, error) {
+	start := windowStart.UTC()
+	if start.IsZero() {
+		start = time.Now().UTC().Add(-24 * time.Hour)
+	}
+	countStatus := func(model any, field, value string) (int64, error) {
+		var count int64
+		tx := s.db.Model(model)
+		if strings.TrimSpace(field) != "" {
+			tx = tx.Where(field+" = ?", value)
+		}
+		if err := tx.Count(&count).Error; err != nil {
+			return 0, err
+		}
+		return count, nil
+	}
+	totalDatasets, err := countStatus(&EvalDatasetModel{}, "", "")
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	activeDatasets, err := countStatus(&EvalDatasetModel{}, "status", string(domain.EvalDatasetStatusActive))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	totalRuns, err := countStatus(&EvalRunModel{}, "", "")
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	queuedRuns, err := countStatus(&EvalRunModel{}, "status", string(domain.EvalRunStatusQueued))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	runningRuns, err := countStatus(&EvalRunModel{}, "status", string(domain.EvalRunStatusRunning))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	successfulRuns, err := countStatus(&EvalRunModel{}, "status", string(domain.EvalRunStatusSucceeded))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	failedRuns, err := countStatus(&EvalRunModel{}, "status", string(domain.EvalRunStatusFailed))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	canceledRuns, err := countStatus(&EvalRunModel{}, "status", string(domain.EvalRunStatusCanceled))
+	if err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	var recentRuns, recentGateFailed int64
+	if err := s.db.Model(&EvalRunModel{}).Where("created_at >= ?", start).Count(&recentRuns).Error; err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	if err := s.db.Model(&EvalRunModel{}).Where("created_at >= ? AND gate_status = ?", start, string(domain.EvalGateStatusFailed)).Count(&recentGateFailed).Error; err != nil {
+		return domain.AdminEvalOverview{}, err
+	}
+	return domain.AdminEvalOverview{
+		TotalDatasets:    int(totalDatasets),
+		ActiveDatasets:   int(activeDatasets),
+		TotalRuns:        int(totalRuns),
+		QueuedRuns:       int(queuedRuns),
+		RunningRuns:      int(runningRuns),
+		SuccessfulRuns:   int(successfulRuns),
+		FailedRuns:       int(failedRuns),
+		CanceledRuns:     int(canceledRuns),
+		RecentRuns:       int(recentRuns),
+		RecentGateFailed: int(recentGateFailed),
+		SuccessRate:      safeDivFloat(float64(successfulRuns), float64(totalRuns)),
+		RefreshedAt:      time.Now().UTC(),
+	}, nil
+}
+
 func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
 	if len(embedding) == 0 {
 		return fmt.Errorf("embedding vector is empty")
@@ -746,6 +989,13 @@ func normalizeSortOrder(value string) string {
 	default:
 		return "DESC"
 	}
+}
+
+func safeDivFloat(a, b float64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return a / b
 }
 
 func normalizeUserSortBy(value string) string {
@@ -974,6 +1224,142 @@ func adminAuditLogFromModel(model AdminAuditLogModel) (domain.AdminAuditLog, err
 	}, nil
 }
 
+func evalDatasetToModel(dataset domain.EvalDataset) (EvalDatasetModel, error) {
+	files, err := marshalStringMap(dataset.Files)
+	if err != nil {
+		return EvalDatasetModel{}, fmt.Errorf("marshal eval dataset files: %w", err)
+	}
+	var bookID *string
+	if value := strings.TrimSpace(dataset.BookID); value != "" {
+		bookID = &value
+	}
+	return EvalDatasetModel{
+		ID:          strings.TrimSpace(dataset.ID),
+		Name:        strings.TrimSpace(dataset.Name),
+		SourceType:  strings.TrimSpace(string(dataset.SourceType)),
+		BookID:      bookID,
+		Version:     dataset.Version,
+		Status:      strings.TrimSpace(string(dataset.Status)),
+		Description: strings.TrimSpace(dataset.Description),
+		Files:       files,
+		CreatedBy:   strings.TrimSpace(dataset.CreatedBy),
+		CreatedAt:   dataset.CreatedAt.UTC(),
+		UpdatedAt:   dataset.UpdatedAt.UTC(),
+	}, nil
+}
+
+func evalDatasetFromModel(model EvalDatasetModel) (domain.EvalDataset, error) {
+	files, err := unmarshalStringMap(model.Files)
+	if err != nil {
+		return domain.EvalDataset{}, fmt.Errorf("unmarshal eval dataset files: %w", err)
+	}
+	bookID := ""
+	if model.BookID != nil {
+		bookID = strings.TrimSpace(*model.BookID)
+	}
+	return domain.EvalDataset{
+		ID:          model.ID,
+		Name:        model.Name,
+		SourceType:  domain.EvalDatasetSourceType(model.SourceType),
+		BookID:      bookID,
+		Version:     model.Version,
+		Status:      domain.EvalDatasetStatus(model.Status),
+		Description: model.Description,
+		Files:       files,
+		CreatedBy:   model.CreatedBy,
+		CreatedAt:   model.CreatedAt,
+		UpdatedAt:   model.UpdatedAt,
+	}, nil
+}
+
+func evalRunToModel(run domain.EvalRun) (EvalRunModel, error) {
+	params, err := marshalOptionalJSON(run.Params)
+	if err != nil {
+		return EvalRunModel{}, fmt.Errorf("marshal eval run params: %w", err)
+	}
+	summaryMetrics, err := marshalOptionalJSON(run.SummaryMetrics)
+	if err != nil {
+		return EvalRunModel{}, fmt.Errorf("marshal eval run metrics: %w", err)
+	}
+	warnings, err := marshalStringSlice(run.Warnings)
+	if err != nil {
+		return EvalRunModel{}, fmt.Errorf("marshal eval run warnings: %w", err)
+	}
+	artifacts, err := marshalAnyJSON(run.Artifacts)
+	if err != nil {
+		return EvalRunModel{}, fmt.Errorf("marshal eval run artifacts: %w", err)
+	}
+	stageSummaries, err := marshalAnyJSON(run.StageSummaries)
+	if err != nil {
+		return EvalRunModel{}, fmt.Errorf("marshal eval run stage summaries: %w", err)
+	}
+	return EvalRunModel{
+		ID:             strings.TrimSpace(run.ID),
+		DatasetID:      strings.TrimSpace(run.DatasetID),
+		Status:         strings.TrimSpace(string(run.Status)),
+		Mode:           strings.TrimSpace(string(run.Mode)),
+		RetrievalMode:  strings.TrimSpace(string(run.RetrievalMode)),
+		Params:         params,
+		GateMode:       strings.TrimSpace(run.GateMode),
+		GateStatus:     strings.TrimSpace(string(run.GateStatus)),
+		SummaryMetrics: summaryMetrics,
+		Warnings:       warnings,
+		Artifacts:      artifacts,
+		StageSummaries: stageSummaries,
+		Progress:       run.Progress,
+		ErrorMessage:   strings.TrimSpace(run.ErrorMessage),
+		StartedAt:      normalizeTimePtr(run.StartedAt),
+		FinishedAt:     normalizeTimePtr(run.FinishedAt),
+		CreatedBy:      strings.TrimSpace(run.CreatedBy),
+		CreatedAt:      run.CreatedAt.UTC(),
+		UpdatedAt:      run.UpdatedAt.UTC(),
+	}, nil
+}
+
+func evalRunFromModel(model EvalRunModel) (domain.EvalRun, error) {
+	params, err := unmarshalOptionalJSON(model.Params)
+	if err != nil {
+		return domain.EvalRun{}, fmt.Errorf("unmarshal eval run params: %w", err)
+	}
+	summaryMetrics, err := unmarshalOptionalJSON(model.SummaryMetrics)
+	if err != nil {
+		return domain.EvalRun{}, fmt.Errorf("unmarshal eval run metrics: %w", err)
+	}
+	warnings, err := unmarshalStringSlice(model.Warnings)
+	if err != nil {
+		return domain.EvalRun{}, fmt.Errorf("unmarshal eval run warnings: %w", err)
+	}
+	var artifacts []domain.EvalRunArtifact
+	if err := unmarshalAnyJSON(model.Artifacts, &artifacts); err != nil {
+		return domain.EvalRun{}, fmt.Errorf("unmarshal eval run artifacts: %w", err)
+	}
+	var stageSummaries []domain.EvalRunStageSummary
+	if err := unmarshalAnyJSON(model.StageSummaries, &stageSummaries); err != nil {
+		return domain.EvalRun{}, fmt.Errorf("unmarshal eval run stage summaries: %w", err)
+	}
+	return domain.EvalRun{
+		ID:             model.ID,
+		DatasetID:      model.DatasetID,
+		Status:         domain.EvalRunStatus(model.Status),
+		Mode:           domain.EvalRunMode(model.Mode),
+		RetrievalMode:  domain.EvalRetrievalMode(model.RetrievalMode),
+		Params:         params,
+		GateMode:       model.GateMode,
+		GateStatus:     domain.EvalGateStatus(model.GateStatus),
+		SummaryMetrics: summaryMetrics,
+		Warnings:       warnings,
+		Artifacts:      artifacts,
+		StageSummaries: stageSummaries,
+		Progress:       model.Progress,
+		ErrorMessage:   model.ErrorMessage,
+		StartedAt:      model.StartedAt,
+		FinishedAt:     model.FinishedAt,
+		CreatedBy:      model.CreatedBy,
+		CreatedAt:      model.CreatedAt,
+		UpdatedAt:      model.UpdatedAt,
+	}, nil
+}
+
 func marshalOptionalJSON(input map[string]any) (datatypes.JSON, error) {
 	if len(input) == 0 {
 		return datatypes.JSON([]byte("{}")), nil
@@ -994,4 +1380,74 @@ func unmarshalOptionalJSON(raw datatypes.JSON) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func marshalStringMap(input map[string]string) (datatypes.JSON, error) {
+	if len(input) == 0 {
+		return datatypes.JSON([]byte("{}")), nil
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
+}
+
+func unmarshalStringMap(raw datatypes.JSON) (map[string]string, error) {
+	if len(raw) == 0 {
+		return map[string]string{}, nil
+	}
+	out := map[string]string{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func marshalStringSlice(input []string) (datatypes.JSON, error) {
+	if len(input) == 0 {
+		return datatypes.JSON([]byte("[]")), nil
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
+}
+
+func unmarshalStringSlice(raw datatypes.JSON) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func marshalAnyJSON(input any) (datatypes.JSON, error) {
+	if input == nil {
+		return datatypes.JSON([]byte("[]")), nil
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
+}
+
+func unmarshalAnyJSON(raw datatypes.JSON, out any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
+}
+
+func normalizeTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	normalized := value.UTC()
+	return &normalized
 }

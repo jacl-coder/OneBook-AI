@@ -60,6 +60,9 @@ func main() {
 		InternalJWTPrivateKeyPath: cfg.InternalJWTPrivateKeyPath,
 		MaxUploadBytes:            cfg.MaxUploadBytes,
 		AllowedExtensions:         cfg.AllowedExtensions,
+		QdrantURL:                 cfg.QdrantURL,
+		QdrantAPIKey:              cfg.QdrantAPIKey,
+		QdrantCollection:          cfg.QdrantCollection,
 	})
 	if err != nil {
 		util.Fatal("failed to init app", "err", err)

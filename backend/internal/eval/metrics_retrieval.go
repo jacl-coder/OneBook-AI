@@ -6,44 +6,88 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"onebookai/pkg/retrieval"
 )
 
 func EvaluateRetrieval(opts RetrievalOptions) (EvalResult, []RunEntry, error) {
+	detailed, err := EvaluateRetrievalDetailed(opts)
+	if err != nil {
+		return EvalResult{}, nil, err
+	}
+	finalStage := finalRetrievalStage(opts)
+	if _, ok := detailed.StageRuns[finalStage]; !ok {
+		if provided, ok := detailed.StageRuns["provided"]; ok {
+			finalStage = "provided"
+			return detailed.Result, provided, nil
+		}
+		if rerank, ok := detailed.StageRuns["rerank"]; ok {
+			finalStage = "rerank"
+			return detailed.Result, rerank, nil
+		}
+	}
+	return detailed.Result, detailed.StageRuns[finalStage], nil
+}
+
+func EvaluateRetrievalDetailed(opts RetrievalOptions) (RetrievalStageResult, error) {
 	if strings.TrimSpace(opts.QueriesPath) == "" {
-		return EvalResult{}, nil, fmt.Errorf("queries path required")
+		return RetrievalStageResult{}, fmt.Errorf("queries path required")
 	}
 	if strings.TrimSpace(opts.QrelsPath) == "" {
-		return EvalResult{}, nil, fmt.Errorf("qrels path required")
+		return RetrievalStageResult{}, fmt.Errorf("qrels path required")
 	}
 	queries, err := ReadQueriesJSONL(opts.QueriesPath)
 	if err != nil {
-		return EvalResult{}, nil, err
+		return RetrievalStageResult{}, err
 	}
 	qrels, err := ReadQrels(opts.QrelsPath)
 	if err != nil {
-		return EvalResult{}, nil, err
+		return RetrievalStageResult{}, err
 	}
 
-	runs, warnings, err := loadOrBuildRunForRetrieval(opts, queries)
+	runs, warnings, err := loadOrBuildRetrievalStages(opts, queries)
 	if err != nil {
-		return EvalResult{}, nil, err
+		return RetrievalStageResult{}, err
 	}
 
-	topK := opts.TopK
-	if topK <= 0 {
-		topK = 20
+	stageMetrics := map[string]any{}
+	perAll := make([]map[string]any, 0, len(queries)*len(runs))
+	stageNames := orderedRetrievalStages(runs)
+	for _, stage := range stageNames {
+		metrics, per := computeIRMetrics(queries, qrels, runs[stage], topKForStage(opts, stage))
+		stageMetrics[stage] = metrics
+		for _, row := range per {
+			row["stage"] = stage
+			perAll = append(perAll, row)
+		}
 	}
 
-	metrics, per := computeIRMetrics(queries, qrels, runs, topK)
+	finalStage := finalRetrievalStage(opts)
+	if _, ok := runs[finalStage]; !ok {
+		if _, ok := runs["provided"]; ok {
+			finalStage = "provided"
+		} else if _, ok := runs["rerank"]; ok {
+			finalStage = "rerank"
+		}
+	}
+	metrics, _ := computeIRMetrics(queries, qrels, runs[finalStage], topKForStage(opts, finalStage))
+	metrics["stages"] = stageMetrics
+	metrics["final_stage"] = finalStage
 	warnings = append(warnings, evaluateRetrievalWarnings(metrics)...)
-	return EvalResult{Metrics: metrics, PerQuery: per, Warnings: uniqueStrings(warnings)}, runs, nil
+	return RetrievalStageResult{
+		Result:    EvalResult{Metrics: metrics, PerQuery: perAll, Warnings: uniqueStrings(warnings)},
+		StageRuns: runs,
+	}, nil
 }
 
-func loadOrBuildRunForRetrieval(opts RetrievalOptions, queries []QueryRecord) ([]RunEntry, []string, error) {
+func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (map[string][]RunEntry, []string, error) {
 	warnings := make([]string, 0)
 	if strings.TrimSpace(opts.RunPath) != "" {
 		runs, err := ReadRunJSONL(opts.RunPath)
-		return runs, warnings, err
+		if err != nil {
+			return nil, warnings, err
+		}
+		return map[string][]RunEntry{"provided": runs}, warnings, nil
 	}
 	if !opts.Online {
 		return nil, warnings, fmt.Errorf("run path required in offline mode")
@@ -60,43 +104,107 @@ func loadOrBuildRunForRetrieval(opts RetrievalOptions, queries []QueryRecord) ([
 		return nil, warnings, err
 	}
 	warnings = append(warnings, embWarnings...)
-
 	embedder, err := buildEmbedder(opts.Embedder)
 	if err != nil {
 		return nil, warnings, err
 	}
 
-	index := make([]EmbeddingRecord, 0, len(chunks))
-	for _, c := range chunks {
-		vec, ok := embeddings[c.ChunkID]
-		if !ok || len(vec) == 0 {
-			continue
-		}
-		index = append(index, EmbeddingRecord{ID: c.ChunkID, Vector: vec})
-	}
-	if len(index) == 0 {
+	docs := buildEvalDocuments(chunks, embeddings)
+	if len(docs.byID) == 0 {
 		return nil, warnings, fmt.Errorf("online retrieval index is empty")
 	}
-	topK := opts.TopK
-	if topK <= 0 {
-		topK = 20
-	}
-	out := make([]RunEntry, 0, len(queries))
+
+	denseTopK := topKOrDefault(opts.DenseTopK, opts.TopK, 20)
+	sparseTopK := topKOrDefault(opts.SparseTopK, opts.TopK, 20)
+	fusionTopK := topKOrDefault(opts.FusionTopK, opts.TopK, 20)
+	rerankTopN := topKOrDefault(opts.RerankTopN, fusionTopK, 10)
+
+	denseRuns := make([]RunEntry, 0, len(queries))
+	sparseRuns := make([]RunEntry, 0, len(queries))
+	fusionRuns := make([]RunEntry, 0, len(queries))
+	rerankRuns := make([]RunEntry, 0, len(queries))
+
 	for _, q := range queries {
 		if strings.TrimSpace(q.Query) == "" {
-			out = append(out, RunEntry{QID: q.QID})
+			denseRuns = append(denseRuns, RunEntry{QID: q.QID})
+			sparseRuns = append(sparseRuns, RunEntry{QID: q.QID})
+			fusionRuns = append(fusionRuns, RunEntry{QID: q.QID})
+			rerankRuns = append(rerankRuns, RunEntry{QID: q.QID})
 			continue
 		}
-		qvec, err := embedder.EmbedText(context.Background(), q.Query, "RETRIEVAL_QUERY")
+		query := retrieval.NormalizeText(q.Query)
+		language := retrieval.DetectLanguage(query)
+		qvec, err := embedder.EmbedText(context.Background(), query, "RETRIEVAL_QUERY")
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("query embedding failed for %s: %v", q.QID, err))
-			out = append(out, RunEntry{QID: q.QID})
+			denseRuns = append(denseRuns, RunEntry{QID: q.QID})
+			sparseRuns = append(sparseRuns, RunEntry{QID: q.QID})
+			fusionRuns = append(fusionRuns, RunEntry{QID: q.QID})
+			rerankRuns = append(rerankRuns, RunEntry{QID: q.QID})
 			continue
 		}
-		hits := rankByCosine(qvec, index, topK)
-		out = append(out, RunEntry{QID: q.QID, Results: hits})
+		denseHits := rankByCosine(qvec, docs.embedded, denseTopK)
+		sparseHits := rankBySparse(retrieval.BuildSparseVector(query, language), docs.sparse, sparseTopK)
+		fusedHits := fuseRunHits(denseHits, sparseHits, fusionTopK)
+		rerankedHits := rerankHits(query, docs.byID, fusedHits, rerankTopN)
+
+		denseRuns = append(denseRuns, RunEntry{QID: q.QID, Results: denseHits})
+		sparseRuns = append(sparseRuns, RunEntry{QID: q.QID, Results: sparseHits})
+		fusionRuns = append(fusionRuns, RunEntry{QID: q.QID, Results: fusedHits})
+		rerankRuns = append(rerankRuns, RunEntry{QID: q.QID, Results: rerankedHits})
 	}
-	return out, warnings, nil
+
+	return map[string][]RunEntry{
+		"dense":  denseRuns,
+		"sparse": sparseRuns,
+		"fusion": fusionRuns,
+		"rerank": rerankRuns,
+	}, warnings, nil
+}
+
+type evalDocument struct {
+	ID       string
+	Text     string
+	Language string
+	Dense    []float32
+	Sparse   retrieval.SparseVector
+}
+
+type evalDocumentIndex struct {
+	embedded []EmbeddingRecord
+	sparse   []evalDocument
+	byID     map[string]evalDocument
+}
+
+func buildEvalDocuments(chunks []ChunkRecord, embeddings map[string][]float32) evalDocumentIndex {
+	out := evalDocumentIndex{
+		embedded: make([]EmbeddingRecord, 0, len(chunks)),
+		sparse:   make([]evalDocument, 0, len(chunks)),
+		byID:     make(map[string]evalDocument, len(chunks)),
+	}
+	for _, chunk := range chunks {
+		text := strings.TrimSpace(chunk.Text)
+		if text == "" {
+			continue
+		}
+		language := strings.TrimSpace(chunk.Metadata["language"])
+		if language == "" {
+			language = retrieval.DetectLanguage(text)
+		}
+		doc := evalDocument{
+			ID:       chunk.ChunkID,
+			Text:     text,
+			Language: language,
+			Sparse:   retrieval.BuildSparseVector(text, language),
+		}
+		if vec := embeddings[chunk.ChunkID]; len(vec) > 0 {
+			doc.Dense = vec
+			out.embedded = append(out.embedded, EmbeddingRecord{ID: chunk.ChunkID, Vector: vec})
+		}
+		out.sparse = append(out.sparse, doc)
+		out.byID[doc.ID] = doc
+	}
+	return out
 }
 
 func loadOrBuildChunkEmbeddings(opts RetrievalOptions, chunks []ChunkRecord) (map[string][]float32, []string, error) {
@@ -158,6 +266,115 @@ func rankByCosine(query []float32, docs []EmbeddingRecord, topK int) []RunHit {
 		out = append(out, RunHit{DocID: pairs[i].id, Score: pairs[i].score})
 	}
 	return out
+}
+
+func rankBySparse(query retrieval.SparseVector, docs []evalDocument, topK int) []RunHit {
+	type pair struct {
+		id    string
+		score float64
+	}
+	pairs := make([]pair, 0, len(docs))
+	for _, doc := range docs {
+		score := sparseSimilarity(query, doc.Sparse)
+		if score <= 0 {
+			continue
+		}
+		pairs = append(pairs, pair{id: doc.ID, score: score})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].score == pairs[j].score {
+			return pairs[i].id < pairs[j].id
+		}
+		return pairs[i].score > pairs[j].score
+	})
+	if topK > len(pairs) {
+		topK = len(pairs)
+	}
+	out := make([]RunHit, 0, topK)
+	for i := 0; i < topK; i++ {
+		out = append(out, RunHit{DocID: pairs[i].id, Score: pairs[i].score})
+	}
+	return out
+}
+
+func sparseSimilarity(a, b retrieval.SparseVector) float64 {
+	if len(a.Indices) == 0 || len(b.Indices) == 0 {
+		return 0
+	}
+	i, j := 0, 0
+	score := 0.0
+	for i < len(a.Indices) && j < len(b.Indices) {
+		switch {
+		case a.Indices[i] == b.Indices[j]:
+			score += float64(a.Values[i] * b.Values[j])
+			i++
+			j++
+		case a.Indices[i] < b.Indices[j]:
+			i++
+		default:
+			j++
+		}
+	}
+	return score
+}
+
+func fuseRunHits(dense, sparse []RunHit, topK int) []RunHit {
+	scores := map[string]float64{}
+	for i, hit := range dense {
+		scores[hit.DocID] += 1.0 / float64(i+60)
+	}
+	for i, hit := range sparse {
+		scores[hit.DocID] += 1.0 / float64(i+60)
+	}
+	out := make([]RunHit, 0, len(scores))
+	for id, score := range scores {
+		out = append(out, RunHit{DocID: id, Score: score})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score == out[j].Score {
+			return out[i].DocID < out[j].DocID
+		}
+		return out[i].Score > out[j].Score
+	})
+	if topK > len(out) {
+		topK = len(out)
+	}
+	return out[:topK]
+}
+
+func rerankHits(query string, docs map[string]evalDocument, hits []RunHit, limit int) []RunHit {
+	language := retrieval.DetectLanguage(query)
+	queryTokens := retrieval.Tokenize(query, language)
+	querySet := map[string]struct{}{}
+	for _, token := range queryTokens {
+		querySet[token] = struct{}{}
+	}
+	scored := make([]RunHit, 0, len(hits))
+	for _, hit := range hits {
+		doc, ok := docs[hit.DocID]
+		if !ok {
+			continue
+		}
+		docTokens := retrieval.Tokenize(doc.Text, language)
+		overlap := 0
+		for _, token := range docTokens {
+			if _, exists := querySet[token]; exists {
+				overlap++
+			}
+		}
+		boost := safeDiv(float64(overlap), float64(maxInt(len(docTokens), 1)))
+		scored = append(scored, RunHit{DocID: hit.DocID, Score: hit.Score + (boost * 0.5)})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].Score == scored[j].Score {
+			return scored[i].DocID < scored[j].DocID
+		}
+		return scored[i].Score > scored[j].Score
+	})
+	if limit > len(scored) {
+		limit = len(scored)
+	}
+	return scored[:limit]
 }
 
 func computeIRMetrics(queries []QueryRecord, qrels []QRel, runs []RunEntry, topK int) (map[string]any, []map[string]any) {
@@ -327,11 +544,100 @@ func evaluateRetrievalWarnings(metrics map[string]any) []string {
 	warnings := make([]string, 0)
 	recall := metricFloat(metrics, "Recall@20")
 	ndcg := metricFloat(metrics, "nDCG@10")
+	stageMetrics, _ := metrics["stages"].(map[string]any)
+	denseRecall := metricFloat(mapOfAny(stageMetrics, "dense"), "Recall@20")
+	fusionRecall := metricFloat(mapOfAny(stageMetrics, "fusion"), "Recall@20")
+	fusionNDCG := metricFloat(mapOfAny(stageMetrics, "fusion"), "nDCG@10")
+	rerankNDCG := metricFloat(mapOfAny(stageMetrics, "rerank"), "nDCG@10")
 	if recall < 0.4 {
 		warnings = append(warnings, fmt.Sprintf("Recall@20 %.4f below baseline 0.40", recall))
 	}
 	if ndcg < 0.3 {
 		warnings = append(warnings, fmt.Sprintf("nDCG@10 %.4f below baseline 0.30", ndcg))
 	}
+	if fusionRecall < denseRecall {
+		warnings = append(warnings, fmt.Sprintf("fusion Recall@20 %.4f below dense %.4f", fusionRecall, denseRecall))
+	}
+	if rerankNDCG < fusionNDCG {
+		warnings = append(warnings, fmt.Sprintf("rerank nDCG@10 %.4f below fusion %.4f", rerankNDCG, fusionNDCG))
+	}
 	return warnings
+}
+
+func orderedRetrievalStages(runs map[string][]RunEntry) []string {
+	order := []string{"dense", "sparse", "fusion", "rerank", "provided"}
+	out := make([]string, 0, len(runs))
+	for _, stage := range order {
+		if _, ok := runs[stage]; ok {
+			out = append(out, stage)
+		}
+	}
+	for stage := range runs {
+		if !slicesContains(out, stage) {
+			out = append(out, stage)
+		}
+	}
+	return out
+}
+
+func finalRetrievalStage(opts RetrievalOptions) string {
+	mode := strings.TrimSpace(strings.ToLower(opts.RetrievalMode))
+	switch mode {
+	case "dense_only":
+		return "dense"
+	case "sparse_only":
+		return "sparse"
+	case "provided":
+		return "provided"
+	default:
+		return "rerank"
+	}
+}
+
+func topKForStage(opts RetrievalOptions, stage string) int {
+	switch stage {
+	case "dense":
+		return topKOrDefault(opts.DenseTopK, opts.TopK, 20)
+	case "sparse":
+		return topKOrDefault(opts.SparseTopK, opts.TopK, 20)
+	case "fusion":
+		return topKOrDefault(opts.FusionTopK, opts.TopK, 20)
+	case "rerank":
+		return topKOrDefault(opts.RerankTopN, opts.TopK, 10)
+	default:
+		return topKOrDefault(opts.TopK, 20, 20)
+	}
+}
+
+func topKOrDefault(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 20
+}
+
+func mapOfAny(parent map[string]any, key string) map[string]any {
+	if parent == nil {
+		return nil
+	}
+	child, _ := parent[key].(map[string]any)
+	return child
+}
+
+func slicesContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

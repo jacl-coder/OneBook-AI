@@ -11,6 +11,7 @@ import { AdminOverviewPage } from '@/pages/admin/AdminOverviewPage'
 import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
 import { AdminBooksPage } from '@/pages/admin/AdminBooksPage'
 import { AdminAuditPage } from '@/pages/admin/AdminAuditPage'
+import { AdminEvalsPage } from '@/pages/admin/AdminEvalsPage'
 
 export const router = createBrowserRouter([
   {
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
           { path: 'overview', element: <AdminOverviewPage /> },
           { path: 'users', element: <AdminUsersPage /> },
           { path: 'books', element: <AdminBooksPage /> },
+          { path: 'evals', element: <AdminEvalsPage /> },
           { path: 'audit', element: <AdminAuditPage /> },
         ],
       },

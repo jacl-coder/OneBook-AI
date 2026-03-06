@@ -45,7 +45,7 @@
 - `GET /api/books/{id}`：查询单本书状态与元数据。
 - `GET /api/books/{id}/download`：获取预签名下载链接。
 - `DELETE /api/books/{id}`：删除书籍。
-- `POST /api/chats`：问答（body: `bookId`, `question`, 可选 `conversationId`）。
+- `POST /api/chats`：问答（body: `bookId`, `question`, 可选 `conversationId`, `debug`）。
 - `GET /api/conversations`：会话列表（“你的聊天”）。
 - `GET /api/conversations/{id}/messages`：单会话消息列表。
 - `GET /api/users/me`：当前用户信息。
@@ -73,8 +73,9 @@
 
 ### 4.2 对话可用性
 - `POST /api/chats` 仅在书籍 `ready` 时可用。
-- 当 `conversationId` 为空时，后端自动创建新会话并返回 `conversationId`。
+- 当 `conversationId` 为空时，后端自动创建新会话并返回 `conversation` 对象。
 - 当 `conversationId` 有值时，后端在该会话中续聊并回写历史消息。
+- 响应主字段为：`conversation`、`answer`、`citations`、`abstained`；管理员可通过 `debug=true` 获取 `retrievalDebug`。
 - 书籍未就绪时会返回冲突类错误（通常为 `409`）。
 
 ## 5. 错误响应约定
@@ -148,5 +149,23 @@ CORS_ALLOW_CREDENTIALS=true
 1. 注册/登录成功后确认浏览器写入 `onebook_access` + `onebook_refresh`。
 2. 上传一本 `pdf/epub/txt`。
 3. 轮询到 `ready`。
-4. 发起一次问答并展示 `answer + sources`。
+4. 发起一次问答并展示 `answer + citations + abstained`。
 5. 验证会话过期后通过 `/api/auth/refresh` 自动恢复。
+
+## 9. 评测中心（Admin Eval Center）
+- 后台新增 `/admin/evals`，管理员可创建评测数据集、发起评测任务、查看结果和下载 artifacts。
+- 评测数据集支持两类来源：
+  - `upload`：上传 `chunks/queries/qrels/predictions` 等文件。
+  - `book`：绑定现有书籍并复用系统内 chunk，仍需补充 `queries/qrels`。
+- 持久化拆分：
+  - Postgres：`eval_dataset_models`、`eval_run_models`
+  - 文件目录：默认 `data/eval-center`
+- 运行模型：
+  - 不使用 websocket
+  - auth service 内部 worker 轮询数据库中的 `queued` 任务并执行
+  - 前端通过轮询刷新运行状态
+- artifacts 默认包含：
+  - `run.json`
+  - `metrics.json`
+  - `per_query.jsonl`
+  - `dense_run.jsonl` / `sparse_run.jsonl` / `fusion_run.jsonl` / `rerank_run.jsonl`（按实际运行生成）

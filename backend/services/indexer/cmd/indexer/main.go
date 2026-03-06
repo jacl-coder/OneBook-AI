@@ -49,6 +49,9 @@ func main() {
 		EmbeddingDim:              cfg.EmbeddingDim,
 		EmbeddingBatchSize:        cfg.EmbeddingBatchSize,
 		EmbeddingConcurrency:      cfg.EmbeddingConcurrency,
+		QdrantURL:                 cfg.QdrantURL,
+		QdrantAPIKey:              cfg.QdrantAPIKey,
+		QdrantCollection:          cfg.QdrantCollection,
 	})
 	if err != nil {
 		util.Fatal("failed to init app", "err", err)

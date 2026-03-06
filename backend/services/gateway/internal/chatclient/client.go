@@ -37,8 +37,8 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) AskQuestion(requestID, token, conversationID, bookID, question string) (domain.Answer, error) {
-	payload := chatRequest{ConversationID: strings.TrimSpace(conversationID), BookID: bookID, Question: question}
+func (c *Client) AskQuestion(requestID, token, conversationID, bookID, question string, debug bool) (domain.Answer, error) {
+	payload := chatRequest{ConversationID: strings.TrimSpace(conversationID), BookID: bookID, Question: question, Debug: debug}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return domain.Answer{}, err
@@ -153,4 +153,5 @@ type chatRequest struct {
 	ConversationID string `json:"conversationId,omitempty"`
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
+	Debug          bool   `json:"debug,omitempty"`
 }

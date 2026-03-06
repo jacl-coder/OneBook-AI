@@ -34,6 +34,9 @@ type FileConfig struct {
 	InternalJWTKeyID            string   `yaml:"internalJwtKeyId"`
 	MaxUploadBytes              int64    `yaml:"maxUploadBytes"`
 	AllowedExtensions           []string `yaml:"allowedExtensions"`
+	QdrantURL                   string   `yaml:"qdrantURL"`
+	QdrantAPIKey                string   `yaml:"qdrantAPIKey"`
+	QdrantCollection            string   `yaml:"qdrantCollection"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -106,6 +109,15 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("BOOK_ALLOWED_EXTENSIONS"); v != "" {
 		cfg.AllowedExtensions = splitCSV(v)
 	}
+	if v := os.Getenv("QDRANT_URL"); v != "" {
+		cfg.QdrantURL = v
+	}
+	if v := os.Getenv("QDRANT_API_KEY"); v != "" {
+		cfg.QdrantAPIKey = v
+	}
+	if v := os.Getenv("QDRANT_COLLECTION"); v != "" {
+		cfg.QdrantCollection = v
+	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
 	}
@@ -139,6 +151,12 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.IngestURL == "" {
 		return errors.New("config: ingestURL is required (set in config.yaml)")
+	}
+	if strings.TrimSpace(cfg.QdrantURL) == "" {
+		return errors.New("config: qdrantURL is required (set QDRANT_URL)")
+	}
+	if strings.TrimSpace(cfg.QdrantCollection) == "" {
+		return errors.New("config: qdrantCollection is required (set QDRANT_COLLECTION)")
 	}
 	if strings.TrimSpace(cfg.InternalJWTPrivateKeyPath) == "" || strings.TrimSpace(cfg.InternalJWTPublicKeyPath) == "" {
 		return errors.New("config: internal service auth requires ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH + ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH")

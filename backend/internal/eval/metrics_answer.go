@@ -38,6 +38,8 @@ func EvaluateAnswer(opts AnswerOptions) (EvalResult, error) {
 	unsupported := 0
 	abstainCorrect := 0
 	nonEmpty := 0
+	groundedCount := 0
+	groundedEligible := 0
 	f1Vals := make([]float64, 0, len(queries))
 	f1Count := 0
 	per := make([]map[string]any, 0, len(queries))
@@ -64,6 +66,12 @@ func EvaluateAnswer(opts AnswerOptions) (EvalResult, error) {
 				unsupported++
 			}
 		}
+		if !pred.Abstained && answer != "" {
+			groundedEligible++
+			if len(pred.Citations) > 0 && hitCount == len(pred.Citations) {
+				groundedCount++
+			}
+		}
 
 		f1 := 0.0
 		if strings.TrimSpace(q.ExpectedAnswer) != "" {
@@ -78,6 +86,7 @@ func EvaluateAnswer(opts AnswerOptions) (EvalResult, error) {
 			"citation_total":       len(pred.Citations),
 			"citation_hit":         hitCount,
 			"unsupported_citation": len(pred.Citations) - hitCount,
+			"grounded_answer":      !pred.Abstained && answer != "" && len(pred.Citations) > 0 && hitCount == len(pred.Citations),
 			"lexical_f1":           f1,
 		})
 	}
@@ -89,6 +98,7 @@ func EvaluateAnswer(opts AnswerOptions) (EvalResult, error) {
 		"unsupported_citation_rate": safeDiv(float64(unsupported), float64(citationTotal)),
 		"abstain_accuracy":          safeDiv(float64(abstainCorrect), float64(len(queries))),
 		"answer_nonempty_rate":      safeDiv(float64(nonEmpty), float64(len(queries))),
+		"grounded_answer_rate":      safeDiv(float64(groundedCount), float64(groundedEligible)),
 	}
 	if f1Count > 0 {
 		metrics["lexical_f1"] = mean(f1Vals)
@@ -145,6 +155,7 @@ func evaluateAnswerWarnings(metrics map[string]any) []string {
 	cite := metricFloat(metrics, "citation_hit_rate")
 	unsupported := metricFloat(metrics, "unsupported_citation_rate")
 	abstain := metricFloat(metrics, "abstain_accuracy")
+	grounded := metricFloat(metrics, "grounded_answer_rate")
 	if cite < 0.6 {
 		warnings = append(warnings, fmt.Sprintf("citation_hit_rate %.4f below threshold 0.60", cite))
 	}
@@ -153,6 +164,9 @@ func evaluateAnswerWarnings(metrics map[string]any) []string {
 	}
 	if abstain < 0.8 {
 		warnings = append(warnings, fmt.Sprintf("abstain_accuracy %.4f below threshold 0.80", abstain))
+	}
+	if grounded < 0.7 {
+		warnings = append(warnings, fmt.Sprintf("grounded_answer_rate %.4f below threshold 0.70", grounded))
 	}
 	return warnings
 }

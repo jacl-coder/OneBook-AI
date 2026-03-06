@@ -7,6 +7,8 @@ info:
     Internal services propagate `X-Request-Id` and include the same value in
     error payload field `requestId`.
 servers:
+  - url: http://localhost:8081
+    description: Local dev (auth service)
   - url: http://localhost:8082
     description: Local dev (book service)
   - url: http://localhost:8083
@@ -16,6 +18,8 @@ servers:
   - url: http://localhost:8085
     description: Local dev (indexer service)
 tags:
+  - name: auth-admin
+    description: Auth/admin internal endpoints
   - name: internal-book
     description: Book service internal endpoints
   - name: chat-internal
@@ -361,6 +365,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/admin/evals/overview:
+    get:
+      tags: [auth-admin]
+      summary: Get eval center overview
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEvalOverview"
+  /auth/admin/evals/datasets:
+    get:
+      tags: [auth-admin]
+      summary: List eval datasets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedEvalDatasetsResponse"
+    post:
+      tags: [auth-admin]
+      summary: Create eval dataset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                sourceType:
+                  type: string
+                bookId:
+                  type: string
+                version:
+                  type: integer
+                description:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+  /auth/admin/evals/datasets/{id}:
+    get:
+      tags: [auth-admin]
+      summary: Get eval dataset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+    patch:
+      tags: [auth-admin]
+      summary: Update eval dataset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvalDatasetUpdateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+    delete:
+      tags: [auth-admin]
+      summary: Delete or archive eval dataset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+  /auth/admin/evals/runs:
+    get:
+      tags: [auth-admin]
+      summary: List eval runs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedEvalRunsResponse"
+    post:
+      tags: [auth-admin]
+      summary: Create eval run
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvalRunCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /auth/admin/evals/runs/{id}:
+    get:
+      tags: [auth-admin]
+      summary: Get eval run
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /auth/admin/evals/runs/{id}/cancel:
+    post:
+      tags: [auth-admin]
+      summary: Cancel eval run
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /auth/admin/evals/runs/{id}/per-query:
+    get:
+      tags: [auth-admin]
+      summary: Get per-query rows
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalPerQueryResponse"
 components:
   securitySchemes:
     internalToken:
@@ -615,3 +823,212 @@ components:
           type: string
           format: date-time
       required: [id, bookId, status, createdAt, updatedAt]
+    AdminEvalOverview:
+      type: object
+      properties:
+        totalDatasets:
+          type: integer
+        activeDatasets:
+          type: integer
+        totalRuns:
+          type: integer
+        queuedRuns:
+          type: integer
+        runningRuns:
+          type: integer
+        successfulRuns:
+          type: integer
+        failedRuns:
+          type: integer
+        canceledRuns:
+          type: integer
+        recentRuns:
+          type: integer
+        recentGateFailed:
+          type: integer
+        successRate:
+          type: number
+          format: float
+        refreshedAt:
+          type: string
+          format: date-time
+    EvalDataset:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sourceType:
+          type: string
+          enum: [upload, book]
+        bookId:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [active, archived]
+        description:
+          type: string
+        files:
+          type: object
+          additionalProperties:
+            type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EvalDatasetUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+    PagedEvalDatasetsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalDataset"
+        count:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    EvalRunArtifact:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    EvalRunStageSummary:
+      type: object
+      properties:
+        stage:
+          type: string
+        metrics:
+          type: object
+          additionalProperties: true
+    EvalRun:
+      type: object
+      properties:
+        id:
+          type: string
+        datasetId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled]
+        mode:
+          type: string
+          enum: [retrieval, post_retrieval, answer, all]
+        retrievalMode:
+          type: string
+          enum: [hybrid, dense_only, sparse_only]
+        params:
+          type: object
+          additionalProperties: true
+        gateMode:
+          type: string
+        gateStatus:
+          type: string
+          enum: [passed, warn, failed]
+        summaryMetrics:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: string
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRunArtifact"
+        stageSummaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRunStageSummary"
+        progress:
+          type: integer
+        errorMessage:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EvalRunCreateRequest:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        mode:
+          type: string
+          enum: [retrieval, post_retrieval, answer, all]
+        retrievalMode:
+          type: string
+          enum: [hybrid, dense_only, sparse_only]
+        gateMode:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+    PagedEvalRunsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRun"
+        count:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    EvalPerQueryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        count:
+          type: integer

@@ -67,15 +67,31 @@ export type ListBooksResponse = {
 }
 
 export type ChatAnswer = {
-  conversationId?: string
-  bookId: string
+  conversation: {
+    id: string
+    userId: string
+    bookId?: string
+    title: string
+    lastMessageAt?: string
+    createdAt: string
+    updatedAt: string
+  }
   question: string
   answer: string
-  sources: Array<{
+  citations: Array<{
     label: string
     location: string
     snippet: string
+    chunkId?: string
+    sourceRef?: string
+    score?: number
+    language?: string
   }>
+  abstained: boolean
+  retrievalDebug?: {
+    language: string
+    queries: string[]
+  }
   createdAt: string
 }
 

@@ -11,6 +11,7 @@ import (
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/queue"
+	"onebookai/pkg/retrieval"
 	"onebookai/pkg/store"
 
 	"golang.org/x/sync/errgroup"
@@ -56,6 +57,9 @@ type Config struct {
 	EmbeddingDim              int
 	EmbeddingBatchSize        int
 	EmbeddingConcurrency      int
+	QdrantURL                 string
+	QdrantAPIKey              string
+	QdrantCollection          string
 }
 
 // App processes indexing jobs.
@@ -67,6 +71,7 @@ type App struct {
 	queue            *queue.RedisJobQueue
 	embedBatchSize   int
 	embedConcurrency int
+	search           *retrieval.Client
 }
 
 // New constructs the indexer service with persistence.
@@ -125,6 +130,10 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	searchClient, err := retrieval.NewQdrantClient(cfg.QdrantURL, cfg.QdrantAPIKey, cfg.QdrantCollection, dim)
+	if err != nil {
+		return nil, fmt.Errorf("init qdrant client: %w", err)
+	}
 	app := &App{
 		store:            dataStore,
 		bookClient:       newBookClient(cfg.BookServiceURL, signer),
@@ -133,6 +142,7 @@ func New(cfg Config) (*App, error) {
 		queue:            q,
 		embedBatchSize:   cfg.EmbeddingBatchSize,
 		embedConcurrency: cfg.EmbeddingConcurrency,
+		search:           searchClient,
 	}
 	app.startWorkers(cfg.QueueConcurrency)
 	return app, nil
@@ -178,6 +188,14 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 	}
 	if len(chunks) == 0 {
 		err := fmt.Errorf("no chunks to index")
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.search.EnsureCollection(ctx); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.search.DeleteByBook(ctx, job.BookID); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
@@ -257,6 +275,7 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 	if len(embeddings) != len(batch) {
 		return fmt.Errorf("embedding count mismatch: got %d, want %d", len(embeddings), len(batch))
 	}
+	points := make([]retrieval.UpsertPoint, 0, len(batch))
 	for i, embedding := range embeddings {
 		if a.embedDim > 0 && len(embedding) != a.embedDim {
 			return fmt.Errorf("embedding dimension mismatch: got %d", len(embedding))
@@ -264,8 +283,40 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 		if err := a.store.SetChunkEmbedding(batch[i].ID, embedding); err != nil {
 			return err
 		}
+		language := strings.TrimSpace(batch[i].Metadata["language"])
+		if language == "" {
+			language = retrieval.DetectLanguage(batch[i].Content)
+		}
+		points = append(points, retrieval.UpsertPoint{
+			ID:     batch[i].ID,
+			Dense:  embedding,
+			Sparse: retrieval.BuildSparseVector(batch[i].Content, language),
+			Payload: map[string]any{
+				"chunk_id":       batch[i].ID,
+				"book_id":        batch[i].BookID,
+				"content":        batch[i].Content,
+				"language":       language,
+				"source_type":    strings.TrimSpace(batch[i].Metadata["source_type"]),
+				"source_ref":     strings.TrimSpace(batch[i].Metadata["source_ref"]),
+				"page":           strings.TrimSpace(batch[i].Metadata["page"]),
+				"section_path":   firstNonEmpty(batch[i].Metadata["section_path"], batch[i].Metadata["section"]),
+				"chunk_index":    firstNonEmpty(batch[i].Metadata["chunk_index"], batch[i].Metadata["chunk"]),
+				"chunk_count":    strings.TrimSpace(batch[i].Metadata["chunk_count"]),
+				"content_sha256": strings.TrimSpace(batch[i].Metadata["content_sha256"]),
+			},
+		})
 	}
-	return nil
+	return a.search.UpsertPoints(ctx, points)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func jobFromStatus(status queue.JobStatus) Job {

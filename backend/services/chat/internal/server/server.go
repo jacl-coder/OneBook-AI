@@ -139,7 +139,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeBookError(w, err)
 		return
 	}
-	ans, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID)
+	ans, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID, req.Debug && user.Role == domain.RoleAdmin)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, app.ErrBookNotReady) {
@@ -232,6 +232,7 @@ type chatRequest struct {
 	ConversationID string `json:"conversationId,omitempty"`
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
+	Debug          bool   `json:"debug,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

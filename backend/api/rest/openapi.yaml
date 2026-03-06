@@ -1165,6 +1165,255 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/evals/overview:
+    get:
+      tags: [admin]
+      summary: Get eval center overview metrics
+      security:
+        - sessionCookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEvalOverview"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/evals/datasets:
+    get:
+      tags: [admin]
+      summary: List eval datasets
+      security:
+        - sessionCookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedEvalDatasetsResponse"
+    post:
+      tags: [admin]
+      summary: Create eval dataset
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                sourceType:
+                  type: string
+                  enum: [upload, book]
+                bookId:
+                  type: string
+                version:
+                  type: integer
+                description:
+                  type: string
+                chunks:
+                  type: string
+                  format: binary
+                queries:
+                  type: string
+                  format: binary
+                qrels:
+                  type: string
+                  format: binary
+                predictions:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+  /api/admin/evals/datasets/{id}:
+    get:
+      tags: [admin]
+      summary: Get eval dataset
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+    patch:
+      tags: [admin]
+      summary: Update eval dataset
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvalDatasetUpdateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalDataset"
+    delete:
+      tags: [admin]
+      summary: Delete or archive eval dataset
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+  /api/admin/evals/runs:
+    get:
+      tags: [admin]
+      summary: List eval runs
+      security:
+        - sessionCookieAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedEvalRunsResponse"
+    post:
+      tags: [admin]
+      summary: Create eval run
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvalRunCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /api/admin/evals/runs/{id}:
+    get:
+      tags: [admin]
+      summary: Get eval run
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /api/admin/evals/runs/{id}/cancel:
+    post:
+      tags: [admin]
+      summary: Cancel eval run
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalRun"
+  /api/admin/evals/runs/{id}/per-query:
+    get:
+      tags: [admin]
+      summary: Get per-query eval rows
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalPerQueryResponse"
+  /api/admin/evals/runs/{id}/artifacts/{name}:
+    get:
+      tags: [admin]
+      summary: Download eval artifact
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Artifact binary
   /api/admin/audit-logs:
     get:
       tags: [admin]
@@ -1511,26 +1760,37 @@ components:
           type: string
         snippet:
           type: string
+        chunkId:
+          type: string
+        sourceRef:
+          type: string
+        score:
+          type: number
+          format: double
+        language:
+          type: string
       required: [label, location, snippet]
     Answer:
       type: object
       properties:
-        conversationId:
-          type: string
-        bookId:
-          type: string
+        conversation:
+          $ref: "#/components/schemas/ConversationSummary"
         question:
           type: string
         answer:
           type: string
-        sources:
+        citations:
           type: array
           items:
             $ref: "#/components/schemas/Source"
+        abstained:
+          type: boolean
+        retrievalDebug:
+          $ref: "#/components/schemas/RetrievalDebug"
         createdAt:
           type: string
           format: date-time
-      required: [conversationId, bookId, question, answer, sources, createdAt]
+      required: [conversation, question, answer, citations, abstained, createdAt]
     ChatRequest:
       type: object
       properties:
@@ -1540,7 +1800,50 @@ components:
           type: string
         question:
           type: string
+        debug:
+          type: boolean
       required: [bookId, question]
+    RetrievalHit:
+      type: object
+      properties:
+        chunkId:
+          type: string
+        sourceRef:
+          type: string
+        score:
+          type: number
+          format: double
+        stage:
+          type: string
+        snippet:
+          type: string
+      required: [chunkId, score, stage]
+    RetrievalDebug:
+      type: object
+      properties:
+        language:
+          type: string
+        queries:
+          type: array
+          items:
+            type: string
+        dense:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalHit"
+        sparse:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalHit"
+        fused:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalHit"
+        reranked:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetrievalHit"
+      required: [language, queries, dense, sparse, fused, reranked]
     ConversationSummary:
       type: object
       properties:
@@ -1737,6 +2040,216 @@ components:
           windowStart,
           windowHours,
         ]
+    AdminEvalOverview:
+      type: object
+      properties:
+        totalDatasets:
+          type: integer
+        activeDatasets:
+          type: integer
+        totalRuns:
+          type: integer
+        queuedRuns:
+          type: integer
+        runningRuns:
+          type: integer
+        successfulRuns:
+          type: integer
+        failedRuns:
+          type: integer
+        canceledRuns:
+          type: integer
+        recentRuns:
+          type: integer
+        recentGateFailed:
+          type: integer
+        successRate:
+          type: number
+          format: float
+        refreshedAt:
+          type: string
+          format: date-time
+    EvalDataset:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sourceType:
+          type: string
+          enum: [upload, book]
+        bookId:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [active, archived]
+        description:
+          type: string
+        files:
+          type: object
+          additionalProperties:
+            type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EvalDatasetUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+    PagedEvalDatasetsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalDataset"
+        count:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    EvalRunArtifact:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    EvalRunStageSummary:
+      type: object
+      properties:
+        stage:
+          type: string
+        metrics:
+          type: object
+          additionalProperties: true
+    EvalRun:
+      type: object
+      properties:
+        id:
+          type: string
+        datasetId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled]
+        mode:
+          type: string
+          enum: [retrieval, post_retrieval, answer, all]
+        retrievalMode:
+          type: string
+          enum: [hybrid, dense_only, sparse_only]
+        params:
+          type: object
+          additionalProperties: true
+        gateMode:
+          type: string
+        gateStatus:
+          type: string
+          enum: [passed, warn, failed]
+        summaryMetrics:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: string
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRunArtifact"
+        stageSummaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRunStageSummary"
+        progress:
+          type: integer
+        errorMessage:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EvalRunCreateRequest:
+      type: object
+      properties:
+        datasetId:
+          type: string
+        mode:
+          type: string
+          enum: [retrieval, post_retrieval, answer, all]
+        retrievalMode:
+          type: string
+          enum: [hybrid, dense_only, sparse_only]
+        gateMode:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+      required: [datasetId]
+    PagedEvalRunsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvalRun"
+        count:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    EvalPerQueryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        count:
+          type: integer
     ListConversationsResponse:
       type: object
       properties:

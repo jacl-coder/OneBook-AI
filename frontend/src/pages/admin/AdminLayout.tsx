@@ -62,6 +62,9 @@ export function AdminLayout() {
           <NavLink className={layoutTw.navLink} to="/admin/books">
             书籍管理
           </NavLink>
+          <NavLink className={layoutTw.navLink} to="/admin/evals">
+            评测中心
+          </NavLink>
           <NavLink className={layoutTw.navLink} to="/admin/audit">
             审计日志
           </NavLink>
