@@ -38,6 +38,11 @@ type RunEntry struct {
 	Results []RunHit `json:"results"`
 }
 
+type RetrievalStageResult struct {
+	Result    EvalResult
+	StageRuns map[string][]RunEntry
+}
+
 // PredictionRecord stores model output for e2e answer evaluation.
 type PredictionRecord struct {
 	QID       string   `json:"qid"`
@@ -107,6 +112,11 @@ type RetrievalOptions struct {
 	EmbeddingsPath string
 	Online         bool
 	TopK           int
+	DenseTopK      int
+	SparseTopK     int
+	FusionTopK     int
+	RerankTopN     int
+	RetrievalMode  string
 	Embedder       EmbedderConfig
 }
 
@@ -120,6 +130,7 @@ type PostRetrievalOptions struct {
 	Online         bool
 	TopK           int
 	ContextBudget  int
+	RetrievalMode  string
 	Embedder       EmbedderConfig
 }
 

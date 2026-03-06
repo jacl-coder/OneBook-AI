@@ -56,6 +56,7 @@ type Message struct {
 	Role           string    `json:"role"`
 	Content        string    `json:"content"`
 	Sources        []Source  `json:"sources,omitempty"`
+	Abstained      bool      `json:"abstained,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
@@ -70,18 +71,40 @@ type Conversation struct {
 }
 
 type Answer struct {
-	ConversationID string    `json:"conversationId,omitempty"`
-	BookID         string    `json:"bookId"`
-	Question       string    `json:"question"`
-	Answer         string    `json:"answer"`
-	Sources        []Source  `json:"sources"`
-	CreatedAt      time.Time `json:"createdAt"`
+	Conversation   Conversation    `json:"conversation"`
+	Question       string          `json:"question"`
+	Answer         string          `json:"answer"`
+	Citations      []Source        `json:"citations"`
+	Abstained      bool            `json:"abstained"`
+	RetrievalDebug *RetrievalDebug `json:"retrievalDebug,omitempty"`
+	CreatedAt      time.Time       `json:"createdAt"`
 }
 
 type Source struct {
-	Label    string `json:"label"`
-	Location string `json:"location"`
-	Snippet  string `json:"snippet"`
+	Label     string  `json:"label"`
+	Location  string  `json:"location"`
+	Snippet   string  `json:"snippet"`
+	ChunkID   string  `json:"chunkId,omitempty"`
+	SourceRef string  `json:"sourceRef,omitempty"`
+	Score     float64 `json:"score,omitempty"`
+	Language  string  `json:"language,omitempty"`
+}
+
+type RetrievalHit struct {
+	ChunkID   string  `json:"chunkId"`
+	SourceRef string  `json:"sourceRef,omitempty"`
+	Score     float64 `json:"score"`
+	Stage     string  `json:"stage"`
+	Snippet   string  `json:"snippet,omitempty"`
+}
+
+type RetrievalDebug struct {
+	Language string         `json:"language"`
+	Queries  []string       `json:"queries"`
+	Dense    []RetrievalHit `json:"dense"`
+	Sparse   []RetrievalHit `json:"sparse"`
+	Fused    []RetrievalHit `json:"fused"`
+	Reranked []RetrievalHit `json:"reranked"`
 }
 
 type Chunk struct {
@@ -122,4 +145,117 @@ type AdminOverview struct {
 	RefreshedAt     time.Time         `json:"refreshedAt"`
 	WindowStart     time.Time         `json:"windowStart"`
 	WindowHours     int               `json:"windowHours"`
+}
+
+type EvalDatasetSourceType string
+
+const (
+	EvalDatasetSourceUpload EvalDatasetSourceType = "upload"
+	EvalDatasetSourceBook   EvalDatasetSourceType = "book"
+)
+
+type EvalDatasetStatus string
+
+const (
+	EvalDatasetStatusActive   EvalDatasetStatus = "active"
+	EvalDatasetStatusArchived EvalDatasetStatus = "archived"
+)
+
+type EvalRunStatus string
+
+const (
+	EvalRunStatusQueued    EvalRunStatus = "queued"
+	EvalRunStatusRunning   EvalRunStatus = "running"
+	EvalRunStatusSucceeded EvalRunStatus = "succeeded"
+	EvalRunStatusFailed    EvalRunStatus = "failed"
+	EvalRunStatusCanceled  EvalRunStatus = "canceled"
+)
+
+type EvalRunMode string
+
+const (
+	EvalRunModeRetrieval     EvalRunMode = "retrieval"
+	EvalRunModePostRetrieval EvalRunMode = "post_retrieval"
+	EvalRunModeAnswer        EvalRunMode = "answer"
+	EvalRunModeAll           EvalRunMode = "all"
+)
+
+type EvalRetrievalMode string
+
+const (
+	EvalRetrievalModeHybrid     EvalRetrievalMode = "hybrid"
+	EvalRetrievalModeDenseOnly  EvalRetrievalMode = "dense_only"
+	EvalRetrievalModeSparseOnly EvalRetrievalMode = "sparse_only"
+)
+
+type EvalGateStatus string
+
+const (
+	EvalGateStatusPassed EvalGateStatus = "passed"
+	EvalGateStatusWarn   EvalGateStatus = "warn"
+	EvalGateStatusFailed EvalGateStatus = "failed"
+)
+
+type EvalDataset struct {
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	SourceType  EvalDatasetSourceType `json:"sourceType"`
+	BookID      string                `json:"bookId,omitempty"`
+	Version     int                   `json:"version"`
+	Status      EvalDatasetStatus     `json:"status"`
+	Description string                `json:"description,omitempty"`
+	Files       map[string]string     `json:"files"`
+	CreatedBy   string                `json:"createdBy"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
+}
+
+type EvalRunArtifact struct {
+	Name        string    `json:"name"`
+	Path        string    `json:"path,omitempty"`
+	ContentType string    `json:"contentType,omitempty"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type EvalRunStageSummary struct {
+	Stage   string         `json:"stage"`
+	Metrics map[string]any `json:"metrics"`
+}
+
+type EvalRun struct {
+	ID             string                `json:"id"`
+	DatasetID      string                `json:"datasetId"`
+	Status         EvalRunStatus         `json:"status"`
+	Mode           EvalRunMode           `json:"mode"`
+	RetrievalMode  EvalRetrievalMode     `json:"retrievalMode"`
+	Params         map[string]any        `json:"params,omitempty"`
+	GateMode       string                `json:"gateMode"`
+	GateStatus     EvalGateStatus        `json:"gateStatus"`
+	SummaryMetrics map[string]any        `json:"summaryMetrics,omitempty"`
+	Warnings       []string              `json:"warnings,omitempty"`
+	Artifacts      []EvalRunArtifact     `json:"artifacts,omitempty"`
+	StageSummaries []EvalRunStageSummary `json:"stageSummaries,omitempty"`
+	Progress       int                   `json:"progress"`
+	ErrorMessage   string                `json:"errorMessage,omitempty"`
+	StartedAt      *time.Time            `json:"startedAt,omitempty"`
+	FinishedAt     *time.Time            `json:"finishedAt,omitempty"`
+	CreatedBy      string                `json:"createdBy"`
+	CreatedAt      time.Time             `json:"createdAt"`
+	UpdatedAt      time.Time             `json:"updatedAt"`
+}
+
+type AdminEvalOverview struct {
+	TotalDatasets    int       `json:"totalDatasets"`
+	ActiveDatasets   int       `json:"activeDatasets"`
+	TotalRuns        int       `json:"totalRuns"`
+	QueuedRuns       int       `json:"queuedRuns"`
+	RunningRuns      int       `json:"runningRuns"`
+	SuccessfulRuns   int       `json:"successfulRuns"`
+	FailedRuns       int       `json:"failedRuns"`
+	CanceledRuns     int       `json:"canceledRuns"`
+	RecentRuns       int       `json:"recentRuns"`
+	RecentGateFailed int       `json:"recentGateFailed"`
+	SuccessRate      float64   `json:"successRate"`
+	RefreshedAt      time.Time `json:"refreshedAt"`
 }

@@ -33,6 +33,12 @@ type FileConfig struct {
 	EmbeddingDim       int    `yaml:"embeddingDim"`
 	TopK               int    `yaml:"topK"`
 	HistoryLimit       int    `yaml:"historyLimit"`
+	QdrantURL          string `yaml:"qdrantURL"`
+	QdrantAPIKey       string `yaml:"qdrantAPIKey"`
+	QdrantCollection   string `yaml:"qdrantCollection"`
+	RerankTopN         int    `yaml:"rerankTopN"`
+	ContextBudget      int    `yaml:"contextBudget"`
+	MinEvidenceCount   int    `yaml:"minEvidenceCount"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -103,6 +109,30 @@ func Load(path string) (FileConfig, error) {
 			cfg.HistoryLimit = n
 		}
 	}
+	if v := os.Getenv("QDRANT_URL"); v != "" {
+		cfg.QdrantURL = v
+	}
+	if v := os.Getenv("QDRANT_API_KEY"); v != "" {
+		cfg.QdrantAPIKey = v
+	}
+	if v := os.Getenv("QDRANT_COLLECTION"); v != "" {
+		cfg.QdrantCollection = v
+	}
+	if v := os.Getenv("CHAT_RERANK_TOPN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.RerankTopN = n
+		}
+	}
+	if v := os.Getenv("CHAT_CONTEXT_BUDGET"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.ContextBudget = n
+		}
+	}
+	if v := os.Getenv("CHAT_MIN_EVIDENCE_COUNT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.MinEvidenceCount = n
+		}
+	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err
 	}
@@ -155,6 +185,12 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.EmbeddingDim <= 0 {
 		return errors.New("config: embeddingDim is required (set ONEBOOK_EMBEDDING_DIM)")
+	}
+	if strings.TrimSpace(cfg.QdrantURL) == "" {
+		return errors.New("config: qdrantURL is required (set QDRANT_URL)")
+	}
+	if strings.TrimSpace(cfg.QdrantCollection) == "" {
+		return errors.New("config: qdrantCollection is required (set QDRANT_COLLECTION)")
 	}
 	switch provider {
 	case "ollama":

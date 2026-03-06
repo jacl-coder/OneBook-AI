@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -37,6 +38,10 @@ func main() {
 	if err != nil {
 		util.Fatal("failed to parse jwt leeway", "err", err)
 	}
+	evalWorkerPoll, err := config.ParseEvalWorkerPollInterval(cfg.EvalWorkerPollInterval)
+	if err != nil {
+		util.Fatal("failed to parse eval worker poll interval", "err", err)
+	}
 	verifyPublicKeys, err := config.ParseVerifyPublicKeys(cfg.JWTVerifyPublicKeys)
 	if err != nil {
 		util.Fatal("failed to parse jwt verify public keys", "err", err)
@@ -55,6 +60,8 @@ func main() {
 		JWTIssuer:           cfg.JWTIssuer,
 		JWTAudience:         cfg.JWTAudience,
 		JWTLeeway:           jwtLeeway,
+		EvalStorageDir:      cfg.EvalStorageDir,
+		EvalWorkerPoll:      evalWorkerPoll,
 	})
 	if err != nil {
 		util.Fatal("failed to init app", "err", err)
@@ -73,6 +80,10 @@ func main() {
 	if err != nil {
 		util.Fatal("failed to init auth server", "err", err)
 	}
+
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+	appCore.StartEvalWorker(workerCtx)
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{

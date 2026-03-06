@@ -206,6 +206,11 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/admin/books/", s.adminOnly(s.handleAdminBookByID))
 	s.mux.Handle("/api/admin/audit-logs", s.adminOnly(s.handleAdminAuditLogs))
 	s.mux.Handle("/api/admin/overview", s.adminOnly(s.handleAdminOverview))
+	s.mux.Handle("/api/admin/evals/overview", s.adminOnly(s.handleAdminEvalOverview))
+	s.mux.Handle("/api/admin/evals/datasets", s.adminOnly(s.handleAdminEvalDatasets))
+	s.mux.Handle("/api/admin/evals/datasets/", s.adminOnly(s.handleAdminEvalDatasetByID))
+	s.mux.Handle("/api/admin/evals/runs", s.adminOnly(s.handleAdminEvalRuns))
+	s.mux.Handle("/api/admin/evals/runs/", s.adminOnly(s.handleAdminEvalRunByID))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -792,6 +797,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		req.ConversationID,
 		req.BookID,
 		req.Question,
+		req.Debug && ctx.User.Role == domain.RoleAdmin,
 	)
 	if err != nil {
 		writeChatError(w, r, err)
@@ -1291,6 +1297,7 @@ type chatRequest struct {
 	ConversationID string `json:"conversationId,omitempty"`
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
+	Debug          bool   `json:"debug,omitempty"`
 }
 
 type authRequest struct {

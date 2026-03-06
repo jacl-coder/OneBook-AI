@@ -29,7 +29,7 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 			return EvalResult{}, nil, err
 		}
 	} else {
-		r, w, err := loadOrBuildRunForRetrieval(RetrievalOptions{
+		detailed, err := EvaluateRetrievalDetailed(RetrievalOptions{
 			QueriesPath:    opts.QueriesPath,
 			QrelsPath:      opts.QrelsPath,
 			ChunksPath:     opts.ChunksPath,
@@ -37,12 +37,12 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 			Online:         opts.Online,
 			TopK:           opts.TopK,
 			Embedder:       opts.Embedder,
-		}, queries)
+		})
 		if err != nil {
 			return EvalResult{}, nil, err
 		}
-		runs = r
-		warnings = append(warnings, w...)
+		runs = detailed.StageRuns[finalRetrievalStage(RetrievalOptions{RetrievalMode: opts.RetrievalMode, TopK: opts.TopK})]
+		warnings = append(warnings, detailed.Result.Warnings...)
 	}
 
 	topK := opts.TopK
@@ -77,6 +77,8 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 	diversities := make([]float64, 0, len(queries))
 	coverages := make([]float64, 0, len(queries))
 	budgets := make([]float64, 0, len(queries))
+	packedCounts := make([]float64, 0, len(queries))
+	packedRelevantCounts := make([]float64, 0, len(queries))
 	per := make([]map[string]any, 0, len(queries))
 
 	for _, q := range queries {
@@ -94,10 +96,12 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 			continue
 		}
 
+		packed := packPostRetrievalHits(hits, lenByID, contextBudget)
 		seen := map[string]struct{}{}
 		dup := 0
 		ctxLen := 0
-		for _, h := range hits {
+		relevantCount := 0
+		for _, h := range packed {
 			if _, ok := seen[h.DocID]; ok {
 				dup++
 			}
@@ -107,22 +111,29 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 				l = 1
 			}
 			ctxLen += l
+			if relMap[q.QID][h.DocID] > 0 {
+				relevantCount++
+			}
 		}
-		dupRate := float64(dup) / float64(len(hits))
+		dupRate := safeDiv(float64(dup), float64(len(packed)))
 		diversity := float64(len(seen))
-		coverage, _ := recallAndHitAtK(hits, relMap[q.QID], len(hits))
+		coverage, _ := recallAndHitAtK(packed, relMap[q.QID], len(packed))
 		budgetUtil := float64(ctxLen) / float64(contextBudget)
 
 		dupRates = append(dupRates, dupRate)
 		diversities = append(diversities, diversity)
 		coverages = append(coverages, coverage)
 		budgets = append(budgets, budgetUtil)
+		packedCounts = append(packedCounts, float64(len(packed)))
+		packedRelevantCounts = append(packedRelevantCounts, float64(relevantCount))
 		per = append(per, map[string]any{
 			"qid":                        q.QID,
 			"retrieved_dup_rate":         dupRate,
 			"doc_diversity":              diversity,
 			"context_coverage":           coverage,
 			"context_budget_utilization": budgetUtil,
+			"packed_chunk_count":         len(packed),
+			"packed_relevant_count":      relevantCount,
 		})
 	}
 
@@ -134,9 +145,39 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 		"doc_diversity":              mean(diversities),
 		"context_coverage":           mean(coverages),
 		"context_budget_utilization": mean(budgets),
+		"packed_chunk_count":         mean(packedCounts),
+		"packed_relevant_count":      mean(packedRelevantCounts),
 	}
 	warnings = append(warnings, evaluatePostRetrievalWarnings(metrics)...)
 	return EvalResult{Metrics: metrics, PerQuery: per, Warnings: uniqueStrings(warnings)}, runs, nil
+}
+
+func packPostRetrievalHits(hits []RunHit, lenByID map[string]int, contextBudget int) []RunHit {
+	if len(hits) == 0 {
+		return nil
+	}
+	if contextBudget <= 0 {
+		return hits
+	}
+	out := make([]RunHit, 0, len(hits))
+	seen := map[string]struct{}{}
+	used := 0
+	for _, hit := range hits {
+		if _, ok := seen[hit.DocID]; ok {
+			continue
+		}
+		seen[hit.DocID] = struct{}{}
+		length := lenByID[hit.DocID]
+		if length <= 0 {
+			length = 1
+		}
+		if len(out) > 0 && used+length > contextBudget {
+			break
+		}
+		used += length
+		out = append(out, hit)
+	}
+	return out
 }
 
 func evaluatePostRetrievalWarnings(metrics map[string]any) []string {

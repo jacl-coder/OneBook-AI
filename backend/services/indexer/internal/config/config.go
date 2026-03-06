@@ -34,6 +34,9 @@ type FileConfig struct {
 	EmbeddingDim                int    `yaml:"embeddingDim"`
 	EmbeddingBatchSize          int    `yaml:"embeddingBatchSize"`
 	EmbeddingConcurrency        int    `yaml:"embeddingConcurrency"`
+	QdrantURL                   string `yaml:"qdrantURL"`
+	QdrantAPIKey                string `yaml:"qdrantAPIKey"`
+	QdrantCollection            string `yaml:"qdrantCollection"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -110,6 +113,15 @@ func Load(path string) (FileConfig, error) {
 			cfg.EmbeddingConcurrency = n
 		}
 	}
+	if v := os.Getenv("QDRANT_URL"); v != "" {
+		cfg.QdrantURL = v
+	}
+	if v := os.Getenv("QDRANT_API_KEY"); v != "" {
+		cfg.QdrantAPIKey = v
+	}
+	if v := os.Getenv("QDRANT_COLLECTION"); v != "" {
+		cfg.QdrantCollection = v
+	}
 	if v := os.Getenv("OLLAMA_HOST"); v != "" {
 		cfg.EmbeddingBaseURL = v
 		cfg.EmbeddingProvider = "ollama"
@@ -149,6 +161,12 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.EmbeddingDim <= 0 {
 		return errors.New("config: embeddingDim is required (set ONEBOOK_EMBEDDING_DIM)")
+	}
+	if strings.TrimSpace(cfg.QdrantURL) == "" {
+		return errors.New("config: qdrantURL is required (set QDRANT_URL)")
+	}
+	if strings.TrimSpace(cfg.QdrantCollection) == "" {
+		return errors.New("config: qdrantCollection is required (set QDRANT_COLLECTION)")
 	}
 	switch provider {
 	case "ollama":

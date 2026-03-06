@@ -602,7 +602,7 @@ export function ChatPage() {
         question: trimmedPrompt,
       })
       if (requestId !== pendingAskIdRef.current) return
-      const resolvedConversationID = data.conversationId?.trim() || requestConversationID || threadId
+      const resolvedConversationID = data.conversation.id?.trim() || requestConversationID || threadId
       const assistantMessageCreatedAt = Date.parse(data.createdAt) || nowTimestamp()
       setThreads((previous) => {
         const index = previous.findIndex((thread) => thread.id === threadId)
@@ -612,6 +612,7 @@ export function ChatPage() {
           ...baseThread,
           id: resolvedConversationID,
           isRemote: true,
+          bookId: data.conversation.bookId || selectedBookId,
           updatedAt: assistantMessageCreatedAt,
           status: 'idle',
           errorText: '',
@@ -620,9 +621,9 @@ export function ChatPage() {
             {
               id: createMessageId(),
               role: 'assistant',
-              text: data.answer,
+              text: data.abstained ? `${data.answer}\n\n当前回答未通过证据门槛，系统已按拒答处理。` : data.answer,
               createdAt: assistantMessageCreatedAt,
-              sources: data.sources.map((source) => ({
+              sources: data.citations.map((source) => ({
                 label: source.label,
                 location: source.location,
                 snippet: source.snippet,

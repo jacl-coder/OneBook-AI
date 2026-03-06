@@ -18,8 +18,8 @@
 - 上传 PDF/EPUB/TXT，支持扩展名白名单和大小限制（默认 50MB）。
 - 书库列表/查询/删除；下载返回预签名 URL，浏览器下载名为原始文件名。
 - 解析与分块：PDF/EPUB/TXT，语义分块并保留来源元数据（`source_type/source_ref`）。
-- 索引：pgvector 向量写入，Embedding 支持批量/并发。
-- 对话：基于向量检索生成回答并附出处；保存消息并拼接最近 N 轮历史。
+- 索引：Qdrant 检索索引写入，Embedding 支持批量/并发。
+- 对话：基于 dense + sparse 检索、融合与证据约束生成回答；支持拒答与检索调试信息。
 - 管理员：后台管理系统（`/admin`），支持用户/书籍管理、重处理、审计日志与系统概览。
 - 认证：bcrypt 密码哈希（最小 12 位，且需包含大写/小写/数字/特殊字符）、短时效 access token（默认 15 分钟，RS256 + JWKS）、refresh token 轮换与重放检测（Redis）。
 - 授权与风控：网关统一鉴权，管理员接口基于角色控制；网关与认证服务使用 Redis 分布式限流（安全优先，Redis 异常时拒绝请求）。
@@ -29,7 +29,8 @@
 ## 技术栈（当前）
 
 - 后端：Go（标准库 `net/http`）
-- 数据库：Postgres + pgvector
+- 数据库：Postgres（事务数据）
+- 检索：Qdrant（dense + sparse retrieval）
 - 存储：MinIO（S3 兼容对象存储）
 - 队列：Redis Streams（Ingest/Indexer），Redis（认证撤销状态与 refresh token）
 - LLM：多 provider（Gemini / Ollama / OpenAI 兼容），通过 `TextGenerator` 接口切换
@@ -43,7 +44,7 @@
 - 公共路由（除认证与健康检查外均需登录态）：
   - 认证：`POST /api/auth/signup`，`POST /api/auth/login`，`POST /api/auth/refresh`，`POST /api/auth/logout`，`GET /api/auth/jwks`，`GET/PATCH /api/users/me`，`POST /api/users/me/password`
   - 书籍：`/api/books`（POST 上传字段 `file`，GET 列表），`/api/books/{id}`（GET/DELETE），`/api/books/{id}/download`
-  - 对话：`POST /api/chats`（body: `bookId` + `question` + 可选 `conversationId`），`GET /api/conversations`，`GET /api/conversations/{id}/messages`
+  - 对话：`POST /api/chats`（body: `bookId` + `question` + 可选 `conversationId`/`debug`），`GET /api/conversations`，`GET /api/conversations/{id}/messages`
   - 管理员：
     - 用户：`GET /api/admin/users`，`GET /api/admin/users/{id}`，`PATCH /api/admin/users/{id}`，`POST /api/admin/users/{id}/disable`，`POST /api/admin/users/{id}/enable`
     - 书籍：`GET /api/admin/books`，`DELETE /api/admin/books/{id}`，`POST /api/admin/books/{id}/reprocess`
@@ -53,8 +54,8 @@
 ## 本地运行
 
 ```bash
-# 启动依赖（Postgres + Redis + MinIO + Swagger UI）
-docker compose up -d postgres redis minio minio-init swagger-ui
+# 启动依赖（Postgres + Redis + Qdrant + MinIO + Swagger UI）
+docker compose up -d postgres redis qdrant minio minio-init swagger-ui
 
 # 必需环境变量（手动逐服务运行时）
 export REDIS_ADDR=localhost:6379
@@ -149,7 +150,8 @@ docker build -f backend/Dockerfile -t onebook-gateway \
   - 业务请求通过 `withCredentials` 自动携带 Cookie
   - `401` 时前端触发 `POST /api/auth/refresh`，成功后自动重放原请求（单飞刷新）
 - 书籍状态建议轮询：上传后轮询 `GET /api/books/{id}`，直到 `status` 为 `ready` 或 `failed`
-- 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`（新建会话时不传 `conversationId`，续聊时传已有 `conversationId`）
+- 对话前置条件：仅对 `ready` 书籍调用 `POST /api/chats`
+- 新回答结构：返回 `conversation`、`answer`、`citations`、`abstained`，管理员可请求 `retrievalDebug`
 - 详细请求/错误语义与联调清单：`docs/backend/backend_handoff.md`
 
 ## 开发与测试

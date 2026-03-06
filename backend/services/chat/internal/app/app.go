@@ -9,6 +9,7 @@ import (
 	"onebookai/internal/util"
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/retrieval"
 	"onebookai/pkg/store"
 )
 
@@ -28,6 +29,12 @@ type Config struct {
 	EmbeddingDim       int
 	TopK               int
 	HistoryLimit       int
+	QdrantURL          string
+	QdrantAPIKey       string
+	QdrantCollection   string
+	RerankTopN         int
+	ContextBudget      int
+	MinEvidenceCount   int
 }
 
 // App is the core application service wiring together storage and chat logic.
@@ -35,8 +42,15 @@ type App struct {
 	store        store.Store
 	generator    ai.TextGenerator
 	embedder     ai.Embedder
+	search       *retrieval.Client
+	rewriter     QueryRewriter
+	reranker     Reranker
+	validator    GroundingValidator
 	topK         int
 	historyLimit int
+	rerankTopN   int
+	contextBudget int
+	minEvidenceCount int
 }
 
 // New constructs the application with database-backed storage for messages.
@@ -58,6 +72,10 @@ func New(cfg Config) (*App, error) {
 	}
 	if cfg.EmbeddingModel == "" {
 		return nil, fmt.Errorf("embedding model required")
+	}
+	searchClient, err := retrieval.NewQdrantClient(cfg.QdrantURL, cfg.QdrantAPIKey, cfg.QdrantCollection, cfg.EmbeddingDim)
+	if err != nil {
+		return nil, fmt.Errorf("init qdrant client: %w", err)
 	}
 
 	// Build text generator based on provider.
@@ -89,13 +107,32 @@ func New(cfg Config) (*App, error) {
 	if historyLimit < 0 {
 		historyLimit = 0
 	}
+	rerankTopN := cfg.RerankTopN
+	if rerankTopN <= 0 {
+		rerankTopN = 8
+	}
+	contextBudget := cfg.ContextBudget
+	if contextBudget <= 0 {
+		contextBudget = 2200
+	}
+	minEvidenceCount := cfg.MinEvidenceCount
+	if minEvidenceCount <= 0 {
+		minEvidenceCount = 2
+	}
 
 	return &App{
-		store:        dataStore,
-		generator:    generator,
-		embedder:     embedder,
-		topK:         topK,
-		historyLimit: historyLimit,
+		store:            dataStore,
+		generator:        generator,
+		embedder:         embedder,
+		search:           searchClient,
+		rewriter:         newModelQueryRewriter(generator),
+		reranker:         newHybridReranker(),
+		validator:        newGroundingValidator(generator),
+		topK:             topK,
+		historyLimit:     historyLimit,
+		rerankTopN:       rerankTopN,
+		contextBudget:    contextBudget,
+		minEvidenceCount: minEvidenceCount,
 	}, nil
 }
 
@@ -125,8 +162,8 @@ func buildGenerator(cfg Config) (ai.TextGenerator, error) {
 	}
 }
 
-// AskQuestion performs a placeholder question/answer flow bound to a book and conversation.
-func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string) (domain.Answer, error) {
+// AskQuestion performs an evidence-grounded question/answer flow bound to a book and conversation.
+func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string, includeDebug bool) (domain.Answer, error) {
 	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
 		return domain.Answer{}, fmt.Errorf("forbidden")
 	}
@@ -141,17 +178,6 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		return domain.Answer{}, err
 	}
 	ctx := context.Background()
-	queryEmbedding, err := a.embedder.EmbedText(ctx, question, "RETRIEVAL_QUERY")
-	if err != nil {
-		return domain.Answer{}, fmt.Errorf("embed question: %w", err)
-	}
-	chunks, err := a.store.SearchChunks(book.ID, queryEmbedding, a.topK)
-	if err != nil {
-		return domain.Answer{}, fmt.Errorf("search chunks: %w", err)
-	}
-	if len(chunks) == 0 {
-		return domain.Answer{}, ErrBookNotReady
-	}
 	var history []domain.Message
 	if a.historyLimit > 0 {
 		historyLimit := a.historyLimit * 2
@@ -163,26 +189,46 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 			return domain.Answer{}, fmt.Errorf("load history: %w", err)
 		}
 	}
-	historyText := buildHistory(history)
-	contextText, sources := buildContext(chunks)
-	var userPrompt string
-	if historyText != "" {
-		userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, historyText, question, contextText)
-	} else {
-		userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n已知资料：\n%s\n\n请基于已知资料回答问题，如果资料不足请说明。", book.Title, question, contextText)
-	}
-	systemPrompt := "你是一个可靠的读书助手，必须基于提供的资料回答，并在回答中标注引用编号。"
-	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+	retrieved, debugInfo, err := a.retrieveEvidence(ctx, book, question)
 	if err != nil {
-		return domain.Answer{}, fmt.Errorf("generate answer: %w", err)
+		return domain.Answer{}, err
+	}
+	historyText := buildHistory(history)
+	contextText, citations := buildContext(retrieved)
+	abstained := len(retrieved) < a.minEvidenceCount
+	answerText := defaultAbstainAnswer
+	var userPrompt string
+	if !abstained {
+		if historyText != "" {
+			userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, historyText, question, contextText)
+		} else {
+			userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, question, contextText)
+		}
+		systemPrompt := "你是一个严格基于证据回答的读书助手。不要使用证据外知识。每个结论都必须可由提供证据支持。"
+		response, genErr := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+		if genErr == nil {
+			answerText = strings.TrimSpace(response)
+		}
+		if strings.TrimSpace(answerText) == "" {
+			abstained = true
+			answerText = defaultAbstainAnswer
+		}
+		if !abstained && !a.validator.Validate(question, answerText, citations) {
+			abstained = true
+			answerText = defaultAbstainAnswer
+			citations = nil
+		}
 	}
 	answer := domain.Answer{
-		ConversationID: conversation.ID,
-		BookID:         book.ID,
-		Question:       question,
-		Answer:         response,
-		Sources:        sources,
-		CreatedAt:      time.Now().UTC(),
+		Conversation: conversation,
+		Question:     question,
+		Answer:       answerText,
+		Citations:    citations,
+		Abstained:    abstained,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if includeDebug {
+		answer.RetrievalDebug = debugInfo
 	}
 	userMessageTime := time.Now().UTC()
 	if err := a.store.AppendConversationMessage(conversation.ID, domain.Message{
@@ -204,7 +250,8 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		BookID:         book.ID,
 		Role:           "assistant",
 		Content:        answer.Answer,
-		Sources:        answer.Sources,
+		Sources:        answer.Citations,
+		Abstained:      abstained,
 		CreatedAt:      assistantMessageTime,
 	}); err != nil {
 		return domain.Answer{}, fmt.Errorf("save answer message: %w", err)
@@ -212,6 +259,8 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	if err := a.store.UpdateConversation(conversation.ID, "", assistantMessageTime); err != nil {
 		return domain.Answer{}, fmt.Errorf("update conversation: %w", err)
 	}
+	answer.Conversation.LastMessageAt = &assistantMessageTime
+	answer.Conversation.UpdatedAt = assistantMessageTime
 	return answer, nil
 }
 
@@ -335,10 +384,11 @@ func generateConversationTitle(question string) string {
 	return text
 }
 
-func buildContext(chunks []domain.Chunk) (string, []domain.Source) {
+func buildContext(hits []retrievalHit) (string, []domain.Source) {
 	var sb strings.Builder
-	sources := make([]domain.Source, 0, len(chunks))
-	for i, chunk := range chunks {
+	sources := make([]domain.Source, 0, len(hits))
+	for i, hit := range hits {
+		chunk := hit.chunk
 		label := fmt.Sprintf("[%d]", i+1)
 		location := chunkLocation(chunk.Metadata)
 		snippet := chunk.Content
@@ -353,9 +403,13 @@ func buildContext(chunks []domain.Chunk) (string, []domain.Source) {
 		sb.WriteString(chunk.Content)
 		sb.WriteString("\n\n")
 		sources = append(sources, domain.Source{
-			Label:    label,
-			Location: location,
-			Snippet:  snippet,
+			Label:     label,
+			Location:  location,
+			Snippet:   snippet,
+			ChunkID:   chunk.ID,
+			SourceRef: strings.TrimSpace(chunk.Metadata["source_ref"]),
+			Score:     hit.score,
+			Language:  strings.TrimSpace(chunk.Metadata["language"]),
 		})
 	}
 	return sb.String(), sources
@@ -400,8 +454,14 @@ func chunkLocation(meta map[string]string) string {
 	if page := strings.TrimSpace(meta["page"]); page != "" {
 		return "page " + page
 	}
+	if section := strings.TrimSpace(meta["section_path"]); section != "" {
+		return section
+	}
 	if section := strings.TrimSpace(meta["section"]); section != "" {
 		return section
+	}
+	if idx := strings.TrimSpace(meta["chunk_index"]); idx != "" {
+		return "chunk " + idx
 	}
 	if idx := strings.TrimSpace(meta["chunk"]); idx != "" {
 		return "chunk " + idx

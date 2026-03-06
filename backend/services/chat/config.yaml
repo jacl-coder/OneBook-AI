@@ -18,3 +18,8 @@ jwtLeeway: "30s"
 bookServiceURL: "http://localhost:8082"
 topK: 4
 historyLimit: 6
+qdrantURL: "http://localhost:6333"
+qdrantCollection: "onebook_chunks"
+rerankTopN: 8
+contextBudget: 2200
+minEvidenceCount: 2

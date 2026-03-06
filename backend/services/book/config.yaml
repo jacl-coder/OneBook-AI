@@ -17,3 +17,5 @@ minioUseSSL: false
 ingestURL: "http://localhost:8084"
 maxUploadBytes: 52428800 # 50MB
 allowedExtensions: [".pdf", ".epub", ".txt"]
+qdrantURL: "http://localhost:6333"
+qdrantCollection: "onebook_chunks"

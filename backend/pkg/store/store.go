@@ -37,6 +37,24 @@ type AdminAuditLogListOptions struct {
 	PageSize   int
 }
 
+type EvalDatasetListOptions struct {
+	Query      string
+	SourceType string
+	Status     string
+	BookID     string
+	Page       int
+	PageSize   int
+}
+
+type EvalRunListOptions struct {
+	DatasetID     string
+	Status        string
+	Mode          string
+	RetrievalMode string
+	Page          int
+	PageSize      int
+}
+
 // Store defines persistence operations for users, books, and messages.
 type Store interface {
 	// users
@@ -77,6 +95,16 @@ type Store interface {
 	SaveAdminAuditLog(domain.AdminAuditLog) error
 	ListAdminAuditLogs(AdminAuditLogListOptions) ([]domain.AdminAuditLog, int, error)
 	GetAdminOverview(windowStart time.Time, windowHours int) (domain.AdminOverview, error)
+	SaveEvalDataset(domain.EvalDataset) error
+	GetEvalDataset(id string) (domain.EvalDataset, bool, error)
+	ListEvalDatasets(EvalDatasetListOptions) ([]domain.EvalDataset, int, error)
+	DeleteEvalDataset(id string) error
+	ArchiveEvalDataset(id string) error
+	SaveEvalRun(domain.EvalRun) error
+	GetEvalRun(id string) (domain.EvalRun, bool, error)
+	ListEvalRuns(EvalRunListOptions) ([]domain.EvalRun, int, error)
+	CountEvalRunsByDataset(datasetID string) (int, error)
+	GetAdminEvalOverview(windowStart time.Time) (domain.AdminEvalOverview, error)
 }
 
 // SessionStore persists session tokens.

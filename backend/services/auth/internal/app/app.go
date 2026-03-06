@@ -29,6 +29,8 @@ type Config struct {
 	Store               store.Store
 	Sessions            store.SessionStore
 	RefreshTokens       store.RefreshTokenStore
+	EvalStorageDir      string
+	EvalWorkerPoll      time.Duration
 }
 
 // App is the core application service wiring together storage and auth logic.
@@ -37,6 +39,7 @@ type App struct {
 	sessions      store.SessionStore
 	refreshTokens store.RefreshTokenStore
 	refreshTTL    time.Duration
+	evals         *evalCenter
 }
 
 // New constructs the application with database storage and session management.
@@ -97,11 +100,17 @@ func New(cfg Config) (*App, error) {
 		refreshStore = store.NewRedisRefreshTokenStore(cfg.RedisAddr, cfg.RedisPassword)
 	}
 
+	evals, err := newEvalCenter(dataStore, strings.TrimSpace(cfg.EvalStorageDir), cfg.EvalWorkerPoll)
+	if err != nil {
+		return nil, fmt.Errorf("init eval center: %w", err)
+	}
+
 	return &App{
 		store:         dataStore,
 		sessions:      sessionStore,
 		refreshTokens: refreshStore,
 		refreshTTL:    cfg.RefreshTTL,
+		evals:         evals,
 	}, nil
 }
 

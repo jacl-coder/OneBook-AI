@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -359,22 +360,240 @@ func (c *Client) AdminOverview(requestID, token string) (domain.AdminOverview, e
 	return overview, nil
 }
 
+type AdminEvalOverview = domain.AdminEvalOverview
+
+type PagedEvalDatasetsResponse struct {
+	Items      []domain.EvalDataset `json:"items"`
+	Count      int                  `json:"count"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"pageSize"`
+	Total      int                  `json:"total"`
+	TotalPages int                  `json:"totalPages"`
+}
+
+type AdminListEvalDatasetsOptions struct {
+	Query      string
+	SourceType string
+	Status     string
+	BookID     string
+	Page       int
+	PageSize   int
+}
+
+type AdminEvalDatasetUpdateRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Status      string  `json:"status,omitempty"`
+}
+
+type PagedEvalRunsResponse struct {
+	Items      []domain.EvalRun `json:"items"`
+	Count      int              `json:"count"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"pageSize"`
+	Total      int              `json:"total"`
+	TotalPages int              `json:"totalPages"`
+}
+
+type AdminListEvalRunsOptions struct {
+	DatasetID     string
+	Status        string
+	Mode          string
+	RetrievalMode string
+	Page          int
+	PageSize      int
+}
+
+type AdminCreateEvalRunRequest struct {
+	DatasetID     string         `json:"datasetId"`
+	Mode          string         `json:"mode"`
+	RetrievalMode string         `json:"retrievalMode"`
+	GateMode      string         `json:"gateMode"`
+	Params        map[string]any `json:"params,omitempty"`
+}
+
+func (c *Client) AdminEvalOverview(requestID, token string) (AdminEvalOverview, error) {
+	var overview AdminEvalOverview
+	if err := c.doJSON(http.MethodGet, "/auth/admin/evals/overview", requestID, token, nil, &overview); err != nil {
+		return AdminEvalOverview{}, err
+	}
+	return overview, nil
+}
+
+func (c *Client) AdminListEvalDatasets(requestID, token string, opts AdminListEvalDatasetsOptions) (PagedEvalDatasetsResponse, error) {
+	query := url.Values{}
+	if v := strings.TrimSpace(opts.Query); v != "" {
+		query.Set("query", v)
+	}
+	if v := strings.TrimSpace(opts.SourceType); v != "" {
+		query.Set("sourceType", v)
+	}
+	if v := strings.TrimSpace(opts.Status); v != "" {
+		query.Set("status", v)
+	}
+	if v := strings.TrimSpace(opts.BookID); v != "" {
+		query.Set("bookId", v)
+	}
+	if opts.Page > 0 {
+		query.Set("page", fmt.Sprintf("%d", opts.Page))
+	}
+	if opts.PageSize > 0 {
+		query.Set("pageSize", fmt.Sprintf("%d", opts.PageSize))
+	}
+	path := "/auth/admin/evals/datasets"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var resp PagedEvalDatasetsResponse
+	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &resp); err != nil {
+		return PagedEvalDatasetsResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) AdminCreateEvalDatasetMultipart(requestID, token string, fields map[string]string, files map[string][]byte) (domain.EvalDataset, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if err := writer.WriteField(key, value); err != nil {
+			return domain.EvalDataset{}, err
+		}
+	}
+	for key, data := range files {
+		if len(data) == 0 {
+			continue
+		}
+		part, err := writer.CreateFormFile(key, key)
+		if err != nil {
+			return domain.EvalDataset{}, err
+		}
+		if _, err := part.Write(data); err != nil {
+			return domain.EvalDataset{}, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return domain.EvalDataset{}, err
+	}
+	var out domain.EvalDataset
+	if err := c.doBody(http.MethodPost, "/auth/admin/evals/datasets", requestID, token, &body, writer.FormDataContentType(), &out); err != nil {
+		return domain.EvalDataset{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminGetEvalDataset(requestID, token, id string) (domain.EvalDataset, error) {
+	var out domain.EvalDataset
+	if err := c.doJSON(http.MethodGet, "/auth/admin/evals/datasets/"+id, requestID, token, nil, &out); err != nil {
+		return domain.EvalDataset{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminUpdateEvalDataset(requestID, token, id string, req AdminEvalDatasetUpdateRequest) (domain.EvalDataset, error) {
+	var out domain.EvalDataset
+	if err := c.doJSON(http.MethodPatch, "/auth/admin/evals/datasets/"+id, requestID, token, req, &out); err != nil {
+		return domain.EvalDataset{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminDeleteEvalDataset(requestID, token, id string) error {
+	return c.doJSON(http.MethodDelete, "/auth/admin/evals/datasets/"+id, requestID, token, nil, nil)
+}
+
+func (c *Client) AdminListEvalRuns(requestID, token string, opts AdminListEvalRunsOptions) (PagedEvalRunsResponse, error) {
+	query := url.Values{}
+	if v := strings.TrimSpace(opts.DatasetID); v != "" {
+		query.Set("datasetId", v)
+	}
+	if v := strings.TrimSpace(opts.Status); v != "" {
+		query.Set("status", v)
+	}
+	if v := strings.TrimSpace(opts.Mode); v != "" {
+		query.Set("mode", v)
+	}
+	if v := strings.TrimSpace(opts.RetrievalMode); v != "" {
+		query.Set("retrievalMode", v)
+	}
+	if opts.Page > 0 {
+		query.Set("page", fmt.Sprintf("%d", opts.Page))
+	}
+	if opts.PageSize > 0 {
+		query.Set("pageSize", fmt.Sprintf("%d", opts.PageSize))
+	}
+	path := "/auth/admin/evals/runs"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var resp PagedEvalRunsResponse
+	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &resp); err != nil {
+		return PagedEvalRunsResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) AdminCreateEvalRun(requestID, token string, req AdminCreateEvalRunRequest) (domain.EvalRun, error) {
+	var out domain.EvalRun
+	if err := c.doJSON(http.MethodPost, "/auth/admin/evals/runs", requestID, token, req, &out); err != nil {
+		return domain.EvalRun{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminGetEvalRun(requestID, token, id string) (domain.EvalRun, error) {
+	var out domain.EvalRun
+	if err := c.doJSON(http.MethodGet, "/auth/admin/evals/runs/"+id, requestID, token, nil, &out); err != nil {
+		return domain.EvalRun{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminCancelEvalRun(requestID, token, id string) (domain.EvalRun, error) {
+	var out domain.EvalRun
+	if err := c.doJSON(http.MethodPost, "/auth/admin/evals/runs/"+id+"/cancel", requestID, token, map[string]any{}, &out); err != nil {
+		return domain.EvalRun{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminGetEvalPerQuery(requestID, token, id string) (map[string]any, error) {
+	var out map[string]any
+	if err := c.doJSON(http.MethodGet, "/auth/admin/evals/runs/"+id+"/per-query", requestID, token, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) AdminDownloadEvalArtifact(requestID, token, runID, name string) ([]byte, string, error) {
+	path := "/auth/admin/evals/runs/" + runID + "/artifacts/" + name
+	return c.doBytes(http.MethodGet, path, requestID, token)
+}
+
 func (c *Client) doJSON(method, path, requestID, token string, payload any, out any) error {
 	var body io.Reader
+	contentType := ""
 	if payload != nil {
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return err
 		}
 		body = bytes.NewReader(data)
+		contentType = "application/json"
 	}
+	return c.doBody(method, path, requestID, token, body, contentType, out)
+}
+
+func (c *Client) doBody(method, path, requestID, token string, body io.Reader, contentType string, out any) error {
 	url := c.baseURL + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return err
 	}
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(contentType) != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -406,6 +625,42 @@ func (c *Client) doJSON(method, path, requestID, token string, payload any, out 
 		return err
 	}
 	return nil
+}
+
+func (c *Client) doBytes(method, path, requestID, token string) ([]byte, string, error) {
+	url := c.baseURL + path
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if strings.TrimSpace(requestID) != "" {
+		req.Header.Set("X-Request-Id", requestID)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+			Code  string `json:"code"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		msg := errResp.Error
+		if msg == "" {
+			msg = resp.Status
+		}
+		return nil, "", &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, resp.Header.Get("Content-Type"), nil
 }
 
 type authResponse struct {

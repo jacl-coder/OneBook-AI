@@ -29,6 +29,8 @@ type FileConfig struct {
 	JWTIssuer                  string   `yaml:"jwtIssuer"`
 	JWTAudience                string   `yaml:"jwtAudience"`
 	JWTLeeway                  string   `yaml:"jwtLeeway"`
+	EvalStorageDir             string   `yaml:"evalStorageDir"`
+	EvalWorkerPollInterval     string   `yaml:"evalWorkerPollInterval"`
 	SignupRateLimitPerMinute   int      `yaml:"signupRateLimitPerMinute"`
 	LoginRateLimitPerMinute    int      `yaml:"loginRateLimitPerMinute"`
 	RefreshRateLimitPerMinute  int      `yaml:"refreshRateLimitPerMinute"`
@@ -85,6 +87,12 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("AUTH_REFRESH_TTL"); v != "" {
 		cfg.RefreshTTL = v
 	}
+	if v := os.Getenv("AUTH_EVAL_STORAGE_DIR"); v != "" {
+		cfg.EvalStorageDir = v
+	}
+	if v := os.Getenv("AUTH_EVAL_WORKER_POLL_INTERVAL"); v != "" {
+		cfg.EvalWorkerPollInterval = v
+	}
 	if v := os.Getenv("AUTH_SIGNUP_RATE_LIMIT_PER_MINUTE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.SignupRateLimitPerMinute = n
@@ -112,6 +120,17 @@ func Load(path string) (FileConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+func ParseEvalWorkerPollInterval(raw string) (time.Duration, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	dur, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid evalWorkerPollInterval duration: %w", err)
+	}
+	return dur, nil
 }
 
 func validateConfig(cfg FileConfig) error {

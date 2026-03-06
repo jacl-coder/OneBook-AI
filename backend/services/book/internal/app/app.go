@@ -14,6 +14,7 @@ import (
 	"onebookai/internal/servicetoken"
 	"onebookai/internal/util"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/retrieval"
 	"onebookai/pkg/storage"
 	"onebookai/pkg/store"
 )
@@ -32,6 +33,9 @@ type Config struct {
 	InternalJWTPrivateKeyPath string
 	MaxUploadBytes            int64
 	AllowedExtensions         []string
+	QdrantURL                 string
+	QdrantAPIKey              string
+	QdrantCollection          string
 }
 
 // App is the core application service wiring together storage and domain logic.
@@ -39,6 +43,7 @@ type App struct {
 	store             store.Store
 	objects           storage.ObjectStore
 	ingest            ingestClient
+	search            *retrieval.Client
 	presignExpiry     time.Duration
 	maxUploadBytes    int64
 	allowedExtensions map[string]struct{}
@@ -78,11 +83,16 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init ingest client: %w", err)
 	}
+	searchClient, err := retrieval.NewQdrantClient(cfg.QdrantURL, cfg.QdrantAPIKey, cfg.QdrantCollection, 1)
+	if err != nil {
+		return nil, fmt.Errorf("init qdrant client: %w", err)
+	}
 
 	return &App{
 		store:             dataStore,
 		objects:           objStore,
 		ingest:            ingestClient,
+		search:            searchClient,
 		presignExpiry:     15 * time.Minute,
 		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
 		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
@@ -180,6 +190,11 @@ func (a *App) DeleteBook(id string) error {
 	if err := a.store.DeleteBook(id); err != nil {
 		return err
 	}
+	if a.search != nil {
+		if err := a.search.DeleteByBook(context.Background(), id); err != nil {
+			return err
+		}
+	}
 	if err := a.objects.Delete(context.Background(), book.StorageKey); err != nil {
 		return err
 	}
@@ -197,6 +212,11 @@ func (a *App) ReprocessBook(id string) (domain.Book, error) {
 	}
 	if err := a.store.SetStatus(id, domain.StatusQueued, ""); err != nil {
 		return domain.Book{}, err
+	}
+	if a.search != nil {
+		if err := a.search.DeleteByBook(context.Background(), id); err != nil {
+			return domain.Book{}, err
+		}
 	}
 	if err := a.ingest.Enqueue(id); err != nil {
 		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
