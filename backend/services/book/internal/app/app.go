@@ -102,7 +102,7 @@ func New(cfg Config) (*App, error) {
 }
 
 // UploadBook stores a new book file and enqueues simulated processing.
-func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size int64, idempotencyKey string) (domain.Book, bool, error) {
+func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size int64, primaryCategory string, tags []string, idempotencyKey string) (domain.Book, bool, error) {
 	if filename == "" {
 		return domain.Book{}, false, errors.New("filename required")
 	}
@@ -112,7 +112,15 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 	if a.maxUploadBytes > 0 && size > 0 && size > a.maxUploadBytes {
 		return domain.Book{}, false, fmt.Errorf("file too large")
 	}
-	requestHash := uploadRequestHash(owner.ID, filename, size)
+	normalizedCategory, err := normalizePrimaryCategory(primaryCategory)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	normalizedTags, err := normalizeBookTags(tags)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	requestHash := uploadRequestHash(owner.ID, filename, size, normalizedCategory, normalizedTags)
 	record, replayBook, replayed, err := a.beginBookIdempotency(idempotencyScopeUpload, owner.ID, idempotencyKey, requestHash)
 	if err != nil {
 		return domain.Book{}, false, err
@@ -127,6 +135,10 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 		OwnerID:          owner.ID,
 		Title:            titleFromName(filename),
 		OriginalFilename: filepath.Base(filename),
+		PrimaryCategory:  normalizedCategory,
+		Tags:             normalizedTags,
+		Format:           detectBookFormat(filename),
+		Language:         string(domain.BookLanguageUnknown),
 		StorageKey:       storageKey,
 		Status:           domain.StatusQueued,
 		SizeBytes:        size,
@@ -156,11 +168,18 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 }
 
 // ListBooks returns all books for the current user scope.
-func (a *App) ListBooks(user domain.User) ([]domain.Book, error) {
-	if user.Role == domain.RoleAdmin {
-		return a.store.ListBooks()
+func (a *App) ListBooks(user domain.User, opts store.BookListOptions) ([]domain.Book, error) {
+	opts.Query = strings.TrimSpace(opts.Query)
+	opts.Status = strings.TrimSpace(strings.ToLower(opts.Status))
+	opts.PrimaryCategory = strings.TrimSpace(strings.ToLower(opts.PrimaryCategory))
+	opts.Tag = strings.TrimSpace(opts.Tag)
+	opts.Format = strings.TrimSpace(strings.ToLower(opts.Format))
+	opts.Language = strings.TrimSpace(strings.ToLower(opts.Language))
+	if user.Role != domain.RoleAdmin {
+		opts.OwnerID = user.ID
 	}
-	return a.store.ListBooksByOwner(user.ID)
+	items, _, err := a.store.ListBooksWithOptions(opts)
+	return items, err
 }
 
 // GetBook retrieves a book by ID.
@@ -170,6 +189,36 @@ func (a *App) GetBook(id string) (domain.Book, bool, error) {
 
 func (a *App) GetBookIncludingDeleted(id string) (domain.Book, bool, error) {
 	return a.store.GetBookIncludingDeleted(id)
+}
+
+func (a *App) UpdateBook(id string, title, primaryCategory string, tags []string) (domain.Book, error) {
+	book, ok, err := a.store.GetBook(id)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	if !ok {
+		return domain.Book{}, fmt.Errorf("book not found")
+	}
+	normalizedTitle, err := normalizeBookTitle(title)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	normalizedCategory, err := normalizePrimaryCategory(primaryCategory)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	normalizedTags, err := normalizeBookTags(tags)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	book.Title = normalizedTitle
+	book.PrimaryCategory = normalizedCategory
+	book.Tags = normalizedTags
+	book.UpdatedAt = time.Now().UTC()
+	if err := a.store.SaveBook(book); err != nil {
+		return domain.Book{}, fmt.Errorf("save book: %w", err)
+	}
+	return book, nil
 }
 
 // GetDownloadURL returns a pre-signed URL and original filename.

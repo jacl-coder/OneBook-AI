@@ -19,10 +19,14 @@ type UserModel struct {
 }
 
 type BookModel struct {
-	ID               string `gorm:"primaryKey"`
-	OwnerID          string `gorm:"not null;index"`
-	Title            string `gorm:"not null"`
-	OriginalFilename string `gorm:"not null"`
+	ID               string         `gorm:"primaryKey"`
+	OwnerID          string         `gorm:"not null;index"`
+	Title            string         `gorm:"not null"`
+	OriginalFilename string         `gorm:"not null"`
+	PrimaryCategory  string         `gorm:"not null;default:'other';index"`
+	Tags             datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	Format           string         `gorm:"not null;default:'';index"`
+	Language         string         `gorm:"not null;default:'unknown';index"`
 	StorageKey       string
 	Status           string `gorm:"not null"`
 	ErrorMessage     string

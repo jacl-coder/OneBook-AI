@@ -17,8 +17,15 @@ const (
 	idempotencyScopeReprocess = "book.reprocess"
 )
 
-func uploadRequestHash(ownerID, filename string, size int64) string {
-	return util.HashStrings(ownerID, filepath.Base(strings.TrimSpace(filename)), strconv.FormatInt(size, 10))
+func uploadRequestHash(ownerID, filename string, size int64, primaryCategory string, tags []string) string {
+	parts := []string{
+		ownerID,
+		filepath.Base(strings.TrimSpace(filename)),
+		strconv.FormatInt(size, 10),
+		strings.TrimSpace(primaryCategory),
+	}
+	parts = append(parts, tags...)
+	return util.HashStrings(parts...)
 }
 
 func (a *App) beginBookIdempotency(scope, actorID, key, requestHash string) (domain.IdempotencyRecord, domain.Book, bool, error) {

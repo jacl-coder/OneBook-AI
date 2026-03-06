@@ -720,6 +720,22 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, ctx auth
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	case http.MethodPatch:
+		var req updateBookRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "BOOK_INVALID_REQUEST")
+			return
+		}
+		updated, err := s.books.UpdateBook(util.RequestIDFromRequest(r), ctx.AccessToken, id, bookclient.UpdateBookRequest{
+			Title:           req.Title,
+			PrimaryCategory: req.PrimaryCategory,
+			Tags:            req.Tags,
+		})
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
 	default:
 		methodNotAllowed(w, r)
 	}
@@ -762,7 +778,12 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 		writeErrorWithCode(w, r, http.StatusBadRequest, "idempotency key required", "IDEMPOTENCY_KEY_REQUIRED")
 		return
 	}
-	book, replayed, err := s.books.UploadBook(util.RequestIDFromRequest(r), token, idempotencyKey, header.Filename, file)
+	book, replayed, err := s.books.UploadBook(util.RequestIDFromRequest(r), token, idempotencyKey, bookclient.UploadBookRequest{
+		Filename:        header.Filename,
+		PrimaryCategory: strings.TrimSpace(r.FormValue("primaryCategory")),
+		Tags:            r.MultipartForm.Value["tags[]"],
+		Reader:          file,
+	})
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -776,7 +797,7 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 }
 
 func (s *Server) handleListBooks(w http.ResponseWriter, r *http.Request, token string) {
-	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), token)
+	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), token, parseBookListParams(r))
 	if err != nil {
 		writeBookError(w, r, err)
 		return
@@ -1042,32 +1063,13 @@ func (s *Server) handleAdminBooks(w http.ResponseWriter, r *http.Request, ctx au
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid sort", "ADMIN_INVALID_SORT")
 		return
 	}
-	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), ctx.AccessToken)
+	params := parseBookListParams(r)
+	books, err := s.books.ListBooks(util.RequestIDFromRequest(r), ctx.AccessToken, params)
 	if err != nil {
 		writeBookError(w, r, err)
 		return
 	}
-	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
-	status := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
-	ownerID := strings.TrimSpace(r.URL.Query().Get("ownerId"))
-	filtered := make([]domain.Book, 0, len(books))
-	for _, item := range books {
-		if ownerID != "" && item.OwnerID != ownerID {
-			continue
-		}
-		if status != "" && strings.ToLower(string(item.Status)) != status {
-			continue
-		}
-		if query != "" {
-			title := strings.ToLower(item.Title)
-			name := strings.ToLower(item.OriginalFilename)
-			id := strings.ToLower(item.ID)
-			if !strings.Contains(title, query) && !strings.Contains(name, query) && !strings.Contains(id, query) {
-				continue
-			}
-		}
-		filtered = append(filtered, item)
-	}
+	filtered := books
 	orderDesc := strings.ToLower(strings.TrimSpace(sortOrder)) != "asc"
 	sortKey := strings.ToLower(strings.TrimSpace(sortBy))
 	if sortKey == "" {
@@ -1298,6 +1300,21 @@ func paginateBooks(items []domain.Book, page, pageSize int) []domain.Book {
 	return items[start:end]
 }
 
+func parseBookListParams(r *http.Request) bookclient.ListBooksParams {
+	query := r.URL.Query()
+	return bookclient.ListBooksParams{
+		Query:           strings.TrimSpace(query.Get("query")),
+		OwnerID:         strings.TrimSpace(query.Get("ownerId")),
+		Status:          strings.TrimSpace(query.Get("status")),
+		PrimaryCategory: strings.TrimSpace(query.Get("primaryCategory")),
+		Tag:             strings.TrimSpace(query.Get("tag")),
+		Format:          strings.TrimSpace(query.Get("format")),
+		Language:        strings.TrimSpace(query.Get("language")),
+		SortBy:          strings.TrimSpace(query.Get("sortBy")),
+		SortOrder:       strings.TrimSpace(query.Get("sortOrder")),
+	}
+}
+
 func toMap(input any) map[string]any {
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -1375,6 +1392,12 @@ type updateMeRequest struct {
 type changePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
+}
+
+type updateBookRequest struct {
+	Title           string   `json:"title"`
+	PrimaryCategory string   `json:"primaryCategory"`
+	Tags            []string `json:"tags"`
 }
 
 type adminUserUpdateRequest struct {

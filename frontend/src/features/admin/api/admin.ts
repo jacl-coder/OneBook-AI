@@ -1,6 +1,7 @@
 import { http } from '@/shared/lib/http/client'
 import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import type { AuthUser } from '@/features/auth/store/session'
+import type { BookFormat, BookLanguage, BookPrimaryCategory } from '@/features/library/books'
 
 export type AdminUser = AuthUser & {
   createdAt: string
@@ -14,6 +15,10 @@ export type AdminBook = {
   ownerId: string
   title: string
   originalFilename: string
+  primaryCategory: BookPrimaryCategory
+  tags: string[]
+  format: BookFormat | ''
+  language: BookLanguage
   status: AdminBookStatus
   errorMessage?: string
   sizeBytes: number
@@ -147,6 +152,10 @@ export type ListAdminBooksParams = {
   query?: string
   ownerId?: string
   status?: AdminBookStatus | ''
+  primaryCategory?: BookPrimaryCategory | ''
+  tag?: string
+  format?: BookFormat | ''
+  language?: BookLanguage | ''
   page?: number
   pageSize?: number
   sortBy?: 'updatedAt' | 'createdAt' | 'title' | ''

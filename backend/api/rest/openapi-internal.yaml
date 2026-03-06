@@ -653,6 +653,19 @@ components:
           type: string
         originalFilename:
           type: string
+        primaryCategory:
+          type: string
+          enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+        tags:
+          type: array
+          items:
+            type: string
+        format:
+          type: string
+          enum: [pdf, epub, txt]
+        language:
+          type: string
+          enum: [zh, en, other, unknown]
         status:
           type: string
           enum: [queued, processing, ready, failed]
@@ -667,7 +680,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, ownerId, title, originalFilename, status, sizeBytes, createdAt, updatedAt]
+      required: [id, ownerId, title, originalFilename, primaryCategory, tags, format, language, status, sizeBytes, createdAt, updatedAt]
     InternalBookFileResponse:
       type: object
       properties:

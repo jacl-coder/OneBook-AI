@@ -512,6 +512,35 @@ paths:
       summary: List books
       security:
         - sessionCookieAuth: []
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, processing, ready, failed]
+        - name: primaryCategory
+          in: query
+          schema:
+            type: string
+            enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [pdf, epub, txt]
+        - name: language
+          in: query
+          schema:
+            type: string
+            enum: [zh, en, other, unknown]
       responses:
         "200":
           description: OK
@@ -550,6 +579,13 @@ paths:
                 file:
                   type: string
                   format: binary
+                primaryCategory:
+                  type: string
+                  enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+                tags[]:
+                  type: array
+                  items:
+                    type: string
       responses:
         "200":
           description: Replay hit
@@ -635,6 +671,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags: [books]
+      summary: Update book metadata
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
           content:
@@ -1049,6 +1127,25 @@ paths:
           schema:
             type: string
             enum: [queued, processing, ready, failed]
+        - name: primaryCategory
+          in: query
+          schema:
+            type: string
+            enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [pdf, epub, txt]
+        - name: language
+          in: query
+          schema:
+            type: string
+            enum: [zh, en, other, unknown]
         - name: page
           in: query
           schema:
@@ -1788,6 +1885,19 @@ components:
           type: string
         originalFilename:
           type: string
+        primaryCategory:
+          type: string
+          enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+        tags:
+          type: array
+          items:
+            type: string
+        format:
+          type: string
+          enum: [pdf, epub, txt]
+        language:
+          type: string
+          enum: [zh, en, other, unknown]
         status:
           type: string
           enum: [queued, processing, ready, failed]
@@ -1808,11 +1918,28 @@ components:
           ownerId,
           title,
           originalFilename,
+          primaryCategory,
+          tags,
+          format,
+          language,
           status,
           sizeBytes,
           createdAt,
           updatedAt,
         ]
+    UpdateBookRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        primaryCategory:
+          type: string
+          enum: [course_material, research_paper, project_doc, policy_regulation, reference_book, personal_note, how_to_guide, other]
+        tags:
+          type: array
+          items:
+            type: string
+      required: [title, primaryCategory, tags]
     Source:
       type: object
       properties:

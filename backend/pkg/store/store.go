@@ -17,13 +17,17 @@ type UserListOptions struct {
 }
 
 type BookListOptions struct {
-	Query     string
-	OwnerID   string
-	Status    string
-	SortBy    string
-	SortOrder string
-	Page      int
-	PageSize  int
+	Query           string
+	OwnerID         string
+	Status          string
+	PrimaryCategory string
+	Tag             string
+	Format          string
+	Language        string
+	SortBy          string
+	SortOrder       string
+	Page            int
+	PageSize        int
 }
 
 type AdminAuditLogListOptions struct {

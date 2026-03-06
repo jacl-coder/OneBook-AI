@@ -38,6 +38,10 @@ type Book struct {
 	OwnerID          string     `json:"ownerId"`
 	Title            string     `json:"title"`
 	OriginalFilename string     `json:"originalFilename"`
+	PrimaryCategory  string     `json:"primaryCategory"`
+	Tags             []string   `json:"tags"`
+	Format           string     `json:"format"`
+	Language         string     `json:"language"`
 	StorageKey       string     `json:"-"`
 	Status           BookStatus `json:"status"`
 	ErrorMessage     string     `json:"errorMessage,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,6 +18,31 @@ import (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+}
+
+type UploadBookRequest struct {
+	Filename        string
+	PrimaryCategory string
+	Tags            []string
+	Reader          io.Reader
+}
+
+type ListBooksParams struct {
+	Query           string
+	OwnerID         string
+	Status          string
+	PrimaryCategory string
+	Tag             string
+	Format          string
+	Language        string
+	SortBy          string
+	SortOrder       string
+}
+
+type UpdateBookRequest struct {
+	Title           string   `json:"title"`
+	PrimaryCategory string   `json:"primaryCategory"`
+	Tags            []string `json:"tags"`
 }
 
 // APIError represents a book service error response.
@@ -38,15 +64,25 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) UploadBook(requestID, token, idempotencyKey, filename string, r io.Reader) (domain.Book, bool, error) {
+func (c *Client) UploadBook(requestID, token, idempotencyKey string, payload UploadBookRequest) (domain.Book, bool, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", filename)
+	part, err := writer.CreateFormFile("file", payload.Filename)
 	if err != nil {
 		return domain.Book{}, false, err
 	}
-	if _, err := io.Copy(part, r); err != nil {
+	if _, err := io.Copy(part, payload.Reader); err != nil {
 		return domain.Book{}, false, err
+	}
+	if strings.TrimSpace(payload.PrimaryCategory) != "" {
+		if err := writer.WriteField("primaryCategory", strings.TrimSpace(payload.PrimaryCategory)); err != nil {
+			return domain.Book{}, false, err
+		}
+	}
+	for _, tag := range payload.Tags {
+		if err := writer.WriteField("tags[]", strings.TrimSpace(tag)); err != nil {
+			return domain.Book{}, false, err
+		}
 	}
 	if err := writer.Close(); err != nil {
 		return domain.Book{}, false, err
@@ -69,8 +105,23 @@ func (c *Client) UploadBook(requestID, token, idempotencyKey, filename string, r
 	return book, replayed, nil
 }
 
-func (c *Client) ListBooks(requestID, token string) ([]domain.Book, error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/books", nil)
+func (c *Client) ListBooks(requestID, token string, params ListBooksParams) ([]domain.Book, error) {
+	reqURL, err := url.Parse(c.baseURL + "/books")
+	if err != nil {
+		return nil, err
+	}
+	query := reqURL.Query()
+	setQueryValue(query, "query", params.Query)
+	setQueryValue(query, "ownerId", params.OwnerID)
+	setQueryValue(query, "status", params.Status)
+	setQueryValue(query, "primaryCategory", params.PrimaryCategory)
+	setQueryValue(query, "tag", params.Tag)
+	setQueryValue(query, "format", params.Format)
+	setQueryValue(query, "language", params.Language)
+	setQueryValue(query, "sortBy", params.SortBy)
+	setQueryValue(query, "sortOrder", params.SortOrder)
+	reqURL.RawQuery = query.Encode()
+	req, err := http.NewRequest(http.MethodGet, reqURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +133,25 @@ func (c *Client) ListBooks(requestID, token string) ([]domain.Book, error) {
 		return nil, err
 	}
 	return resp.Items, nil
+}
+
+func (c *Client) UpdateBook(requestID, token, id string, payload UpdateBookRequest) (domain.Book, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return domain.Book{}, err
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%s/books/%s", c.baseURL, id), bytes.NewReader(body))
+	if err != nil {
+		return domain.Book{}, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	req.Header.Set("Content-Type", "application/json")
+	var book domain.Book
+	if _, err := c.do(req, &book); err != nil {
+		return domain.Book{}, err
+	}
+	return book, nil
 }
 
 func (c *Client) GetBook(requestID, token, id string) (domain.Book, error) {
@@ -200,6 +270,14 @@ func addIdempotencyKeyHeader(req *http.Request, key string) {
 		return
 	}
 	req.Header.Set("Idempotency-Key", key)
+}
+
+func setQueryValue(query url.Values, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	query.Set(key, value)
 }
 
 type listBooksResponse struct {
