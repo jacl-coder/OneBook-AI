@@ -133,6 +133,9 @@ func (q *RedisJobQueue) Enqueue(ctx context.Context, bookID string) (JobStatus, 
 	if bookID == "" {
 		return JobStatus{}, errors.New("bookId required")
 	}
+	if existing, ok, err := q.getUniqueJob(ctx, bookID); err == nil && ok {
+		return existing, nil
+	}
 	job := JobStatus{
 		ID:        util.NewID(),
 		BookID:    bookID,
@@ -153,8 +156,10 @@ func (q *RedisJobQueue) Enqueue(ctx context.Context, bookID string) (JobStatus, 
 			"book_id": job.BookID,
 		},
 	}).Err(); err != nil {
+		_ = q.client.Del(ctx, q.uniqueJobKey(bookID)).Err()
 		return JobStatus{}, err
 	}
+	_ = q.client.Set(ctx, q.uniqueJobKey(bookID), job.ID, q.jobTTL).Err()
 	return job, nil
 }
 
@@ -263,17 +268,18 @@ func (q *RedisJobQueue) handleMessage(ctx context.Context, consumer string, msg 
 		q.ackAndDel(ctx, msg.ID)
 		return
 	}
-	if err := handler(ctx, job); err == nil {
+	handlerErr := handler(ctx, job)
+	if handlerErr == nil {
 		_ = q.markDone(ctx, jobID)
 		q.ackAndDel(ctx, msg.ID)
 		return
 	}
 	if job.Attempts >= q.maxRetries {
-		_ = q.markFailed(ctx, jobID, err.Error())
+		_ = q.markFailed(ctx, jobID, handlerErr.Error())
 		q.ackAndDel(ctx, msg.ID)
 		return
 	}
-	_ = q.markQueued(ctx, jobID, err.Error())
+	_ = q.markQueued(ctx, jobID, handlerErr.Error())
 	if q.retryDelay > 0 {
 		select {
 		case <-ctx.Done():
@@ -337,6 +343,7 @@ func (q *RedisJobQueue) markQueued(ctx context.Context, jobID, errMsg string) er
 	job.Status = StatusQueued
 	job.ErrorMessage = errMsg
 	job.UpdatedAt = time.Now().UTC()
+	_ = q.client.Set(ctx, q.uniqueJobKey(job.BookID), job.ID, q.jobTTL).Err()
 	return q.writeStatus(ctx, job)
 }
 
@@ -348,6 +355,7 @@ func (q *RedisJobQueue) markDone(ctx context.Context, jobID string) error {
 	job.Status = StatusDone
 	job.ErrorMessage = ""
 	job.UpdatedAt = time.Now().UTC()
+	_ = q.client.Del(ctx, q.uniqueJobKey(job.BookID)).Err()
 	return q.writeStatus(ctx, job)
 }
 
@@ -359,6 +367,7 @@ func (q *RedisJobQueue) markFailed(ctx context.Context, jobID, errMsg string) er
 	job.Status = StatusFailed
 	job.ErrorMessage = errMsg
 	job.UpdatedAt = time.Now().UTC()
+	_ = q.client.Del(ctx, q.uniqueJobKey(job.BookID)).Err()
 	return q.writeStatus(ctx, job)
 }
 
@@ -382,6 +391,39 @@ func (q *RedisJobQueue) writeStatus(ctx context.Context, job JobStatus) error {
 
 func (q *RedisJobQueue) jobKey(jobID string) string {
 	return fmt.Sprintf("job:%s:%s", q.stream, jobID)
+}
+
+func (q *RedisJobQueue) uniqueJobKey(bookID string) string {
+	return fmt.Sprintf("job:%s:unique:%s", q.stream, strings.TrimSpace(bookID))
+}
+
+func (q *RedisJobQueue) getUniqueJob(ctx context.Context, bookID string) (JobStatus, bool, error) {
+	bookID = strings.TrimSpace(bookID)
+	if bookID == "" {
+		return JobStatus{}, false, nil
+	}
+	jobID, err := q.client.Get(ctx, q.uniqueJobKey(bookID)).Result()
+	if err == redis.Nil {
+		return JobStatus{}, false, nil
+	}
+	if err != nil {
+		return JobStatus{}, false, err
+	}
+	job, ok, err := q.GetJob(ctx, jobID)
+	if err != nil {
+		return JobStatus{}, false, err
+	}
+	if !ok {
+		_ = q.client.Del(ctx, q.uniqueJobKey(bookID)).Err()
+		return JobStatus{}, false, nil
+	}
+	switch job.Status {
+	case StatusQueued, StatusProcessing:
+		return job, true, nil
+	default:
+		_ = q.client.Del(ctx, q.uniqueJobKey(bookID)).Err()
+		return JobStatus{}, false, nil
+	}
 }
 
 func decodeJobStatus(jobID string, data map[string]string) (JobStatus, error) {

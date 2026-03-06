@@ -76,7 +76,7 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
 			return fmt.Errorf("create pgvector extension: %w", err)
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf(`
@@ -332,14 +332,14 @@ func (s *GormStore) SaveBook(b domain.Book) error {
 	model := bookToModel(b)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "storage_key", "status", "error_message", "size_bytes", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at"}),
 	}).Create(&model).Error
 }
 
 // SetStatus updates book status/error.
 func (s *GormStore) SetStatus(id string, status domain.BookStatus, errMsg string) error {
 	return s.db.Model(&BookModel{}).
-		Where("id = ?", id).
+		Where("id = ? AND deleted_at IS NULL", id).
 		Updates(map[string]any{
 			"status":        string(status),
 			"error_message": errMsg,
@@ -361,6 +361,7 @@ func (s *GormStore) ListBooksByOwner(ownerID string) ([]domain.Book, error) {
 func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, int, error) {
 	page, pageSize := normalizePage(opts.Page, opts.PageSize)
 	tx := s.db.Model(&BookModel{})
+	tx = tx.Where("deleted_at IS NULL")
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
 		like := "%" + strings.ToLower(query) + "%"
@@ -397,6 +398,7 @@ func (s *GormStore) ListBooksWithOptions(opts BookListOptions) ([]domain.Book, i
 func (s *GormStore) listBooks(order string, conds ...any) ([]domain.Book, error) {
 	var models []BookModel
 	tx := s.db.Order(order)
+	tx = tx.Where("deleted_at IS NULL")
 	if len(conds) > 0 {
 		tx = tx.Where(conds[0], conds[1:]...)
 	}
@@ -413,6 +415,17 @@ func (s *GormStore) listBooks(order string, conds ...any) ([]domain.Book, error)
 // GetBook retrieves a book.
 func (s *GormStore) GetBook(id string) (domain.Book, bool, error) {
 	var model BookModel
+	if err := s.db.Where("deleted_at IS NULL").First(&model, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.Book{}, false, nil
+		}
+		return domain.Book{}, false, err
+	}
+	return bookFromModel(model), true, nil
+}
+
+func (s *GormStore) GetBookIncludingDeleted(id string) (domain.Book, bool, error) {
+	var model BookModel
 	if err := s.db.First(&model, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return domain.Book{}, false, nil
@@ -422,9 +435,60 @@ func (s *GormStore) GetBook(id string) (domain.Book, bool, error) {
 	return bookFromModel(model), true, nil
 }
 
+func (s *GormStore) ListBooksPendingCleanup(limit int) ([]domain.Book, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var models []BookModel
+	if err := s.db.Where("deleted_at IS NOT NULL AND cleanup_status IN ?", []string{string(domain.BookCleanupStatusQueued), string(domain.BookCleanupStatusFailed)}).
+		Order("cleanup_updated_at ASC NULLS FIRST").
+		Limit(limit).
+		Find(&models).Error; err != nil {
+		return nil, err
+	}
+	items := make([]domain.Book, 0, len(models))
+	for _, model := range models {
+		items = append(items, bookFromModel(model))
+	}
+	return items, nil
+}
+
+func (s *GormStore) MarkBookDeleted(id string, cleanupStatus domain.BookCleanupStatus) error {
+	now := time.Now().UTC()
+	return s.db.Model(&BookModel{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]any{
+			"deleted_at":         &now,
+			"cleanup_status":     string(cleanupStatus),
+			"cleanup_error":      "",
+			"cleanup_updated_at": &now,
+			"updated_at":         now,
+		}).Error
+}
+
+func (s *GormStore) UpdateBookCleanup(id string, status domain.BookCleanupStatus, errMsg string, incrementAttempts bool) error {
+	now := time.Now().UTC()
+	updates := map[string]any{
+		"cleanup_status":     string(status),
+		"cleanup_error":      strings.TrimSpace(errMsg),
+		"cleanup_updated_at": &now,
+		"updated_at":         now,
+	}
+	if incrementAttempts {
+		return s.db.Model(&BookModel{}).
+			Where("id = ?", id).
+			Updates(updates).
+			UpdateColumn("cleanup_attempts", gorm.Expr("cleanup_attempts + 1")).Error
+	}
+	return s.db.Model(&BookModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // DeleteBook removes book and messages (chunks handled by FK cascade).
 func (s *GormStore) DeleteBook(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&ChunkModel{}, "book_id = ?", id).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&ConversationModel{}, "book_id = ?", id).Error; err != nil {
 			return err
 		}
@@ -680,14 +744,14 @@ func (s *GormStore) GetAdminOverview(windowStart time.Time, windowHours int) (do
 		return domain.AdminOverview{}, err
 	}
 	var totalBooks, booksCreated24h, booksFailed24h int64
-	if err := s.db.Model(&BookModel{}).Count(&totalBooks).Error; err != nil {
+	if err := s.db.Model(&BookModel{}).Where("deleted_at IS NULL").Count(&totalBooks).Error; err != nil {
 		return domain.AdminOverview{}, err
 	}
-	if err := s.db.Model(&BookModel{}).Where("created_at >= ?", start).Count(&booksCreated24h).Error; err != nil {
+	if err := s.db.Model(&BookModel{}).Where("deleted_at IS NULL AND created_at >= ?", start).Count(&booksCreated24h).Error; err != nil {
 		return domain.AdminOverview{}, err
 	}
 	if err := s.db.Model(&BookModel{}).
-		Where("status = ? AND updated_at >= ?", string(domain.StatusFailed), start).
+		Where("deleted_at IS NULL AND status = ? AND updated_at >= ?", string(domain.StatusFailed), start).
 		Count(&booksFailed24h).Error; err != nil {
 		return domain.AdminOverview{}, err
 	}
@@ -696,6 +760,7 @@ func (s *GormStore) GetAdminOverview(windowStart time.Time, windowHours int) (do
 		Count  int64
 	}
 	if err := s.db.Model(&BookModel{}).
+		Where("deleted_at IS NULL").
 		Select("status, COUNT(*) AS count").
 		Group("status").
 		Scan(&grouped).Error; err != nil {
@@ -815,7 +880,7 @@ func (s *GormStore) SaveEvalRun(run domain.EvalRun) error {
 	return s.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"dataset_id", "status", "mode", "retrieval_mode", "params", "gate_mode", "gate_status",
+			"dataset_id", "fingerprint", "status", "mode", "retrieval_mode", "params", "gate_mode", "gate_status",
 			"summary_metrics", "warnings", "artifacts", "stage_summaries", "progress", "error_message",
 			"started_at", "finished_at", "created_by", "updated_at",
 		}),
@@ -826,6 +891,23 @@ func (s *GormStore) SaveEvalRun(run domain.EvalRun) error {
 func (s *GormStore) GetEvalRun(id string) (domain.EvalRun, bool, error) {
 	var model EvalRunModel
 	if err := s.db.First(&model, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.EvalRun{}, false, nil
+		}
+		return domain.EvalRun{}, false, err
+	}
+	item, err := evalRunFromModel(model)
+	if err != nil {
+		return domain.EvalRun{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *GormStore) GetActiveEvalRunByFingerprint(fingerprint string) (domain.EvalRun, bool, error) {
+	var model EvalRunModel
+	if err := s.db.Where("fingerprint = ? AND status IN ?", strings.TrimSpace(fingerprint), []string{string(domain.EvalRunStatusQueued), string(domain.EvalRunStatusRunning)}).
+		Order("created_at DESC").
+		First(&model).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return domain.EvalRun{}, false, nil
 		}
@@ -959,6 +1041,28 @@ func (s *GormStore) GetAdminEvalOverview(windowStart time.Time) (domain.AdminEva
 	}, nil
 }
 
+func (s *GormStore) SaveIdempotencyRecord(record domain.IdempotencyRecord) error {
+	model := idempotencyRecordToModel(record)
+	return s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"scope", "actor_id", "idempotency_key", "request_hash", "resource_type", "resource_id", "status_code", "state", "updated_at",
+		}),
+	}).Create(&model).Error
+}
+
+func (s *GormStore) GetIdempotencyRecord(scope, actorID, key string) (domain.IdempotencyRecord, bool, error) {
+	var model IdempotencyRecordModel
+	if err := s.db.Where("scope = ? AND actor_id = ? AND idempotency_key = ?", strings.TrimSpace(scope), strings.TrimSpace(actorID), strings.TrimSpace(key)).
+		First(&model).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.IdempotencyRecord{}, false, nil
+		}
+		return domain.IdempotencyRecord{}, false, err
+	}
+	return idempotencyRecordFromModel(model), true, nil
+}
+
 func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
 	if len(embedding) == 0 {
 		return fmt.Errorf("embedding vector is empty")
@@ -1060,6 +1164,11 @@ func bookToModel(b domain.Book) BookModel {
 		SizeBytes:        b.SizeBytes,
 		CreatedAt:        b.CreatedAt,
 		UpdatedAt:        b.UpdatedAt,
+		DeletedAt:        normalizeTimePtr(b.DeletedAt),
+		CleanupStatus:    strings.TrimSpace(b.CleanupStatus),
+		CleanupError:     strings.TrimSpace(b.CleanupError),
+		CleanupAttempts:  b.CleanupAttempts,
+		CleanupUpdatedAt: normalizeTimePtr(b.CleanupUpdatedAt),
 	}
 }
 
@@ -1075,6 +1184,11 @@ func bookFromModel(m BookModel) domain.Book {
 		SizeBytes:        m.SizeBytes,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
+		DeletedAt:        m.DeletedAt,
+		CleanupStatus:    m.CleanupStatus,
+		CleanupError:     m.CleanupError,
+		CleanupAttempts:  m.CleanupAttempts,
+		CleanupUpdatedAt: m.CleanupUpdatedAt,
 	}
 }
 
@@ -1296,6 +1410,7 @@ func evalRunToModel(run domain.EvalRun) (EvalRunModel, error) {
 	return EvalRunModel{
 		ID:             strings.TrimSpace(run.ID),
 		DatasetID:      strings.TrimSpace(run.DatasetID),
+		Fingerprint:    strings.TrimSpace(run.Fingerprint),
 		Status:         strings.TrimSpace(string(run.Status)),
 		Mode:           strings.TrimSpace(string(run.Mode)),
 		RetrievalMode:  strings.TrimSpace(string(run.RetrievalMode)),
@@ -1340,6 +1455,7 @@ func evalRunFromModel(model EvalRunModel) (domain.EvalRun, error) {
 	return domain.EvalRun{
 		ID:             model.ID,
 		DatasetID:      model.DatasetID,
+		Fingerprint:    model.Fingerprint,
 		Status:         domain.EvalRunStatus(model.Status),
 		Mode:           domain.EvalRunMode(model.Mode),
 		RetrievalMode:  domain.EvalRetrievalMode(model.RetrievalMode),
@@ -1358,6 +1474,38 @@ func evalRunFromModel(model EvalRunModel) (domain.EvalRun, error) {
 		CreatedAt:      model.CreatedAt,
 		UpdatedAt:      model.UpdatedAt,
 	}, nil
+}
+
+func idempotencyRecordToModel(record domain.IdempotencyRecord) IdempotencyRecordModel {
+	return IdempotencyRecordModel{
+		ID:             strings.TrimSpace(record.ID),
+		Scope:          strings.TrimSpace(record.Scope),
+		ActorID:        strings.TrimSpace(record.ActorID),
+		IdempotencyKey: strings.TrimSpace(record.IdempotencyKey),
+		RequestHash:    strings.TrimSpace(record.RequestHash),
+		ResourceType:   strings.TrimSpace(record.ResourceType),
+		ResourceID:     strings.TrimSpace(record.ResourceID),
+		StatusCode:     record.StatusCode,
+		State:          strings.TrimSpace(string(record.State)),
+		CreatedAt:      record.CreatedAt.UTC(),
+		UpdatedAt:      record.UpdatedAt.UTC(),
+	}
+}
+
+func idempotencyRecordFromModel(model IdempotencyRecordModel) domain.IdempotencyRecord {
+	return domain.IdempotencyRecord{
+		ID:             model.ID,
+		Scope:          model.Scope,
+		ActorID:        model.ActorID,
+		IdempotencyKey: model.IdempotencyKey,
+		RequestHash:    model.RequestHash,
+		ResourceType:   model.ResourceType,
+		ResourceID:     model.ResourceID,
+		StatusCode:     model.StatusCode,
+		State:          domain.IdempotencyState(model.State),
+		CreatedAt:      model.CreatedAt,
+		UpdatedAt:      model.UpdatedAt,
+	}
 }
 
 func marshalOptionalJSON(input map[string]any) (datatypes.JSON, error) {

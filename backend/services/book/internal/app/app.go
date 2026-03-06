@@ -88,7 +88,7 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("init qdrant client: %w", err)
 	}
 
-	return &App{
+	app := &App{
 		store:             dataStore,
 		objects:           objStore,
 		ingest:            ingestClient,
@@ -96,19 +96,29 @@ func New(cfg Config) (*App, error) {
 		presignExpiry:     15 * time.Minute,
 		maxUploadBytes:    normalizeMaxBytes(cfg.MaxUploadBytes),
 		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
-	}, nil
+	}
+	app.startCleanupWorker()
+	return app, nil
 }
 
 // UploadBook stores a new book file and enqueues simulated processing.
-func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size int64) (domain.Book, error) {
+func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size int64, idempotencyKey string) (domain.Book, bool, error) {
 	if filename == "" {
-		return domain.Book{}, errors.New("filename required")
+		return domain.Book{}, false, errors.New("filename required")
 	}
 	if !a.isExtensionAllowed(filename) {
-		return domain.Book{}, fmt.Errorf("unsupported file type")
+		return domain.Book{}, false, fmt.Errorf("unsupported file type")
 	}
 	if a.maxUploadBytes > 0 && size > 0 && size > a.maxUploadBytes {
-		return domain.Book{}, fmt.Errorf("file too large")
+		return domain.Book{}, false, fmt.Errorf("file too large")
+	}
+	requestHash := uploadRequestHash(owner.ID, filename, size)
+	record, replayBook, replayed, err := a.beginBookIdempotency(idempotencyScopeUpload, owner.ID, idempotencyKey, requestHash)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	if replayed {
+		return replayBook, true, nil
 	}
 	id := util.NewID()
 	storageKey := buildStorageKey(id, filename)
@@ -128,17 +138,21 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 		contentType = "application/octet-stream"
 	}
 	if err := a.objects.Put(context.Background(), storageKey, r, size, contentType); err != nil {
-		return domain.Book{}, fmt.Errorf("save file: %w", err)
+		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
+		return domain.Book{}, false, fmt.Errorf("save file: %w", err)
 	}
 	if err := a.store.SaveBook(book); err != nil {
 		_ = a.objects.Delete(context.Background(), storageKey)
-		return domain.Book{}, fmt.Errorf("save book: %w", err)
+		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
+		return domain.Book{}, false, fmt.Errorf("save book: %w", err)
 	}
 	if err := a.ingest.Enqueue(id); err != nil {
 		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
-		return domain.Book{}, fmt.Errorf("enqueue ingest: %w", err)
+		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
+		return domain.Book{}, false, fmt.Errorf("enqueue ingest: %w", err)
 	}
-	return book, nil
+	_ = a.completeBookIdempotency(record, "book", book.ID, 201)
+	return book, false, nil
 }
 
 // ListBooks returns all books for the current user scope.
@@ -152,6 +166,10 @@ func (a *App) ListBooks(user domain.User) ([]domain.Book, error) {
 // GetBook retrieves a book by ID.
 func (a *App) GetBook(id string) (domain.Book, bool, error) {
 	return a.store.GetBook(id)
+}
+
+func (a *App) GetBookIncludingDeleted(id string) (domain.Book, bool, error) {
+	return a.store.GetBookIncludingDeleted(id)
 }
 
 // GetDownloadURL returns a pre-signed URL and original filename.
@@ -180,56 +198,68 @@ func (a *App) UpdateStatus(id string, status domain.BookStatus, errMsg string) e
 
 // DeleteBook removes book metadata and files.
 func (a *App) DeleteBook(id string) error {
-	book, ok, err := a.store.GetBook(id)
+	book, ok, err := a.store.GetBookIncludingDeleted(id)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return nil
 	}
-	if err := a.store.DeleteBook(id); err != nil {
-		return err
-	}
-	if a.search != nil {
-		if err := a.search.DeleteByBook(context.Background(), id); err != nil {
-			return err
+	if book.DeletedAt != nil {
+		if domain.BookCleanupStatus(book.CleanupStatus) == domain.BookCleanupStatusFailed {
+			return a.store.UpdateBookCleanup(id, domain.BookCleanupStatusQueued, "", false)
 		}
+		return nil
 	}
-	if err := a.objects.Delete(context.Background(), book.StorageKey); err != nil {
-		return err
-	}
-	return nil
+	return a.store.MarkBookDeleted(id, domain.BookCleanupStatusQueued)
 }
 
 // ReprocessBook re-enqueues ingest for an existing book and resets status to queued.
-func (a *App) ReprocessBook(id string) (domain.Book, error) {
+func (a *App) ReprocessBook(actor domain.User, id, idempotencyKey string) (domain.Book, bool, error) {
 	_, ok, err := a.store.GetBook(id)
 	if err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	if !ok {
-		return domain.Book{}, fmt.Errorf("book not found")
+		return domain.Book{}, false, fmt.Errorf("book not found")
+	}
+	requestHash := util.HashStrings(id, "{}")
+	record, replayBook, replayed, err := a.beginBookIdempotency(idempotencyScopeReprocess, actor.ID, idempotencyKey, requestHash)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	if replayed {
+		return replayBook, true, nil
+	}
+	current, ok, err := a.store.GetBook(id)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	if !ok {
+		return domain.Book{}, false, fmt.Errorf("book not found")
+	}
+	if current.Status == domain.StatusQueued || current.Status == domain.StatusProcessing {
+		_ = a.completeBookIdempotency(record, "book", current.ID, 200)
+		return current, false, nil
 	}
 	if err := a.store.SetStatus(id, domain.StatusQueued, ""); err != nil {
-		return domain.Book{}, err
-	}
-	if a.search != nil {
-		if err := a.search.DeleteByBook(context.Background(), id); err != nil {
-			return domain.Book{}, err
-		}
+		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
+		return domain.Book{}, false, err
 	}
 	if err := a.ingest.Enqueue(id); err != nil {
 		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
-		return domain.Book{}, fmt.Errorf("enqueue ingest: %w", err)
+		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
+		return domain.Book{}, false, fmt.Errorf("enqueue ingest: %w", err)
 	}
 	updated, ok, err := a.store.GetBook(id)
 	if err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	if !ok {
-		return domain.Book{}, fmt.Errorf("book not found")
+		return domain.Book{}, false, fmt.Errorf("book not found")
 	}
-	return updated, nil
+	_ = a.completeBookIdempotency(record, "book", updated.ID, 200)
+	return updated, false, nil
 }
 
 func titleFromName(name string) string {

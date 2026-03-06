@@ -155,9 +155,6 @@ func tokenOverlap(left, right []string) float64 {
 }
 
 func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question string) ([]retrievalHit, *domain.RetrievalDebug, error) {
-	if err := a.search.EnsureCollection(ctx); err != nil {
-		return nil, nil, fmt.Errorf("ensure qdrant collection: %w", err)
-	}
 	query := retrieval.NormalizeText(question)
 	language := retrieval.DetectLanguage(query)
 	queries, err := a.rewriter.Rewrite(ctx, query, language)

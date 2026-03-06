@@ -1,4 +1,5 @@
 import { http } from '@/shared/lib/http/client'
+import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import type { AuthUser } from '@/features/auth/store/session'
 
 export type AdminUser = AuthUser & {
@@ -260,7 +261,11 @@ export async function deleteAdminBook(id: string): Promise<{ status: string }> {
 }
 
 export async function reprocessAdminBook(id: string): Promise<AdminBook> {
-  const { data } = await http.post<AdminBook>(`/api/admin/books/${id}/reprocess`, {})
+  const { data } = await http.post<AdminBook>(`/api/admin/books/${id}/reprocess`, {}, {
+    headers: {
+      'Idempotency-Key': createIdempotencyKey(),
+    },
+  })
   return data
 }
 
@@ -328,7 +333,11 @@ export async function listAdminEvalRuns(params: ListAdminEvalRunsParams): Promis
 }
 
 export async function createAdminEvalRun(payload: CreateAdminEvalRunPayload): Promise<AdminEvalRun> {
-  const { data } = await http.post<AdminEvalRun>('/api/admin/evals/runs', payload)
+  const { data } = await http.post<AdminEvalRun>('/api/admin/evals/runs', payload, {
+    headers: {
+      'Idempotency-Key': createIdempotencyKey(),
+    },
+  })
   return data
 }
 

@@ -478,7 +478,7 @@ func (c *Client) AdminCreateEvalDatasetMultipart(requestID, token string, fields
 		return domain.EvalDataset{}, err
 	}
 	var out domain.EvalDataset
-	if err := c.doBody(http.MethodPost, "/auth/admin/evals/datasets", requestID, token, &body, writer.FormDataContentType(), &out); err != nil {
+	if _, err := c.doBody(http.MethodPost, "/auth/admin/evals/datasets", requestID, token, "", &body, writer.FormDataContentType(), &out); err != nil {
 		return domain.EvalDataset{}, err
 	}
 	return out, nil
@@ -535,12 +535,13 @@ func (c *Client) AdminListEvalRuns(requestID, token string, opts AdminListEvalRu
 	return resp, nil
 }
 
-func (c *Client) AdminCreateEvalRun(requestID, token string, req AdminCreateEvalRunRequest) (domain.EvalRun, error) {
+func (c *Client) AdminCreateEvalRun(requestID, token, idempotencyKey string, req AdminCreateEvalRunRequest) (domain.EvalRun, bool, error) {
 	var out domain.EvalRun
-	if err := c.doJSON(http.MethodPost, "/auth/admin/evals/runs", requestID, token, req, &out); err != nil {
-		return domain.EvalRun{}, err
+	replayed, err := c.doJSONWithIdempotency(http.MethodPost, "/auth/admin/evals/runs", requestID, token, idempotencyKey, req, &out)
+	if err != nil {
+		return domain.EvalRun{}, false, err
 	}
-	return out, nil
+	return out, replayed, nil
 }
 
 func (c *Client) AdminGetEvalRun(requestID, token, id string) (domain.EvalRun, error) {
@@ -573,24 +574,29 @@ func (c *Client) AdminDownloadEvalArtifact(requestID, token, runID, name string)
 }
 
 func (c *Client) doJSON(method, path, requestID, token string, payload any, out any) error {
+	_, err := c.doJSONWithIdempotency(method, path, requestID, token, "", payload, out)
+	return err
+}
+
+func (c *Client) doJSONWithIdempotency(method, path, requestID, token, idempotencyKey string, payload any, out any) (bool, error) {
 	var body io.Reader
 	contentType := ""
 	if payload != nil {
 		data, err := json.Marshal(payload)
 		if err != nil {
-			return err
+			return false, err
 		}
 		body = bytes.NewReader(data)
 		contentType = "application/json"
 	}
-	return c.doBody(method, path, requestID, token, body, contentType, out)
+	return c.doBody(method, path, requestID, token, idempotencyKey, body, contentType, out)
 }
 
-func (c *Client) doBody(method, path, requestID, token string, body io.Reader, contentType string, out any) error {
+func (c *Client) doBody(method, path, requestID, token, idempotencyKey string, body io.Reader, contentType string, out any) (bool, error) {
 	url := c.baseURL + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if strings.TrimSpace(contentType) != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -601,11 +607,15 @@ func (c *Client) doBody(method, path, requestID, token string, body io.Reader, c
 	if strings.TrimSpace(requestID) != "" {
 		req.Header.Set("X-Request-Id", requestID)
 	}
+	if strings.TrimSpace(idempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
+	replayed := strings.EqualFold(strings.TrimSpace(resp.Header.Get("Idempotency-Replayed")), "true")
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`
@@ -616,15 +626,15 @@ func (c *Client) doBody(method, path, requestID, token string, body io.Reader, c
 		if msg == "" {
 			msg = resp.Status
 		}
-		return &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
+		return replayed, &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
 	}
 	if out == nil {
-		return nil
+		return replayed, nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return err
+		return replayed, err
 	}
-	return nil
+	return replayed, nil
 }
 
 func (c *Client) doBytes(method, path, requestID, token string) ([]byte, string, error) {

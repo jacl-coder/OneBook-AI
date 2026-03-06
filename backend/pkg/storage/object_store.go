@@ -42,7 +42,10 @@ func NewMinioStore(endpoint, accessKey, secretKey, bucket string, useSSL bool) (
 	}
 	if !exists {
 		if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
-			return nil, fmt.Errorf("create bucket: %w", err)
+			resp := minio.ToErrorResponse(err)
+			if resp.Code != "BucketAlreadyOwnedByYou" && resp.Code != "BucketAlreadyExists" {
+				return nil, fmt.Errorf("create bucket: %w", err)
+			}
 		}
 	}
 	return &MinioStore{client: client, bucket: bucket}, nil
@@ -73,6 +76,10 @@ func (m *MinioStore) PresignGet(ctx context.Context, key string, expiry time.Dur
 // Delete removes an object.
 func (m *MinioStore) Delete(ctx context.Context, key string) error {
 	if err := m.client.RemoveObject(ctx, m.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		resp := minio.ToErrorResponse(err)
+		if resp.Code == "NoSuchKey" || resp.Code == "NoSuchBucket" || resp.Code == "NoSuchObject" {
+			return nil
+		}
 		return fmt.Errorf("delete object: %w", err)
 	}
 	return nil
