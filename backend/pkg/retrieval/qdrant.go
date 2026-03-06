@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type SparseVector struct {
@@ -38,6 +40,8 @@ type Client struct {
 	denseSize  int
 	httpClient *http.Client
 }
+
+var qdrantPointNamespace = uuid.MustParse("2b6d13ed-63bb-4d0d-9a8e-2e6bdb5d2f15")
 
 type apiError struct {
 	Status int
@@ -85,7 +89,15 @@ func (c *Client) EnsureCollection(ctx context.Context) error {
 			"sparse": map[string]any{},
 		},
 	}
-	return c.do(ctx, http.MethodPut, "/collections/"+url.PathEscape(c.collection), reqBody, nil)
+	err := c.do(ctx, http.MethodPut, "/collections/"+url.PathEscape(c.collection), reqBody, nil)
+	var apiErr *apiError
+	if err != nil && errorAs(err, &apiErr) && apiErr.Status == http.StatusConflict {
+		body := strings.ToLower(apiErr.Body)
+		if strings.Contains(body, "already exists") || strings.Contains(body, "collection") {
+			return nil
+		}
+	}
+	return err
 }
 
 func (c *Client) UpsertPoints(ctx context.Context, points []UpsertPoint) error {
@@ -95,7 +107,7 @@ func (c *Client) UpsertPoints(ctx context.Context, points []UpsertPoint) error {
 	payloadPoints := make([]map[string]any, 0, len(points))
 	for _, point := range points {
 		payloadPoints = append(payloadPoints, map[string]any{
-			"id": point.ID,
+			"id": qdrantPointID(point.ID, point.Payload),
 			"vector": map[string]any{
 				"dense":  point.Dense,
 				"sparse": point.Sparse,
@@ -172,6 +184,10 @@ func (c *Client) query(ctx context.Context, bookID string, payload map[string]an
 	}
 	var resp qdrantQueryResponse
 	if err := c.do(ctx, http.MethodPost, "/collections/"+url.PathEscape(c.collection)+"/points/query", payload, &resp); err != nil {
+		var apiErr *apiError
+		if errorAs(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return resp.Points(), nil
@@ -256,10 +272,32 @@ func parseQdrantPoints(items []any) []Point {
 		if payload, ok := row["payload"].(map[string]any); ok {
 			point.Payload = payload
 			point.Content = anyString(payload["content"])
+			if chunkID := anyString(payload["chunk_id"]); chunkID != "" {
+				point.ID = chunkID
+			}
 		}
 		points = append(points, point)
 	}
 	return points
+}
+
+func qdrantPointID(sourceID string, payload map[string]any) string {
+	bookID := strings.TrimSpace(anyString(payload["book_id"]))
+	chunkID := strings.TrimSpace(anyString(payload["chunk_id"]))
+	baseID := strings.TrimSpace(sourceID)
+	if chunkID != "" {
+		baseID = chunkID
+	}
+	if baseID == "" {
+		baseID = strings.TrimSpace(anyString(payload["content_sha256"]))
+	}
+	if bookID != "" {
+		baseID = bookID + ":" + baseID
+	}
+	if baseID == "" {
+		baseID = "onebookai-qdrant-point"
+	}
+	return uuid.NewSHA1(qdrantPointNamespace, []byte(baseID)).String()
 }
 
 func anyString(value any) string {

@@ -757,9 +757,19 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token 
 		writeErrorWithCode(w, r, http.StatusBadRequest, "unsupported file type", "BOOK_UNSUPPORTED_FILE_TYPE")
 		return
 	}
-	book, err := s.books.UploadBook(util.RequestIDFromRequest(r), token, header.Filename, file)
+	idempotencyKey := util.IdempotencyKeyFromRequest(r)
+	if idempotencyKey == "" {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "idempotency key required", "IDEMPOTENCY_KEY_REQUIRED")
+		return
+	}
+	book, replayed, err := s.books.UploadBook(util.RequestIDFromRequest(r), token, idempotencyKey, header.Filename, file)
 	if err != nil {
 		writeBookError(w, r, err)
+		return
+	}
+	if replayed {
+		w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+		writeJSON(w, http.StatusOK, book)
 		return
 	}
 	writeJSON(w, http.StatusCreated, book)
@@ -1120,12 +1130,15 @@ func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx
 		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "ADMIN_NOT_FOUND")
 		return
 	}
-	before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
-	if err != nil {
-		writeBookError(w, r, err)
-		return
-	}
 	if r.Method == http.MethodDelete && action == "" {
+		before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			if apiErr, ok := err.(*bookclient.APIError); !ok || apiErr.Status != http.StatusNotFound {
+				writeBookError(w, r, err)
+				return
+			}
+			before = domain.Book{}
+		}
 		if err := s.books.DeleteBook(util.RequestIDFromRequest(r), ctx.AccessToken, id); err != nil {
 			writeBookError(w, r, err)
 			return
@@ -1149,7 +1162,17 @@ func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx
 		return
 	}
 	if r.Method == http.MethodPost && action == "reprocess" {
-		updated, err := s.books.ReprocessBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		idempotencyKey := util.IdempotencyKeyFromRequest(r)
+		if idempotencyKey == "" {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "idempotency key required", "IDEMPOTENCY_KEY_REQUIRED")
+			return
+		}
+		updated, replayed, err := s.books.ReprocessBook(util.RequestIDFromRequest(r), ctx.AccessToken, idempotencyKey, id)
 		if err != nil {
 			writeBookError(w, r, err)
 			return
@@ -1166,6 +1189,9 @@ func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx
 		}); err != nil {
 			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
 			return
+		}
+		if replayed {
+			w.Header().Set(util.HeaderIdempotencyReplayed, "true")
 		}
 		writeJSON(w, http.StatusOK, updated)
 		return

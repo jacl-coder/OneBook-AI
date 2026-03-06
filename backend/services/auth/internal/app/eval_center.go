@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,11 +45,12 @@ type EvalDatasetUpdateInput struct {
 }
 
 type EvalRunCreateInput struct {
-	DatasetID     string
-	Mode          domain.EvalRunMode
-	RetrievalMode domain.EvalRetrievalMode
-	GateMode      string
-	Params        map[string]any
+	DatasetID      string
+	Mode           domain.EvalRunMode
+	RetrievalMode  domain.EvalRetrievalMode
+	GateMode       string
+	Params         map[string]any
+	IdempotencyKey string
 }
 
 func newEvalCenter(dataStore store.Store, baseDir string, pollInterval time.Duration) (*evalCenter, error) {
@@ -100,6 +102,15 @@ func (c *evalCenter) processNext(ctx context.Context) {
 }
 
 func (c *evalCenter) executeRun(ctx context.Context, run domain.EvalRun) error {
+	if active, ok, err := c.store.GetActiveEvalRunByFingerprint(run.Fingerprint); err == nil && ok && active.ID != run.ID && active.Status == domain.EvalRunStatusRunning {
+		now := time.Now().UTC()
+		run.Status = domain.EvalRunStatusCanceled
+		run.Progress = 100
+		run.ErrorMessage = "duplicate fingerprint suppressed"
+		run.FinishedAt = &now
+		run.UpdatedAt = now
+		return c.store.SaveEvalRun(run)
+	}
 	now := time.Now().UTC()
 	run.Status = domain.EvalRunStatusRunning
 	run.StartedAt = &now
@@ -455,14 +466,14 @@ func (a *App) AdminGetEvalRun(id string) (domain.EvalRun, error) {
 	return item, nil
 }
 
-func (a *App) AdminCreateEvalRun(actor domain.User, input EvalRunCreateInput) (domain.EvalRun, error) {
+func (a *App) AdminCreateEvalRun(actor domain.User, input EvalRunCreateInput) (domain.EvalRun, bool, error) {
 	if a.evals == nil {
-		return domain.EvalRun{}, fmt.Errorf("eval center disabled")
+		return domain.EvalRun{}, false, fmt.Errorf("eval center disabled")
 	}
 	if _, ok, err := a.store.GetEvalDataset(strings.TrimSpace(input.DatasetID)); err != nil {
-		return domain.EvalRun{}, err
+		return domain.EvalRun{}, false, err
 	} else if !ok {
-		return domain.EvalRun{}, fmt.Errorf("dataset not found")
+		return domain.EvalRun{}, false, fmt.Errorf("dataset not found")
 	}
 	mode := input.Mode
 	if mode == "" {
@@ -476,9 +487,24 @@ func (a *App) AdminCreateEvalRun(actor domain.User, input EvalRunCreateInput) (d
 	if gateMode == "" {
 		gateMode = "warn"
 	}
+	fingerprint := buildEvalRunFingerprint(strings.TrimSpace(input.DatasetID), mode, retrievalMode, gateMode, input.Params)
+	record, replayRun, replayed, err := a.beginEvalIdempotency(actor.ID, strings.TrimSpace(input.IdempotencyKey), fingerprint, input)
+	if err != nil {
+		return domain.EvalRun{}, false, err
+	}
+	if replayed {
+		return replayRun, true, nil
+	}
+	if existing, ok, err := a.store.GetActiveEvalRunByFingerprint(fingerprint); err != nil {
+		return domain.EvalRun{}, false, err
+	} else if ok {
+		_ = a.completeEvalIdempotency(record, existing.ID, http.StatusOK)
+		return existing, true, nil
+	}
 	run := domain.EvalRun{
 		ID:            util.NewID(),
 		DatasetID:     strings.TrimSpace(input.DatasetID),
+		Fingerprint:   fingerprint,
 		Status:        domain.EvalRunStatusQueued,
 		Mode:          mode,
 		RetrievalMode: retrievalMode,
@@ -490,9 +516,11 @@ func (a *App) AdminCreateEvalRun(actor domain.User, input EvalRunCreateInput) (d
 		UpdatedAt:     time.Now().UTC(),
 	}
 	if err := a.store.SaveEvalRun(run); err != nil {
-		return domain.EvalRun{}, err
+		_ = a.markEvalIdempotencyFailed(record, http.StatusInternalServerError)
+		return domain.EvalRun{}, false, err
 	}
-	return run, nil
+	_ = a.completeEvalIdempotency(record, run.ID, http.StatusCreated)
+	return run, false, nil
 }
 
 func (a *App) AdminCancelEvalRun(id string) (domain.EvalRun, error) {

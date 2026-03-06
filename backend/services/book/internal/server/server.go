@@ -164,23 +164,36 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 		return
 	}
 
-	book, ok, err := s.app.GetBook(id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !ok {
-		notFound(w, "book not found")
-		return
-	}
-	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
-		writeError(w, http.StatusForbidden, "forbidden")
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
+		book, ok, err := s.app.GetBook(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			notFound(w, "book not found")
+			return
+		}
+		if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		writeJSON(w, http.StatusOK, book)
 	case http.MethodDelete:
+		book, ok, err := s.app.GetBookIncludingDeleted(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			notFound(w, "book not found")
+			return
+		}
+		if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		if err := s.app.DeleteBook(id); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -209,10 +222,23 @@ func (s *Server) handleReprocessBook(w http.ResponseWriter, r *http.Request, use
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	updated, err := s.app.ReprocessBook(id)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	idempotencyKey := util.IdempotencyKeyFromRequest(r)
+	if idempotencyKey == "" {
+		writeError(w, http.StatusBadRequest, "idempotency key required")
 		return
+	}
+	updated, replayed, err := s.app.ReprocessBook(user, id, idempotencyKey)
+	if err != nil {
+		status := http.StatusBadRequest
+		lower := strings.ToLower(strings.TrimSpace(err.Error()))
+		if strings.Contains(lower, "different request") || strings.Contains(lower, "in progress") {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	if replayed {
+		w.Header().Set(util.HeaderIdempotencyReplayed, "true")
 	}
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -323,9 +349,24 @@ func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, user d
 		return
 	}
 	defer file.Close()
-	book, err := s.app.UploadBook(user, header.Filename, file, header.Size)
+	idempotencyKey := util.IdempotencyKeyFromRequest(r)
+	if idempotencyKey == "" {
+		writeError(w, http.StatusBadRequest, "idempotency key required")
+		return
+	}
+	book, replayed, err := s.app.UploadBook(user, header.Filename, file, header.Size, idempotencyKey)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		lower := strings.ToLower(strings.TrimSpace(err.Error()))
+		if strings.Contains(lower, "different request") || strings.Contains(lower, "in progress") {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	if replayed {
+		w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+		writeJSON(w, http.StatusOK, book)
 		return
 	}
 	writeJSON(w, http.StatusCreated, book)
@@ -411,6 +452,12 @@ func errorCodeForBook(status int, msg string) string {
 		return "BOOK_INVALID_STATUS"
 	case message == "failed to generate download url":
 		return "BOOK_DOWNLOAD_URL_FAILED"
+	case message == "idempotency key required":
+		return "IDEMPOTENCY_KEY_REQUIRED"
+	case strings.Contains(message, "idempotency key reused"):
+		return "IDEMPOTENCY_KEY_REUSED"
+	case strings.Contains(message, "idempotent request already in progress"):
+		return "IDEMPOTENT_REQUEST_IN_PROGRESS"
 	case message == "method not allowed":
 		return "SYSTEM_METHOD_NOT_ALLOWED"
 	case message == "not found":

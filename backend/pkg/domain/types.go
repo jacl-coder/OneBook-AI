@@ -11,6 +11,14 @@ const (
 	StatusFailed     BookStatus = "failed"
 )
 
+type BookCleanupStatus string
+
+const (
+	BookCleanupStatusQueued  BookCleanupStatus = "queued"
+	BookCleanupStatusRunning BookCleanupStatus = "running"
+	BookCleanupStatusFailed  BookCleanupStatus = "failed"
+)
+
 type UserRole string
 
 const (
@@ -36,6 +44,11 @@ type Book struct {
 	SizeBytes        int64      `json:"sizeBytes"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
+	DeletedAt        *time.Time `json:"deletedAt,omitempty"`
+	CleanupStatus    string     `json:"cleanupStatus,omitempty"`
+	CleanupError     string     `json:"cleanupError,omitempty"`
+	CleanupAttempts  int        `json:"cleanupAttempts,omitempty"`
+	CleanupUpdatedAt *time.Time `json:"cleanupUpdatedAt,omitempty"`
 }
 
 type User struct {
@@ -226,6 +239,7 @@ type EvalRunStageSummary struct {
 type EvalRun struct {
 	ID             string                `json:"id"`
 	DatasetID      string                `json:"datasetId"`
+	Fingerprint    string                `json:"-"`
 	Status         EvalRunStatus         `json:"status"`
 	Mode           EvalRunMode           `json:"mode"`
 	RetrievalMode  EvalRetrievalMode     `json:"retrievalMode"`
@@ -243,6 +257,28 @@ type EvalRun struct {
 	CreatedBy      string                `json:"createdBy"`
 	CreatedAt      time.Time             `json:"createdAt"`
 	UpdatedAt      time.Time             `json:"updatedAt"`
+}
+
+type IdempotencyState string
+
+const (
+	IdempotencyStateProcessing IdempotencyState = "processing"
+	IdempotencyStateCompleted  IdempotencyState = "completed"
+	IdempotencyStateFailed     IdempotencyState = "failed"
+)
+
+type IdempotencyRecord struct {
+	ID             string           `json:"id"`
+	Scope          string           `json:"scope"`
+	ActorID        string           `json:"actorId"`
+	IdempotencyKey string           `json:"idempotencyKey"`
+	RequestHash    string           `json:"requestHash"`
+	ResourceType   string           `json:"resourceType,omitempty"`
+	ResourceID     string           `json:"resourceId,omitempty"`
+	StatusCode     int              `json:"statusCode"`
+	State          IdempotencyState `json:"state"`
+	CreatedAt      time.Time        `json:"createdAt"`
+	UpdatedAt      time.Time        `json:"updatedAt"`
 }
 
 type AdminEvalOverview struct {

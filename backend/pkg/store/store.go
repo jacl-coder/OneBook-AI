@@ -73,6 +73,10 @@ type Store interface {
 	ListBooksWithOptions(BookListOptions) ([]domain.Book, int, error)
 	ListBooksByOwner(ownerID string) ([]domain.Book, error)
 	GetBook(id string) (domain.Book, bool, error)
+	GetBookIncludingDeleted(id string) (domain.Book, bool, error)
+	ListBooksPendingCleanup(limit int) ([]domain.Book, error)
+	MarkBookDeleted(id string, cleanupStatus domain.BookCleanupStatus) error
+	UpdateBookCleanup(id string, status domain.BookCleanupStatus, errMsg string, incrementAttempts bool) error
 	DeleteBook(id string) error
 
 	// chats
@@ -102,9 +106,12 @@ type Store interface {
 	ArchiveEvalDataset(id string) error
 	SaveEvalRun(domain.EvalRun) error
 	GetEvalRun(id string) (domain.EvalRun, bool, error)
+	GetActiveEvalRunByFingerprint(fingerprint string) (domain.EvalRun, bool, error)
 	ListEvalRuns(EvalRunListOptions) ([]domain.EvalRun, int, error)
 	CountEvalRunsByDataset(datasetID string) (int, error)
 	GetAdminEvalOverview(windowStart time.Time) (domain.AdminEvalOverview, error)
+	SaveIdempotencyRecord(domain.IdempotencyRecord) error
+	GetIdempotencyRecord(scope, actorID, key string) (domain.IdempotencyRecord, bool, error)
 }
 
 // SessionStore persists session tokens.

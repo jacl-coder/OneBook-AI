@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"onebookai/internal/util"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/store"
 	"onebookai/services/auth/internal/app"
@@ -198,15 +199,31 @@ func (s *Server) handleAdminEvalRuns(w http.ResponseWriter, r *http.Request, use
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
-		run, err := s.app.AdminCreateEvalRun(user, app.EvalRunCreateInput{
-			DatasetID:     req.DatasetID,
-			Mode:          domain.EvalRunMode(strings.TrimSpace(req.Mode)),
-			RetrievalMode: domain.EvalRetrievalMode(strings.TrimSpace(req.RetrievalMode)),
-			GateMode:      strings.TrimSpace(req.GateMode),
-			Params:        req.Params,
+		idempotencyKey := util.IdempotencyKeyFromRequest(r)
+		if idempotencyKey == "" {
+			writeError(w, http.StatusBadRequest, "idempotency key required")
+			return
+		}
+		run, replayed, err := s.app.AdminCreateEvalRun(user, app.EvalRunCreateInput{
+			DatasetID:      req.DatasetID,
+			Mode:           domain.EvalRunMode(strings.TrimSpace(req.Mode)),
+			RetrievalMode:  domain.EvalRetrievalMode(strings.TrimSpace(req.RetrievalMode)),
+			GateMode:       strings.TrimSpace(req.GateMode),
+			Params:         req.Params,
+			IdempotencyKey: idempotencyKey,
 		})
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			status := http.StatusBadRequest
+			lower := strings.ToLower(strings.TrimSpace(err.Error()))
+			if strings.Contains(lower, "different request") || strings.Contains(lower, "in progress") {
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		if replayed {
+			w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+			writeJSON(w, http.StatusOK, run)
 			return
 		}
 		writeJSON(w, http.StatusCreated, run)

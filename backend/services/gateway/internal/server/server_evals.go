@@ -168,7 +168,12 @@ func (s *Server) handleAdminEvalRuns(w http.ResponseWriter, r *http.Request, ctx
 			writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "ADMIN_EVAL_RUN_INVALID")
 			return
 		}
-		run, err := s.auth.AdminCreateEvalRun(util.RequestIDFromRequest(r), ctx.AccessToken, req)
+		idempotencyKey := util.IdempotencyKeyFromRequest(r)
+		if idempotencyKey == "" {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "idempotency key required", "IDEMPOTENCY_KEY_REQUIRED")
+			return
+		}
+		run, replayed, err := s.auth.AdminCreateEvalRun(util.RequestIDFromRequest(r), ctx.AccessToken, idempotencyKey, req)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
@@ -180,6 +185,11 @@ func (s *Server) handleAdminEvalRuns(w http.ResponseWriter, r *http.Request, ctx
 			After:      map[string]any{"datasetId": run.DatasetID, "mode": run.Mode},
 			RequestID:  util.RequestIDFromRequest(r),
 		})
+		if replayed {
+			w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+			writeJSON(w, http.StatusOK, run)
+			return
+		}
 		writeJSON(w, http.StatusCreated, run)
 	default:
 		methodNotAllowed(w, r)

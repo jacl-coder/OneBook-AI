@@ -38,33 +38,35 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) UploadBook(requestID, token, filename string, r io.Reader) (domain.Book, error) {
+func (c *Client) UploadBook(requestID, token, idempotencyKey, filename string, r io.Reader) (domain.Book, bool, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	if _, err := io.Copy(part, r); err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	if err := writer.Close(); err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/books", body)
 	if err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	addAuthHeader(req, token)
 	addRequestIDHeader(req, requestID)
+	addIdempotencyKeyHeader(req, idempotencyKey)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	var book domain.Book
-	if err := c.do(req, &book); err != nil {
-		return domain.Book{}, err
+	replayed, err := c.do(req, &book)
+	if err != nil {
+		return domain.Book{}, false, err
 	}
-	return book, nil
+	return book, replayed, nil
 }
 
 func (c *Client) ListBooks(requestID, token string) ([]domain.Book, error) {
@@ -76,7 +78,7 @@ func (c *Client) ListBooks(requestID, token string) ([]domain.Book, error) {
 	addRequestIDHeader(req, requestID)
 
 	var resp listBooksResponse
-	if err := c.do(req, &resp); err != nil {
+	if _, err := c.do(req, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
@@ -92,7 +94,7 @@ func (c *Client) GetBook(requestID, token, id string) (domain.Book, error) {
 	addRequestIDHeader(req, requestID)
 
 	var book domain.Book
-	if err := c.do(req, &book); err != nil {
+	if _, err := c.do(req, &book); err != nil {
 		return domain.Book{}, err
 	}
 	return book, nil
@@ -106,23 +108,26 @@ func (c *Client) DeleteBook(requestID, token, id string) error {
 	}
 	addAuthHeader(req, token)
 	addRequestIDHeader(req, requestID)
-	return c.do(req, nil)
+	_, err = c.do(req, nil)
+	return err
 }
 
-func (c *Client) ReprocessBook(requestID, token, id string) (domain.Book, error) {
+func (c *Client) ReprocessBook(requestID, token, idempotencyKey, id string) (domain.Book, bool, error) {
 	path := fmt.Sprintf("%s/books/%s/reprocess", c.baseURL, id)
 	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader([]byte("{}")))
 	if err != nil {
-		return domain.Book{}, err
+		return domain.Book{}, false, err
 	}
 	addAuthHeader(req, token)
 	addRequestIDHeader(req, requestID)
+	addIdempotencyKeyHeader(req, idempotencyKey)
 	req.Header.Set("Content-Type", "application/json")
 	var book domain.Book
-	if err := c.do(req, &book); err != nil {
-		return domain.Book{}, err
+	replayed, err := c.do(req, &book)
+	if err != nil {
+		return domain.Book{}, false, err
 	}
-	return book, nil
+	return book, replayed, nil
 }
 
 // DownloadResponse contains pre-signed URL and filename for download.
@@ -142,18 +147,19 @@ func (c *Client) GetDownloadURL(requestID, token, id string) (DownloadResponse, 
 	addRequestIDHeader(req, requestID)
 
 	var resp DownloadResponse
-	if err := c.do(req, &resp); err != nil {
+	if _, err := c.do(req, &resp); err != nil {
 		return DownloadResponse{}, err
 	}
 	return resp, nil
 }
 
-func (c *Client) do(req *http.Request, out any) error {
+func (c *Client) do(req *http.Request, out any) (bool, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
+	replayed := strings.EqualFold(strings.TrimSpace(resp.Header.Get("Idempotency-Replayed")), "true")
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`
@@ -164,15 +170,15 @@ func (c *Client) do(req *http.Request, out any) error {
 		if msg == "" {
 			msg = resp.Status
 		}
-		return &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
+		return replayed, &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
 	}
 	if out == nil {
-		return nil
+		return replayed, nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return err
+		return replayed, err
 	}
-	return nil
+	return replayed, nil
 }
 
 func addAuthHeader(req *http.Request, token string) {
@@ -187,6 +193,13 @@ func addRequestIDHeader(req *http.Request, requestID string) {
 		return
 	}
 	req.Header.Set("X-Request-Id", requestID)
+}
+
+func addIdempotencyKeyHeader(req *http.Request, key string) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	req.Header.Set("Idempotency-Key", key)
 }
 
 type listBooksResponse struct {

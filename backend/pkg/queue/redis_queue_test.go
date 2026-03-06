@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -66,6 +67,68 @@ func TestRedisJobQueueRequeueAndAckFailureKeepsPendingMessage(t *testing.T) {
 	}
 	if streamLen != 1 {
 		t.Fatalf("expected no new message in stream on failure, got len=%d", streamLen)
+	}
+}
+
+func TestRedisJobQueueHandleMessageHandlerErrorRequeuesWithoutPanic(t *testing.T) {
+	q, ctx, msgID, jobID, bookID := newPendingQueueMessage(t)
+
+	q.handleMessage(ctx, "consumer-1", redis.XMessage{
+		ID: msgID,
+		Values: map[string]any{
+			"job_id":  jobID,
+			"book_id": bookID,
+		},
+	}, func(context.Context, JobStatus) error {
+		return errors.New("boom")
+	})
+
+	job, ok, err := q.GetJob(ctx, jobID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected job status to exist")
+	}
+	if job.Status != StatusQueued {
+		t.Fatalf("job status = %q, want %q", job.Status, StatusQueued)
+	}
+	if job.ErrorMessage != "boom" {
+		t.Fatalf("job error = %q, want %q", job.ErrorMessage, "boom")
+	}
+}
+
+func TestRedisJobQueueEnqueueDeduplicatesActiveBookJobs(t *testing.T) {
+	redisSrv := miniredis.RunT(t)
+	q, err := NewRedisJobQueue(RedisQueueConfig{
+		Addr:       redisSrv.Addr(),
+		Stream:     "test:queue",
+		Group:      "test-group",
+		Consumer:   "consumer-1",
+		RetryDelay: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new queue: %v", err)
+	}
+
+	ctx := context.Background()
+	job1, err := q.Enqueue(ctx, "book-1")
+	if err != nil {
+		t.Fatalf("enqueue 1: %v", err)
+	}
+	job2, err := q.Enqueue(ctx, "book-1")
+	if err != nil {
+		t.Fatalf("enqueue 2: %v", err)
+	}
+	if job1.ID != job2.ID {
+		t.Fatalf("expected same job id for duplicate enqueue, got %q and %q", job1.ID, job2.ID)
+	}
+	streamLen, err := q.client.XLen(ctx, q.stream).Result()
+	if err != nil {
+		t.Fatalf("xlen: %v", err)
+	}
+	if streamLen != 1 {
+		t.Fatalf("expected one stream message, got %d", streamLen)
 	}
 }
 

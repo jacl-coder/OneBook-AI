@@ -1,4 +1,5 @@
 import { http } from '@/shared/lib/http/client'
+import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 
 export type BookStatus = 'queued' | 'processing' | 'ready' | 'failed'
 
@@ -40,7 +41,11 @@ export async function listBooks(): Promise<ListBooksResponse> {
 export async function uploadBook(file: File): Promise<LibraryBook> {
   const formData = new FormData()
   formData.append('file', file)
-  const { data } = await http.post<LibraryBook>('/api/books', formData)
+  const { data } = await http.post<LibraryBook>('/api/books', formData, {
+    headers: {
+      'Idempotency-Key': createIdempotencyKey(),
+    },
+  })
   return data
 }
 

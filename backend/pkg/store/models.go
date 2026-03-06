@@ -26,9 +26,14 @@ type BookModel struct {
 	StorageKey       string
 	Status           string `gorm:"not null"`
 	ErrorMessage     string
-	SizeBytes        int64     `gorm:"not null"`
-	CreatedAt        time.Time `gorm:"not null"`
-	UpdatedAt        time.Time `gorm:"not null"`
+	SizeBytes        int64      `gorm:"not null"`
+	CreatedAt        time.Time  `gorm:"not null"`
+	UpdatedAt        time.Time  `gorm:"not null"`
+	DeletedAt        *time.Time `gorm:"index"`
+	CleanupStatus    string     `gorm:"index"`
+	CleanupError     string
+	CleanupAttempts  int        `gorm:"not null;default:0"`
+	CleanupUpdatedAt *time.Time `gorm:"index"`
 }
 
 type ConversationModel struct {
@@ -92,6 +97,7 @@ type EvalDatasetModel struct {
 type EvalRunModel struct {
 	ID             string         `gorm:"primaryKey"`
 	DatasetID      string         `gorm:"not null;index"`
+	Fingerprint    string         `gorm:"not null;default:'';index"`
 	Status         string         `gorm:"not null;index"`
 	Mode           string         `gorm:"not null;index"`
 	RetrievalMode  string         `gorm:"not null;index"`
@@ -109,4 +115,18 @@ type EvalRunModel struct {
 	CreatedBy      string     `gorm:"not null;index"`
 	CreatedAt      time.Time  `gorm:"not null;index"`
 	UpdatedAt      time.Time  `gorm:"not null;index"`
+}
+
+type IdempotencyRecordModel struct {
+	ID             string `gorm:"primaryKey"`
+	Scope          string `gorm:"not null;uniqueIndex:idx_idempotency_scope_actor_key,priority:1"`
+	ActorID        string `gorm:"not null;uniqueIndex:idx_idempotency_scope_actor_key,priority:2"`
+	IdempotencyKey string `gorm:"not null;uniqueIndex:idx_idempotency_scope_actor_key,priority:3"`
+	RequestHash    string `gorm:"not null"`
+	ResourceType   string
+	ResourceID     string
+	StatusCode     int       `gorm:"not null"`
+	State          string    `gorm:"not null;index"`
+	CreatedAt      time.Time `gorm:"not null;index"`
+	UpdatedAt      time.Time `gorm:"not null;index"`
 }
