@@ -1,28 +1,27 @@
 # Docs 分类索引
 
+## architecture
+
+- [`advanced_rag_plan.md`](architecture/advanced_rag_plan.md)：Advanced RAG 实施蓝图（目标、里程碑、KPI、执行清单）
+- [`rag_eval_system_plan.md`](architecture/rag_eval_system_plan.md)：RAG 评测系统（6 类指标、命令入口、输入/输出契约）
+- [`tech_overview.md`](architecture/tech_overview.md)：架构决策说明（扩展点、非功能约束、安全/一致性基线）
+
 ## backend
 
-- `docs/backend/backend_handoff.md`：前后端联调交接文档
-- `docs/backend/auth_account_flow.md`：账号流程（登录/注册/验证码/修改密码）
-- `docs/backend/api_response_standard.md`：统一错误与响应语义
-- `docs/backend/backend_arch.md`：后端架构说明
-- `backend/api/rest/openapi.yaml`：最新对外接口契约（含管理员后台接口）
+- [`backend_handoff.md`](backend/backend_handoff.md)：前后端联调交接文档（联调边界、认证约定、主要接口、错误响应）
+- [`auth_account_flow.md`](backend/auth_account_flow.md)：账号流程（登录/注册/OTP/密码重置），含 Mermaid 流程图
+- [`api_response_standard.md`](backend/api_response_standard.md)：API 响应规范（错误结构、完整错误码表、SSE 协议草案）
+- [`backend_arch.md`](backend/backend_arch.md)：后端实现细节（鉴权机制、Refresh Token 安全、队列一致性）
+- [`backend/api/rest/openapi.yaml`](../backend/api/rest/openapi.yaml)：对外接口 OpenAPI 规范（含管理员接口）
+- [`backend/api/rest/openapi-internal.yaml`](../backend/api/rest/openapi-internal.yaml)：内部服务接口规范
 
 ## frontend
 
-- `docs/frontend/frontend_development_workflow.md`：前端开发流程、技术栈与当前实现约定
-- `docs/frontend/svg_usage_guideline.md`：SVG 使用规范（img 与 sprite 选型、样式与可访问性约定）
-- `frontend/README.md`：前端本地开发与测试命令
+- [`frontend_development_workflow.md`](frontend/frontend_development_workflow.md)：前端开发流程、技术栈与当前实践约定
+- [`svg_usage_guideline.md`](frontend/svg_usage_guideline.md)：SVG 使用规范（sprite 选型、样式与可访问性）
+- [`frontend/README.md`](../frontend/README.md)：前端本地开发与测试命令
 
 ## product
 
-- `docs/product/requirements.md`：需求说明
-- `docs/product/functional_spec.md`：功能规格
-  - 当前已补充管理员后台产品化能力（`/admin`、强操作、审计与概览）
-
-## architecture
-
-- `docs/architecture/tech_overview.md`：技术总览
-- `docs/architecture/advanced_rag_plan.md`：Advanced RAG 目标与执行基线
-- `docs/architecture/rag_eval_system_plan.md`：Advanced RAG 评测系统（6 类首版）与本地运行说明
-- `docs/architecture/rag_interview_qa.md`：RAG 面试问答（初稿）
+- [`requirements.md`](product/requirements.md)：高层需求说明
+- [`functional_spec.md`](product/functional_spec.md)：功能规格与验收标准
