@@ -1,51 +1,34 @@
-# OneBook AI — 技术框架概览
+# OneBook AI — 架构决策说明
 
-## 栈概要（当前实现）
-
-- 后端：Go（标准库 `net/http`）。
-- 数据库：Postgres + pgvector（元数据与向量）。
-- 存储：MinIO（S3 兼容对象存储）。
-- 队列：Redis Streams（Ingest/Indexer），Redis（refresh token、撤销状态、分布式限流）。
-- LLM：多 provider（Gemini / Ollama / OpenAI 兼容），通过 `TextGenerator` 接口切换；环境变量前缀 `GENERATION_*`。
-- Embedding：Ollama（本地模型）。
-- 解析：PDF 优先 `pdftotext`（可选），失败则使用 Go PDF 库；EPUB/HTML 解析；TXT 直接分块。
-- 前端：React 19 + TypeScript + Vite 7 + React Router 7 + Axios + TanStack Query + Zustand + Tailwind v4。
-
-## 核心流程
-
-1. **上传**：Gateway → Book 服务；校验扩展名/大小后写入 MinIO，并写入书籍元数据。
-2. **解析**：Ingest 通过内部接口拉取文件 → 解析与清洗 → 语义分块 → 写入 chunk（替换旧内容）。
-3. **索引**：Indexer 拉取 chunks → 生成向量（支持批量/并发）→ 写入 pgvector → 更新书籍状态为 ready。
-4. **对话**：Chat 生成问题向量 → TopK 检索 chunks → 拼装上下文与历史 → 调用 LLM（TextGenerator）生成回答 → 保存消息与引用。
-
-## 核心数据模型
-
-- **User**：账号、角色（user/admin）、状态（active/disabled）。
-- **Book**：书籍元数据、状态（queued/processing/ready/failed）、文件位置、大小。
-- **Chunk**：内容文本、向量、来源元数据（`source_type/source_ref` + `page/section/chunk`）。
-- **Message**：按书存储对话历史。
+> 本文补充 README 未详细说明的架构选型理由与约束。核心流程、技术栈、端口请见根目录 README。
 
 ## 可替换与扩展点
 
-- Embedding 使用 Ollama（本地模型），维度可配置。
-- LLM 通过 `TextGenerator` 接口抽象，已支持 Gemini、Ollama、OpenAI 兼容三种 provider，可通过配置切换。
-- 存储层可替换为其他 S3 兼容对象存储；向量可迁移到专用向量数据库。
+- **Embedding**：Ollama 本地模型，维度可配（`ONEBOOK_EMBEDDING_DIM`）。可替换为任何兼容 HTTP API 的 Embedding 服务。
+- **LLM**：`TextGenerator` 接口抽象，已实现 Gemini、Ollama、OpenAI 兼容三种 provider，通过 `GENERATION_PROVIDER` 切换。
+- **向量存储**：当前使用 Qdrant；接口隔离于 `pkg/retrieval`，可按需迁移。
+- **对象存储**：MinIO（S3 兼容），可替换为任何 S3 兼容服务。
 
-## 非功能现状与约束
+## 非功能约束与现状
 
-- 可用性：具备任务重试与失败状态，但无统一监控与告警。
-- 性能：已支持 embedding 批量与并发，仍需按机器性能调参。
-- 可观测性：结构化 JSON 日志（`log/slog`），支持上下文传播（`request_id`、`service`）、按状态码分级、慢请求告警（≥5s）、健康检查排除；日志同时输出到 stdout 和文件（按服务 + 汇总 `all`，目录 `backend/logs/`）。Metrics/tracing 待引入。
-- 安全基线：用户 token 使用 RS256 + JWKS，本地验签；Gateway/Auth 限流依赖 Redis（安全优先，Redis 异常时拒绝请求）。
-- 一致性基线：refresh token 轮换采用 Redis 原子 CAS；队列重试采用事务化 `XADD + XACK + XDEL`，降低并发与重试时的数据不一致风险。
+### 可观测性
+- 结构化 JSON 日志（`log/slog`），字段含 `request_id`、`service`、`level`。
+- 按状态码分级：5xx → Error，4xx → Warn，2xx → Info。
+- 慢请求告警（≥ 5s）、healthz 排除日志。
+- 日志同时写 stdout 和文件（`backend/logs/<service>.log` + `all.log`）。
+- **待引入**：Metrics / Tracing。
 
-## 前端联调入口
+### 安全基线
+- 用户 Access Token：RS256 JWT，通过 JWKS 由各服务本地验签（不依赖中心化验签）。
+- 内部服务接口：独立密钥对签发的短时效服务 JWT（`ONEBOOK_INTERNAL_JWT_*`），校验 `iss/aud/exp`。
+- 限流：Gateway/Auth 使用 Redis 分布式固定窗口；Redis 异常时默认拒绝请求（fail-closed）。
 
-- 联调统一走 Gateway：`http://localhost:8080`
-- 鉴权机制：浏览器会话 Cookie（`withCredentials`），401 走 refresh 单飞重试。
-- 联调约定与错误语义：`docs/backend/backend_handoff.md`
+### 一致性基线
+- **Refresh Token 并发安全**：Redis 原子 CAS，防止并发请求下同一 token 双成功。
+- **队列重试一致性**：失败重试在单事务内执行 `XADD + XACK + XDEL`，避免已确认未重投的丢任务窗口。
 
-## RAG 演进目标
+## 关联文档
 
-- 统一目标文档：`docs/architecture/advanced_rag_plan.md`
-- 后续检索与问答质量优化，默认围绕该文档的 Advanced RAG 基线推进。
+- RAG 演进蓝图：`docs/architecture/advanced_rag_plan.md`
+- RAG 评测系统：`docs/architecture/rag_eval_system_plan.md`
+- 前后端联调：`docs/backend/backend_handoff.md`
