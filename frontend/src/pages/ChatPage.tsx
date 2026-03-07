@@ -968,11 +968,7 @@ export function ChatPage() {
               </button>
             </div>
 
-            <div className={chatTw.chatTopBarRight}>
-              <button type="button" className={chatTw.topActionPill} onClick={handleOpenLibraryManagement}>
-                书库管理
-              </button>
-            </div>
+            <div className={chatTw.chatTopBarRight} />
           </header>
 
           {hasActiveConversation ? (
