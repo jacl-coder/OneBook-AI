@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
 import {
-  CHAT_ICON_SPRITE_URL,
   conversationQueryKeys,
   fetchConversationSummaries,
   useChatSidebarState,
@@ -594,27 +593,6 @@ export function LibraryPage() {
             <h1 className={libraryTw.topBarTitle}>书库管理</h1>
           </div>
 
-          <div className={libraryTw.topBarRight}>
-            <input
-              ref={uploadInputRef}
-              className="hidden"
-              type="file"
-              tabIndex={-1}
-              accept=".pdf,.epub,.txt"
-              onChange={handleUploadChange}
-            />
-            <button
-              type="button"
-              className={libraryTw.uploadButton}
-              onClick={handleUploadClick}
-              disabled={uploadMutation.isPending}
-            >
-              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={libraryTw.iconBlockH14W14} aria-hidden="true">
-                <use href={`${CHAT_ICON_SPRITE_URL}#chat-attach`} fill="currentColor" />
-              </svg>
-              <span>{selectedFile ? '重新选择文件' : '选择书籍文件'}</span>
-            </button>
-          </div>
         </header>
 
         <section className={libraryTw.pageBody}>
@@ -629,6 +607,14 @@ export function LibraryPage() {
             <div className={libraryTw.panel}>
               <h2 className={libraryTw.panelTitle}>上传书籍</h2>
               <p className={libraryTw.panelDesc}>先选文件，再补充主分类和标签。标签用中英文逗号分隔，最多 5 个。</p>
+              <input
+                ref={uploadInputRef}
+                className="hidden"
+                type="file"
+                tabIndex={-1}
+                accept=".pdf,.epub,.txt"
+                onChange={handleUploadChange}
+              />
               <div className={libraryTw.formGrid}>
                 <div className="md:col-span-1">
                   <label className="mb-1 block text-[12px] text-[#6f6f6f]">主分类</label>
