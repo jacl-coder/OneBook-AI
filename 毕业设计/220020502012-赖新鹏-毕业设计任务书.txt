@@ -36,20 +36,19 @@
 第15周
 
 毕业设计的主要参考文献
-[1] 张秋余, 张聚礼, 柯铭, 等. 软件工程(第一版)[M]. 西安: 西安电子科技大学出版社, 2014.
-[2] 汤小丹, 梁红兵, 哲凤屏, 等. 计算机操作系统(第4版)[M]. 西安: 西安电子科技大学出版社, 2014.
-[3] Manning C D, Raghavan P, Schuetze H. 信息检索导论[M]. 王斌译. 北京: 人民邮电出版社, 2010.
-[4] Donovan A A, Kernighan B W. Go程序设计语言[M]. 李道兵, 高博, 庞向才等译. 北京: 机械工业出版社, 2017.
-[5] 陈硕. Linux多线程服务端编程: 使用muduo C++网络库[M]. 北京: 电子工业出版社, 2013.
-[6] 朱少民. 软件测试方法和技术(第4版)[M]. 北京: 清华大学出版社, 2022.
-[7] 国家市场监督管理总局, 国家标准化管理委员会. 信息安全技术 网络安全等级保护基本要求: GB/T 22239-2019[S]. 北京: 中国标准出版社, 2019.
-[8] Tanenbaum A S, Bos H. Modern Operating Systems(4th Edition)[M]. Boston: Pearson, 2015.
-[9] Kleppmann M. Designing Data-Intensive Applications[M]. Sebastopol: O'Reilly Media, 2017.
-[10] Vaswani A, Shazeer N, Parmar N, et al. Attention Is All You Need[C]//Advances in Neural Information Processing Systems. 2017: 5998-6008.
-[11] Brown T B, Mann B, Ryder N, et al. Language Models are Few-Shot Learners[C]//Advances in Neural Information Processing Systems. 2020: 1877-1901.
-[12] Lewis P, Perez E, Piktus A, et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks[C]//Advances in Neural Information Processing Systems. 2020.
-[13] PostgreSQL Global Development Group. PostgreSQL Documentation[EB/OL]. https://www.postgresql.org/docs/ [2026-02-28].
-[14] pgvector Contributors. pgvector[EB/OL]. https://github.com/pgvector/pgvector [2026-02-28].
+[1] Pang L, Deng J, Gu J, et al. 大语言模型时代的信息检索综述[C]//中国计算语言学大会论文集, 2024.
+[2] Yin Y, Liu Y, Wang Y, et al. 基于汉语字词资源的检索增强生成与应用评估[C]//中国计算语言学大会论文集, 2024.
+[3] Feng Z, Zhu K, Ma W, et al. 浅谈大模型时代下的检索增强：发展趋势、挑战与展望[C]//中国计算语言学大会论文集, 2024.
+[4] Ram O, Levine Y, Dalmedigos I, et al. In-Context Retrieval-Augmented Language Models[J]. Transactions of the Association for Computational Linguistics, 2023.
+[5] Su W, Tang Y, Ai Q, et al. DRAGIN: Dynamic Retrieval Augmented Generation Based on the Real-Time Information Needs of Large Language Models[C]//Proceedings of the Annual Meeting of the Association for Computational Linguistics, 2024.
+[6] Wang X, Wang Z, Gao X, et al. Searching for Best Practices in Retrieval-Augmented Generation[C]//Proceedings of the Conference on Empirical Methods in Natural Language Processing, 2024.
+[7] Liu N F, Lin K, Hewitt J, et al. Lost in the Middle: How Language Models Use Long Contexts[J]. Transactions of the Association for Computational Linguistics, 2024.
+[8] Niu C, Wu Y, Zhu J, et al. RAGTruth: A Hallucination Corpus for Developing Trustworthy Retrieval-Augmented Language Models[C]//Proceedings of the Annual Meeting of the Association for Computational Linguistics, 2024.
+[9] Saad-Falcon J, Khattab O, Potts C, et al. ARES: An Automated Evaluation Framework for Retrieval-Augmented Generation Systems[C]//Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics, 2024.
+[10] Asai A, Wu Z, Wang Y, et al. Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection[C]//Proceedings of the International Conference on Learning Representations, 2024.
+[11] Jeong S, Baek J, Cho S, et al. Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity[C]//Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics, 2024.
+[12] Yoon C, Lee T, Hwang H, et al. CompAct: Compressing Retrieved Documents Actively for Question Answering[C]//Proceedings of the Conference on Empirical Methods in Natural Language Processing, 2024.
+[13] OpenAtom openEuler Community. openEuler 24.03 LTS Technical White Paper[EB/OL]. 2024[2026-03-08]. https://www.openeuler.org/whitepaper/en/openEuler%2024.03%20LTS%20Technical%20White%20Paper.pdf.
 
 附录：提交的成果
 1. 毕业设计说明书一份，内容包括：
