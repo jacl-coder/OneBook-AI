@@ -39,7 +39,7 @@
       <tspan x="324" y="208.9">Embed + Index</tspan>
     </text>
     <text fill="#8A725A" xml:space="preserve" style="white-space: pre" font-family="Arial, sans-serif" font-size="11">
-      <tspan x="324" y="229.2">pgvector search</tspan>
+      <tspan x="324" y="229.2">Qdrant search</tspan>
       <tspan x="324" y="246.2">retrieval ready</tspan>
     </text>
 

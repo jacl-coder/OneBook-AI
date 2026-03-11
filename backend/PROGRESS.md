@@ -9,7 +9,7 @@
 - Ingest：PDF/EPUB/TXT 解析；PDF 优先 `pdftotext`，失败回退 Go PDF；语义分块。
 - Ingest：支持可选 Docker OCR 服务（`services/ocr/`，PaddleOCR HTTP）作为扫描版 PDF 提取；按页质量评估融合 native/OCR 结果；OCR 服务通过 `INGEST_OCR_SERVICE_URL` 配置，降级支持本地 CLI。
 - Chunk metadata 统一：`source_type/source_ref`，并保留 `page/section/chunk`；新增 `document_id/chunk_index/chunk_count/content_sha256/content_runes` 用于检索前治理与追溯。
-- Indexer：Embedding 使用 Ollama；支持批量/并发写入 pgvector；状态更新。
+- Indexer：Embedding 使用 Ollama；支持批量/并发写入 Qdrant；状态更新。
 - Chat：向量检索 + LLM（TextGenerator，支持 Gemini/Ollama/OpenAI 兼容）生成回答，附出处；消息入库并拼接最近 N 轮历史。
 - 任务队列：Redis Streams 持久队列，支持重试与失败回写。
 - 上传限制：网关/Book 扩展名白名单与大小限制（默认 50MB）。

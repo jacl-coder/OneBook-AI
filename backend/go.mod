@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80
 	github.com/minio/minio-go/v7 v7.0.76
-	github.com/pgvector/pgvector-go v0.2.0
 	github.com/redis/go-redis/v9 v9.17.2
 	golang.org/x/crypto v0.37.0
 	golang.org/x/net v0.30.0

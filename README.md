@@ -69,10 +69,10 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
              Ollama Embedding → Qdrant
 
 基础设施：
-  Postgres + pgvector  ← 用户/书籍/消息/chunk/向量
+  Postgres             ← 用户/书籍/消息/chunk 元数据
   Redis                ← Token/限流/Streams 队列
   MinIO (S3)           ← 书籍文件存储
-  Qdrant               ← 向量检索
+  Qdrant               ← chunk 向量索引与检索
   Ollama               ← 本地 Embedding
   OCR Service :8087    ← 可选 PaddleOCR Docker 服务（扫描版 PDF）
 ```
@@ -93,7 +93,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 | 组件 | 技术选型 |
 |---|---|
 | 语言/框架 | Go（标准库 `net/http`），无第三方 Web 框架 |
-| ORM | GORM + pgvector-go |
+| ORM | GORM |
 | JWT | `github.com/golang-jwt/jwt/v5`（RS256 + JWKS） |
 | 对象存储 | MinIO SDK（`minio-go/v7`） |
 | 队列 | Redis Streams（`go-redis/v9`） |
@@ -256,7 +256,7 @@ Chunk
   content, content_sha256, content_runes
   source_type, source_ref, extract_method
   page, section, chunk, page_quality_score
-  vector(pgvector, dim=ONEBOOK_EMBEDDING_DIM)
+  dense/sparse vectors stored in Qdrant
 
 Message
   id, conversation_id, book_id, user_id
@@ -422,11 +422,16 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 # 1. 复制环境变量并填写（至少填写 GENERATION_API_KEY）
 cp .env.example .env
 
-# 2. 启动基础设施 + 所有后端服务（会自动生成 RS256 密钥）
+# 2. 启动基础设施 + 所有后端服务
+# 如果本机可用 npm 且存在 frontend/package.json，run.sh 默认也会自动启动前端
 ./run.sh
-# run.sh 顺序：启动 Docker 依赖 → 生成 JWT 密钥 → 按 Auth→Book→Chat→Ingest→Indexer→Gateway 顺序启动，等待 /healthz 就绪
+# run.sh 顺序：按需启动前端 → 启动 Docker 依赖 → 生成 JWT 密钥 → 按 Auth→Book→Chat→Ingest→Indexer→Gateway 顺序启动
+# 前端默认地址：http://localhost:5173
 
-# 3. 前端开发服务器（另开终端）
+# 3. 如果只想启动后端，可显式关闭前端自动启动
+START_FRONTEND=off ./run.sh
+
+# 4. 如果前端未被自动拉起，再单独启动
 cd frontend && npm install && npm run dev
 # 访问 http://localhost:5173
 ```

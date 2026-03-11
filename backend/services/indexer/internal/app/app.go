@@ -82,7 +82,7 @@ func New(cfg Config) (*App, error) {
 			return nil, fmt.Errorf("database URL required")
 		}
 		var err error
-		dataStore, err = store.NewGormStore(cfg.DatabaseURL, store.WithEmbeddingDim(cfg.EmbeddingDim))
+		dataStore, err = store.NewGormStore(cfg.DatabaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("init postgres store: %w", err)
 		}
@@ -279,9 +279,6 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 	for i, embedding := range embeddings {
 		if a.embedDim > 0 && len(embedding) != a.embedDim {
 			return fmt.Errorf("embedding dimension mismatch: got %d", len(embedding))
-		}
-		if err := a.store.SetChunkEmbedding(batch[i].ID, embedding); err != nil {
-			return err
 		}
 		language := strings.TrimSpace(batch[i].Metadata["language"])
 		if language == "" {

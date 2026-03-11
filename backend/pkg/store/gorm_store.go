@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/pgvector/pgvector-go"
 	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,43 +21,13 @@ import (
 
 const migrateLockID int64 = 73217321
 
-const (
-	defaultEmbeddingDim      = 3072
-	canonicalEmbeddingDimEnv = "ONEBOOK_EMBEDDING_DIM"
-)
-
-type GormStoreOptions struct {
-	EmbeddingDim int
-}
-
-type GormStoreOption func(*GormStoreOptions)
-
-// WithEmbeddingDim sets the canonical embedding dimension used by storage.
-func WithEmbeddingDim(dim int) GormStoreOption {
-	return func(opts *GormStoreOptions) {
-		opts.EmbeddingDim = dim
-	}
-}
-
 // GormStore implements Store using GORM + Postgres.
 type GormStore struct {
-	db           *gorm.DB
-	embeddingDim int
+	db *gorm.DB
 }
 
 // NewGormStore opens the DB and runs auto-migrations.
-func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
-	opts := GormStoreOptions{}
-	for _, option := range options {
-		if option != nil {
-			option(&opts)
-		}
-	}
-	embeddingDim, err := resolveEmbeddingDim(opts.EmbeddingDim)
-	if err != nil {
-		return nil, err
-	}
-
+func NewGormStore(dsn string) (*GormStore, error) {
 	gormLog := gormlogger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		gormlogger.Config{
@@ -74,24 +42,19 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	if err := withMigrationLock(db, func(tx *gorm.DB) error {
-		if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
-			return fmt.Errorf("create pgvector extension: %w", err)
-		}
 		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
-		if err := tx.Exec(fmt.Sprintf(`
-			DO $$
-			BEGIN
-			IF EXISTS (
-				SELECT 1 FROM information_schema.columns
-				WHERE table_name = 'chunk_models' AND column_name = 'embedding'
-			) THEN
-				ALTER TABLE chunk_models ALTER COLUMN embedding TYPE vector(%d);
-			END IF;
-			END $$;
-		`, embeddingDim)).Error; err != nil {
-			return fmt.Errorf("alter chunk embedding type: %w", err)
+		if err := tx.Exec(`
+			ALTER TABLE chunk_models
+			DROP COLUMN IF EXISTS embedding;
+		`).Error; err != nil {
+			return fmt.Errorf("drop legacy chunk embedding column: %w", err)
+		}
+		if err := tx.Exec(`
+			DROP EXTENSION IF EXISTS vector;
+		`).Error; err != nil {
+			return fmt.Errorf("drop legacy vector extension: %w", err)
 		}
 		if err := tx.Exec(`
 			UPDATE chunk_models
@@ -183,22 +146,7 @@ func NewGormStore(dsn string, options ...GormStoreOption) (*GormStore, error) {
 	}); err != nil {
 		return nil, err
 	}
-	return &GormStore{db: db, embeddingDim: embeddingDim}, nil
-}
-
-func resolveEmbeddingDim(configValue int) (int, error) {
-	if configValue > 0 {
-		return configValue, nil
-	}
-	raw := strings.TrimSpace(os.Getenv(canonicalEmbeddingDimEnv))
-	if raw == "" {
-		return defaultEmbeddingDim, nil
-	}
-	dim, err := strconv.Atoi(raw)
-	if err != nil || dim <= 0 {
-		return 0, fmt.Errorf("invalid %s: %q", canonicalEmbeddingDimEnv, raw)
-	}
-	return dim, nil
+	return &GormStore{db: db}, nil
 }
 
 func withMigrationLock(db *gorm.DB, fn func(*gorm.DB) error) error {
@@ -665,39 +613,6 @@ func (s *GormStore) ListChunksByBook(bookID string) ([]domain.Chunk, error) {
 	return chunks, nil
 }
 
-// SetChunkEmbedding updates the embedding vector for a chunk.
-func (s *GormStore) SetChunkEmbedding(id string, embedding []float32) error {
-	if err := s.validateEmbeddingDim(embedding); err != nil {
-		return err
-	}
-	return s.db.Model(&ChunkModel{}).Where("id = ?", id).
-		Update("embedding", pgvector.NewVector(embedding)).Error
-}
-
-// SearchChunks finds similar chunks by cosine distance.
-func (s *GormStore) SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error) {
-	if limit <= 0 {
-		return []domain.Chunk{}, nil
-	}
-	if err := s.validateEmbeddingDim(embedding); err != nil {
-		return nil, err
-	}
-	vec := pgvector.NewVector(embedding)
-	var models []ChunkModel
-	if err := s.db.Model(&ChunkModel{}).
-		Where("book_id = ? AND embedding IS NOT NULL", bookID).
-		Order(clause.Expr{SQL: "embedding <=> ?", Vars: []any{vec}}).
-		Limit(limit).
-		Find(&models).Error; err != nil {
-		return nil, err
-	}
-	chunks := make([]domain.Chunk, 0, len(models))
-	for _, model := range models {
-		chunks = append(chunks, chunkFromModel(model))
-	}
-	return chunks, nil
-}
-
 // SaveAdminAuditLog persists an admin audit event.
 func (s *GormStore) SaveAdminAuditLog(entry domain.AdminAuditLog) error {
 	model, err := adminAuditLogToModel(entry)
@@ -1088,16 +1003,6 @@ func (s *GormStore) GetIdempotencyRecord(scope, actorID, key string) (domain.Ide
 		return domain.IdempotencyRecord{}, false, err
 	}
 	return idempotencyRecordFromModel(model), true, nil
-}
-
-func (s *GormStore) validateEmbeddingDim(embedding []float32) error {
-	if len(embedding) == 0 {
-		return fmt.Errorf("embedding vector is empty")
-	}
-	if s.embeddingDim > 0 && len(embedding) != s.embeddingDim {
-		return fmt.Errorf("embedding dimension mismatch: got %d, want %d", len(embedding), s.embeddingDim)
-	}
-	return nil
 }
 
 func normalizePage(page, pageSize int) (int, int) {

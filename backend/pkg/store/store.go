@@ -96,8 +96,6 @@ type Store interface {
 	// chunks
 	ReplaceChunks(bookID string, chunks []domain.Chunk) error
 	ListChunksByBook(bookID string) ([]domain.Chunk, error)
-	SetChunkEmbedding(id string, embedding []float32) error
-	SearchChunks(bookID string, embedding []float32, limit int) ([]domain.Chunk, error)
 
 	// admin
 	SaveAdminAuditLog(domain.AdminAuditLog) error
