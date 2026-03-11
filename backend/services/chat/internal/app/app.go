@@ -61,7 +61,7 @@ func New(cfg Config) (*App, error) {
 			return nil, fmt.Errorf("database URL required")
 		}
 		var err error
-		dataStore, err = store.NewGormStore(cfg.DatabaseURL, store.WithEmbeddingDim(cfg.EmbeddingDim))
+		dataStore, err = store.NewGormStore(cfg.DatabaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("init postgres store: %w", err)
 		}

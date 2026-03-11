@@ -3,7 +3,6 @@ package store
 import (
 	"time"
 
-	"github.com/pgvector/pgvector-go"
 	"gorm.io/datatypes"
 )
 
@@ -62,12 +61,11 @@ type MessageModel struct {
 }
 
 type ChunkModel struct {
-	ID        string           `gorm:"primaryKey"`
-	BookID    string           `gorm:"not null;index"`
-	Content   string           `gorm:"type:text;not null"`
-	Metadata  datatypes.JSON   `gorm:"type:jsonb"`
-	Embedding *pgvector.Vector `gorm:"type:vector(3072)"`
-	CreatedAt time.Time        `gorm:"not null;index"`
+	ID        string         `gorm:"primaryKey"`
+	BookID    string         `gorm:"not null;index"`
+	Content   string         `gorm:"type:text;not null"`
+	Metadata  datatypes.JSON `gorm:"type:jsonb"`
+	CreatedAt time.Time      `gorm:"not null;index"`
 }
 
 type AdminAuditLogModel struct {
