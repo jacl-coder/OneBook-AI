@@ -62,7 +62,7 @@ export type EvalDatasetSourceType = 'upload' | 'book'
 export type EvalDatasetStatus = 'active' | 'archived'
 export type EvalRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
 export type EvalRunMode = 'retrieval' | 'post_retrieval' | 'answer' | 'all'
-export type EvalRetrievalMode = 'hybrid' | 'dense_only' | 'sparse_only'
+export type EvalRetrievalMode = 'hybrid_best' | 'hybrid_no_rerank' | 'dense_only' | 'lexical_only'
 export type EvalGateStatus = 'passed' | 'warn' | 'failed'
 
 export type AdminEvalDataset = {

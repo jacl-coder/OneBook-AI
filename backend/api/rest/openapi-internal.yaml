@@ -983,7 +983,7 @@ components:
           enum: [retrieval, post_retrieval, answer, all]
         retrievalMode:
           type: string
-          enum: [hybrid, dense_only, sparse_only]
+          enum: [hybrid_best, hybrid_no_rerank, dense_only, lexical_only]
         params:
           type: object
           additionalProperties: true
@@ -1035,7 +1035,7 @@ components:
           enum: [retrieval, post_retrieval, answer, all]
         retrievalMode:
           type: string
-          enum: [hybrid, dense_only, sparse_only]
+          enum: [hybrid_best, hybrid_no_rerank, dense_only, lexical_only]
         gateMode:
           type: string
         params:

@@ -60,6 +60,10 @@ type Config struct {
 	QdrantURL                 string
 	QdrantAPIKey              string
 	QdrantCollection          string
+	OpenSearchURL             string
+	OpenSearchIndex           string
+	OpenSearchUsername        string
+	OpenSearchPassword        string
 }
 
 // App processes indexing jobs.
@@ -72,6 +76,7 @@ type App struct {
 	embedBatchSize   int
 	embedConcurrency int
 	search           *retrieval.Client
+	lexical          *retrieval.OpenSearchClient
 }
 
 // New constructs the indexer service with persistence.
@@ -134,6 +139,10 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init qdrant client: %w", err)
 	}
+	lexicalClient, err := retrieval.NewOpenSearchClient(cfg.OpenSearchURL, cfg.OpenSearchIndex, cfg.OpenSearchUsername, cfg.OpenSearchPassword)
+	if err != nil {
+		return nil, fmt.Errorf("init opensearch client: %w", err)
+	}
 	app := &App{
 		store:            dataStore,
 		bookClient:       newBookClient(cfg.BookServiceURL, signer),
@@ -143,6 +152,7 @@ func New(cfg Config) (*App, error) {
 		embedBatchSize:   cfg.EmbeddingBatchSize,
 		embedConcurrency: cfg.EmbeddingConcurrency,
 		search:           searchClient,
+		lexical:          lexicalClient,
 	}
 	app.startWorkers(cfg.QueueConcurrency)
 	return app, nil
@@ -191,7 +201,17 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
+	semanticChunks, lexicalChunks := splitChunksByTier(chunks)
+	if len(semanticChunks) == 0 {
+		err := fmt.Errorf("no semantic chunks to index")
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
 	if err := a.search.EnsureCollection(ctx); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.lexical.EnsureIndex(ctx); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
@@ -199,7 +219,15 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
-	if err := a.embedAndStore(ctx, chunks); err != nil {
+	if err := a.lexical.DeleteByBook(ctx, job.BookID); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.embedAndStore(ctx, semanticChunks); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.indexLexical(ctx, lexicalChunks); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
@@ -208,6 +236,20 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 		return err
 	}
 	return nil
+}
+
+func splitChunksByTier(chunks []domain.Chunk) ([]domain.Chunk, []domain.Chunk) {
+	semantic := make([]domain.Chunk, 0, len(chunks))
+	lexical := make([]domain.Chunk, 0, len(chunks))
+	for _, chunk := range chunks {
+		switch strings.TrimSpace(chunk.Metadata["retrieval_tier"]) {
+		case "lexical":
+			lexical = append(lexical, chunk)
+		default:
+			semantic = append(semantic, chunk)
+		}
+	}
+	return semantic, lexical
 }
 
 func (a *App) startWorkers(concurrency int) {
@@ -291,6 +333,8 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 			Payload: map[string]any{
 				"chunk_id":       batch[i].ID,
 				"book_id":        batch[i].BookID,
+				"retrieval_tier": firstNonEmpty(batch[i].Metadata["retrieval_tier"], "semantic"),
+				"chunk_family":   strings.TrimSpace(batch[i].Metadata["chunk_family"]),
 				"content":        batch[i].Content,
 				"language":       language,
 				"source_type":    strings.TrimSpace(batch[i].Metadata["source_type"]),
@@ -304,6 +348,41 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 		})
 	}
 	return a.search.UpsertPoints(ctx, points)
+}
+
+func (a *App) indexLexical(ctx context.Context, chunks []domain.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	docs := make([]retrieval.LexicalDocument, 0, len(chunks))
+	for _, chunk := range chunks {
+		language := strings.TrimSpace(chunk.Metadata["language"])
+		if language == "" {
+			language = retrieval.DetectLanguage(chunk.Content)
+		}
+		payload := map[string]any{
+			"chunk_id":       chunk.ID,
+			"book_id":        chunk.BookID,
+			"retrieval_tier": firstNonEmpty(chunk.Metadata["retrieval_tier"], "lexical"),
+			"chunk_family":   strings.TrimSpace(chunk.Metadata["chunk_family"]),
+			"content":        chunk.Content,
+			"language":       language,
+			"source_type":    strings.TrimSpace(chunk.Metadata["source_type"]),
+			"source_ref":     strings.TrimSpace(chunk.Metadata["source_ref"]),
+			"page":           strings.TrimSpace(chunk.Metadata["page"]),
+			"section_path":   firstNonEmpty(chunk.Metadata["section_path"], chunk.Metadata["section"]),
+			"chunk_index":    firstNonEmpty(chunk.Metadata["chunk_index"], chunk.Metadata["chunk"]),
+			"chunk_count":    strings.TrimSpace(chunk.Metadata["chunk_count"]),
+			"content_sha256": strings.TrimSpace(chunk.Metadata["content_sha256"]),
+		}
+		docs = append(docs, retrieval.LexicalDocument{
+			ID:      chunk.ID,
+			Content: chunk.Content,
+			Terms:   strings.Join(retrieval.Tokenize(chunk.Content, language), " "),
+			Payload: payload,
+		})
+	}
+	return a.lexical.IndexDocuments(ctx, docs)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -57,33 +57,39 @@ type Config struct {
 	QueueRetryDelaySeconds    int
 	ChunkSize                 int
 	ChunkOverlap              int
+	LexicalChunkSize          int
+	LexicalChunkOverlap       int
+	SemanticChunkSize         int
+	SemanticChunkOverlap      int
 	OCREnabled                bool
 	OCRCommand                string
 	OCRDevice                 string
 	OCRTimeoutSeconds         int
-	OCRServiceURL       	  string
-	PDFMinPageRunes     	  int
-	PDFMinPageScore     	  float64
-	PDFOCRMinScoreDelta 	  float64
+	OCRServiceURL             string
+	PDFMinPageRunes           int
+	PDFMinPageScore           float64
+	PDFOCRMinScoreDelta       float64
 }
 
 // App processes ingest jobs.
 type App struct {
-	store         store.Store
-	bookClient    *bookClient
-	indexClient   *indexerClient
-	queue         *queue.RedisJobQueue
-	chunkSize     int
-	chunkOverlap  int
-	ocrEnabled    bool
-	ocrCommand    string
-	ocrDevice     string
-	ocrTimeout    time.Duration
-	ocrServiceURL string
-	pdfMinRunes   int
-	pdfMinScore   float64
-	pdfScoreDiff  float64
-	httpClient    *http.Client
+	store                store.Store
+	bookClient           *bookClient
+	indexClient          *indexerClient
+	queue                *queue.RedisJobQueue
+	lexicalChunkSize     int
+	lexicalChunkOverlap  int
+	semanticChunkSize    int
+	semanticChunkOverlap int
+	ocrEnabled           bool
+	ocrCommand           string
+	ocrDevice            string
+	ocrTimeout           time.Duration
+	ocrServiceURL        string
+	pdfMinRunes          int
+	pdfMinScore          float64
+	pdfScoreDiff         float64
+	httpClient           *http.Client
 }
 
 // New constructs the ingest service with persistence.
@@ -114,13 +120,27 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init service token signer: %w", err)
 	}
-	chunkSize := cfg.ChunkSize
-	if chunkSize <= 0 {
-		chunkSize = 800
+	semanticChunkSize := cfg.SemanticChunkSize
+	if semanticChunkSize <= 0 {
+		semanticChunkSize = cfg.ChunkSize
 	}
-	chunkOverlap := cfg.ChunkOverlap
-	if chunkOverlap < 0 {
-		chunkOverlap = 0
+	if semanticChunkSize <= 0 {
+		semanticChunkSize = 480
+	}
+	semanticChunkOverlap := cfg.SemanticChunkOverlap
+	if semanticChunkOverlap <= 0 {
+		semanticChunkOverlap = cfg.ChunkOverlap
+	}
+	if semanticChunkOverlap < 0 {
+		semanticChunkOverlap = 0
+	}
+	lexicalChunkSize := cfg.LexicalChunkSize
+	if lexicalChunkSize <= 0 {
+		lexicalChunkSize = 160
+	}
+	lexicalChunkOverlap := cfg.LexicalChunkOverlap
+	if lexicalChunkOverlap < 0 {
+		lexicalChunkOverlap = 0
 	}
 	ocrCommand := strings.TrimSpace(cfg.OCRCommand)
 	if ocrCommand == "" {
@@ -159,21 +179,23 @@ func New(cfg Config) (*App, error) {
 		return nil, err
 	}
 	app := &App{
-		store:         dataStore,
-		bookClient:    newBookClient(cfg.BookServiceURL, signer),
-		indexClient:   newIndexerClient(cfg.IndexerURL, signer),
-		queue:         q,
-		chunkSize:     chunkSize,
-		chunkOverlap:  chunkOverlap,
-		ocrEnabled:    cfg.OCREnabled,
-		ocrCommand:    ocrCommand,
-		ocrDevice:     ocrDevice,
-		ocrTimeout:    time.Duration(ocrTimeoutSeconds) * time.Second,
-		ocrServiceURL: strings.TrimSpace(cfg.OCRServiceURL),
-		pdfMinRunes:   pdfMinRunes,
-		pdfMinScore:   pdfMinScore,
-		pdfScoreDiff:  pdfScoreDiff,
-		httpClient:    &http.Client{Timeout: 60 * time.Second},
+		store:                dataStore,
+		bookClient:           newBookClient(cfg.BookServiceURL, signer),
+		indexClient:          newIndexerClient(cfg.IndexerURL, signer),
+		queue:                q,
+		lexicalChunkSize:     lexicalChunkSize,
+		lexicalChunkOverlap:  lexicalChunkOverlap,
+		semanticChunkSize:    semanticChunkSize,
+		semanticChunkOverlap: semanticChunkOverlap,
+		ocrEnabled:           cfg.OCREnabled,
+		ocrCommand:           ocrCommand,
+		ocrDevice:            ocrDevice,
+		ocrTimeout:           time.Duration(ocrTimeoutSeconds) * time.Second,
+		ocrServiceURL:        strings.TrimSpace(cfg.OCRServiceURL),
+		pdfMinRunes:          pdfMinRunes,
+		pdfMinScore:          pdfMinScore,
+		pdfScoreDiff:         pdfScoreDiff,
+		httpClient:           &http.Client{Timeout: 60 * time.Second},
 	}
 	app.startWorkers(cfg.QueueConcurrency)
 	return app, nil
@@ -224,26 +246,21 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 	}
 	defer os.Remove(tempPath)
 
-	chunks, err := a.parseAndChunk(fileInfo.Filename, tempPath)
+	blocks, err := a.parseAndChunk(fileInfo.Filename, tempPath)
 	if err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
-	if len(chunks) == 0 {
+	if len(blocks) == 0 {
 		err := fmt.Errorf("no content extracted")
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
-	now := time.Now().UTC()
-	domainChunks := make([]domain.Chunk, 0, len(chunks))
-	for idx, chunk := range chunks {
-		domainChunks = append(domainChunks, domain.Chunk{
-			ID:        util.NewID(),
-			BookID:    job.BookID,
-			Content:   chunk.Content,
-			Metadata:  enrichChunkMetadata(chunk.Metadata, job.BookID, idx, len(chunks), chunk.Content),
-			CreatedAt: now,
-		})
+	domainChunks := a.buildRetrievalChunks(job.BookID, blocks)
+	if len(domainChunks) == 0 {
+		err := fmt.Errorf("no retrieval chunks generated")
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
 	}
 	if err := a.store.ReplaceChunks(job.BookID, domainChunks); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
@@ -309,6 +326,65 @@ func (a *App) downloadFile(ctx context.Context, url string, filename string) (st
 		return "", err
 	}
 	return tmpFile.Name(), nil
+}
+
+func (a *App) buildRetrievalChunks(bookID string, blocks []chunkPayload) []domain.Chunk {
+	now := time.Now().UTC()
+	type tierSpec struct {
+		name    string
+		size    int
+		overlap int
+	}
+	specs := []tierSpec{
+		{name: "lexical", size: a.lexicalChunkSize, overlap: a.lexicalChunkOverlap},
+		{name: "semantic", size: a.semanticChunkSize, overlap: a.semanticChunkOverlap},
+	}
+	out := make([]domain.Chunk, 0, len(blocks)*4)
+	for _, block := range blocks {
+		blockContent := strings.TrimSpace(block.Content)
+		if blockContent == "" {
+			continue
+		}
+		blockMeta := cloneMetadata(block.Metadata)
+		chunkFamily := strings.TrimSpace(blockMeta["chunk_family"])
+		if chunkFamily == "" {
+			chunkFamily = sha256Hex(strings.TrimSpace(blockMeta["source_ref"]) + "\n" + blockContent)
+		}
+		blockMeta["chunk_family"] = chunkFamily
+		for _, spec := range specs {
+			parts := chunkTextByTokens(blockContent, spec.size, spec.overlap)
+			if len(parts) == 0 {
+				continue
+			}
+			for idx, part := range parts {
+				meta := cloneMetadata(blockMeta)
+				meta["retrieval_tier"] = spec.name
+				meta["chunk_profile"] = spec.name
+				meta["tier_chunk_index"] = strconv.Itoa(idx)
+				meta["tier_chunk_count"] = strconv.Itoa(len(parts))
+				meta["chunk"] = strconv.Itoa(idx)
+				out = append(out, domain.Chunk{
+					ID:        util.NewID(),
+					BookID:    bookID,
+					Content:   part,
+					Metadata:  enrichChunkMetadata(meta, bookID, len(out), 0, part),
+					CreatedAt: now,
+				})
+			}
+		}
+	}
+	for idx := range out {
+		out[idx].Metadata["chunk_count"] = strconv.Itoa(len(out))
+	}
+	return out
+}
+
+func cloneMetadata(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func enrichChunkMetadata(base map[string]string, bookID string, chunkIndex, chunkCount int, content string) map[string]string {

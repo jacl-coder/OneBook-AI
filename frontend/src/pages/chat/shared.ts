@@ -91,6 +91,34 @@ export type ChatAnswer = {
   retrievalDebug?: {
     language: string
     queries: string[]
+    lexical?: Array<{
+      chunkId: string
+      sourceRef?: string
+      score: number
+      stage: string
+      snippet?: string
+    }>
+    dense?: Array<{
+      chunkId: string
+      sourceRef?: string
+      score: number
+      stage: string
+      snippet?: string
+    }>
+    fused?: Array<{
+      chunkId: string
+      sourceRef?: string
+      score: number
+      stage: string
+      snippet?: string
+    }>
+    reranked?: Array<{
+      chunkId: string
+      sourceRef?: string
+      score: number
+      stage: string
+      snippet?: string
+    }>
   }
   createdAt: string
 }

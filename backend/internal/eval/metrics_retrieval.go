@@ -144,21 +144,21 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 			continue
 		}
 		denseHits := rankByCosine(qvec, docs.embedded, denseTopK)
-		sparseHits := rankBySparse(retrieval.BuildSparseVector(query, language), docs.sparse, sparseTopK)
-		fusedHits := fuseRunHits(denseHits, sparseHits, fusionTopK)
+		lexicalHits := rankBySparse(retrieval.BuildSparseVector(query, language), docs.sparse, sparseTopK)
+		fusedHits := fuseRunHits(denseHits, lexicalHits, fusionTopK)
 		rerankedHits := rerankHits(query, docs.byID, fusedHits, rerankTopN)
 
 		denseRuns = append(denseRuns, RunEntry{QID: q.QID, Results: denseHits})
-		sparseRuns = append(sparseRuns, RunEntry{QID: q.QID, Results: sparseHits})
+		sparseRuns = append(sparseRuns, RunEntry{QID: q.QID, Results: lexicalHits})
 		fusionRuns = append(fusionRuns, RunEntry{QID: q.QID, Results: fusedHits})
 		rerankRuns = append(rerankRuns, RunEntry{QID: q.QID, Results: rerankedHits})
 	}
 
 	return map[string][]RunEntry{
-		"dense":  denseRuns,
-		"sparse": sparseRuns,
-		"fusion": fusionRuns,
-		"rerank": rerankRuns,
+		"dense":   denseRuns,
+		"lexical": sparseRuns,
+		"fusion":  fusionRuns,
+		"rerank":  rerankRuns,
 	}, warnings, nil
 }
 
@@ -565,7 +565,7 @@ func evaluateRetrievalWarnings(metrics map[string]any) []string {
 }
 
 func orderedRetrievalStages(runs map[string][]RunEntry) []string {
-	order := []string{"dense", "sparse", "fusion", "rerank", "provided"}
+	order := []string{"dense", "lexical", "fusion", "rerank", "provided"}
 	out := make([]string, 0, len(runs))
 	for _, stage := range order {
 		if _, ok := runs[stage]; ok {
@@ -585,8 +585,10 @@ func finalRetrievalStage(opts RetrievalOptions) string {
 	switch mode {
 	case "dense_only":
 		return "dense"
-	case "sparse_only":
-		return "sparse"
+	case "lexical_only", "sparse_only":
+		return "lexical"
+	case "hybrid_no_rerank":
+		return "fusion"
 	case "provided":
 		return "provided"
 	default:
@@ -598,7 +600,7 @@ func topKForStage(opts RetrievalOptions, stage string) int {
 	switch stage {
 	case "dense":
 		return topKOrDefault(opts.DenseTopK, opts.TopK, 20)
-	case "sparse":
+	case "lexical":
 		return topKOrDefault(opts.SparseTopK, opts.TopK, 20)
 	case "fusion":
 		return topKOrDefault(opts.FusionTopK, opts.TopK, 20)

@@ -81,7 +81,7 @@ export function AdminEvalsPage() {
   const [runForm, setRunForm] = useState<CreateAdminEvalRunPayload>({
     datasetId: '',
     mode: 'all',
-    retrievalMode: 'hybrid',
+    retrievalMode: 'hybrid_best',
     gateMode: 'warn',
     params: { topK: 20, contextBudget: 4000 },
   })
@@ -280,9 +280,10 @@ export function AdminEvalsPage() {
                   setRunForm((prev) => ({ ...prev, retrievalMode: event.target.value as CreateAdminEvalRunPayload['retrievalMode'] }))
                 }
               >
-                <option value="hybrid">hybrid</option>
+                <option value="hybrid_best">hybrid_best</option>
+                <option value="hybrid_no_rerank">hybrid_no_rerank</option>
                 <option value="dense_only">dense_only</option>
-                <option value="sparse_only">sparse_only</option>
+                <option value="lexical_only">lexical_only</option>
               </select>
               <select
                 className={tw.input}

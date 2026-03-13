@@ -31,6 +31,10 @@ type FileConfig struct {
 	QueueRetryDelaySeconds      int     `yaml:"queueRetryDelaySeconds"`
 	ChunkSize                   int     `yaml:"chunkSize"`
 	ChunkOverlap                int     `yaml:"chunkOverlap"`
+	LexicalChunkSize            int     `yaml:"lexicalChunkSize"`
+	LexicalChunkOverlap         int     `yaml:"lexicalChunkOverlap"`
+	SemanticChunkSize           int     `yaml:"semanticChunkSize"`
+	SemanticChunkOverlap        int     `yaml:"semanticChunkOverlap"`
 	OCREnabled                  bool    `yaml:"ocrEnabled"`
 	OCRCommand                  string  `yaml:"ocrCommand"`
 	OCRDevice                   string  `yaml:"ocrDevice"`
@@ -110,6 +114,26 @@ func Load(path string) (FileConfig, error) {
 			cfg.ChunkOverlap = n
 		}
 	}
+	if v := os.Getenv("INGEST_LEXICAL_CHUNK_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LexicalChunkSize = n
+		}
+	}
+	if v := os.Getenv("INGEST_LEXICAL_CHUNK_OVERLAP"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LexicalChunkOverlap = n
+		}
+	}
+	if v := os.Getenv("INGEST_SEMANTIC_CHUNK_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SemanticChunkSize = n
+		}
+	}
+	if v := os.Getenv("INGEST_SEMANTIC_CHUNK_OVERLAP"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SemanticChunkOverlap = n
+		}
+	}
 	if v := os.Getenv("INGEST_OCR_ENABLED"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			cfg.OCREnabled = enabled
@@ -177,6 +201,9 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if cfg.ChunkOverlap >= cfg.ChunkSize {
 		return errors.New("config: chunkOverlap must be smaller than chunkSize")
+	}
+	if cfg.LexicalChunkSize < 0 || cfg.LexicalChunkOverlap < 0 || cfg.SemanticChunkSize < 0 || cfg.SemanticChunkOverlap < 0 {
+		return errors.New("config: lexical/semantic chunk sizes and overlaps must be >= 0")
 	}
 	if cfg.OCREnabled && strings.TrimSpace(cfg.OCRServiceURL) == "" && strings.TrimSpace(cfg.OCRCommand) == "" {
 		return errors.New("config: ocrEnabled=true requires either INGEST_OCR_SERVICE_URL (Docker OCR service) or INGEST_OCR_COMMAND (CLI)")

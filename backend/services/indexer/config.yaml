@@ -17,3 +17,5 @@ embeddingBatchSize: 4
 embeddingConcurrency: 2
 qdrantURL: "http://localhost:6333"
 qdrantCollection: "onebook_chunks"
+openSearchURL: "http://localhost:9200"
+openSearchIndex: "onebook_lexical_chunks"
