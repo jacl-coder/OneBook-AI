@@ -32,11 +32,20 @@ type FileConfig struct {
 	EmbeddingModel     string `yaml:"embeddingModel"`
 	EmbeddingDim       int    `yaml:"embeddingDim"`
 	TopK               int    `yaml:"topK"`
+	DenseRecallTopK    int    `yaml:"denseRecallTopK"`
+	LexicalRecallTopK  int    `yaml:"lexicalRecallTopK"`
+	FusionTopK         int    `yaml:"fusionTopK"`
 	HistoryLimit       int    `yaml:"historyLimit"`
 	QdrantURL          string `yaml:"qdrantURL"`
 	QdrantAPIKey       string `yaml:"qdrantAPIKey"`
 	QdrantCollection   string `yaml:"qdrantCollection"`
+	OpenSearchURL      string `yaml:"openSearchURL"`
+	OpenSearchIndex    string `yaml:"openSearchIndex"`
+	OpenSearchUsername string `yaml:"openSearchUsername"`
+	OpenSearchPassword string `yaml:"openSearchPassword"`
 	RerankTopN         int    `yaml:"rerankTopN"`
+	RetrievalMode      string `yaml:"retrievalMode"`
+	RerankerURL        string `yaml:"rerankerURL"`
 	ContextBudget      int    `yaml:"contextBudget"`
 	MinEvidenceCount   int    `yaml:"minEvidenceCount"`
 }
@@ -109,6 +118,21 @@ func Load(path string) (FileConfig, error) {
 			cfg.HistoryLimit = n
 		}
 	}
+	if v := os.Getenv("CHAT_DENSE_RECALL_TOPK"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.DenseRecallTopK = n
+		}
+	}
+	if v := os.Getenv("CHAT_LEXICAL_RECALL_TOPK"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LexicalRecallTopK = n
+		}
+	}
+	if v := os.Getenv("CHAT_FUSION_TOPK"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.FusionTopK = n
+		}
+	}
 	if v := os.Getenv("QDRANT_URL"); v != "" {
 		cfg.QdrantURL = v
 	}
@@ -118,10 +142,28 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("QDRANT_COLLECTION"); v != "" {
 		cfg.QdrantCollection = v
 	}
+	if v := os.Getenv("OPENSEARCH_URL"); v != "" {
+		cfg.OpenSearchURL = v
+	}
+	if v := os.Getenv("OPENSEARCH_INDEX"); v != "" {
+		cfg.OpenSearchIndex = v
+	}
+	if v := os.Getenv("OPENSEARCH_USERNAME"); v != "" {
+		cfg.OpenSearchUsername = v
+	}
+	if v := os.Getenv("OPENSEARCH_PASSWORD"); v != "" {
+		cfg.OpenSearchPassword = v
+	}
 	if v := os.Getenv("CHAT_RERANK_TOPN"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.RerankTopN = n
 		}
+	}
+	if v := os.Getenv("CHAT_RETRIEVAL_MODE"); v != "" {
+		cfg.RetrievalMode = v
+	}
+	if v := os.Getenv("RERANKER_URL"); v != "" {
+		cfg.RerankerURL = v
 	}
 	if v := os.Getenv("CHAT_CONTEXT_BUDGET"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -191,6 +233,12 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if strings.TrimSpace(cfg.QdrantCollection) == "" {
 		return errors.New("config: qdrantCollection is required (set QDRANT_COLLECTION)")
+	}
+	if strings.TrimSpace(cfg.OpenSearchURL) == "" {
+		return errors.New("config: openSearchURL is required (set OPENSEARCH_URL)")
+	}
+	if strings.TrimSpace(cfg.OpenSearchIndex) == "" {
+		return errors.New("config: openSearchIndex is required (set OPENSEARCH_INDEX)")
 	}
 	switch provider {
 	case "ollama":

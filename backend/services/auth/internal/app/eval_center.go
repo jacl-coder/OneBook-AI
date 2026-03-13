@@ -481,7 +481,7 @@ func (a *App) AdminCreateEvalRun(actor domain.User, input EvalRunCreateInput) (d
 	}
 	retrievalMode := input.RetrievalMode
 	if retrievalMode == "" {
-		retrievalMode = domain.EvalRetrievalModeHybrid
+		retrievalMode = domain.EvalRetrievalModeHybridBest
 	}
 	gateMode := strings.TrimSpace(input.GateMode)
 	if gateMode == "" {

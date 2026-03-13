@@ -23,6 +23,17 @@ services:
       - "6334:6334"
     volumes:
       - ./docker/qdrant-data:/qdrant/storage
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    container_name: onebook-opensearch
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - ./docker/opensearch-data:/usr/share/opensearch/data
   minio:
     image: minio/minio:latest
     container_name: onebook-minio

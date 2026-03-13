@@ -1,12 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
@@ -27,7 +31,7 @@ type QueryRewriter interface {
 }
 
 type Reranker interface {
-	Rerank(query string, hits []retrievalHit, limit int) []retrievalHit
+	Rerank(ctx context.Context, query string, hits []retrievalHit, limit int) ([]retrievalHit, error)
 }
 
 type GroundingValidator interface {
@@ -59,15 +63,98 @@ func (r *modelQueryRewriter) Rewrite(ctx context.Context, query, language string
 	return retrieval.BuildQueryVariants(strings.Join(append(base, rewrites...), "\n")), nil
 }
 
-type hybridReranker struct{}
-
-func newHybridReranker() Reranker {
-	return hybridReranker{}
+type hybridReranker struct {
+	url      string
+	fallback Reranker
+	client   *http.Client
 }
 
-func (hybridReranker) Rerank(query string, hits []retrievalHit, limit int) []retrievalHit {
+func newHybridReranker(url string) Reranker {
+	return hybridReranker{
+		url:      strings.TrimSpace(url),
+		fallback: fallbackReranker{},
+		client:   &http.Client{Timeout: 8 * time.Second},
+	}
+}
+
+func (r hybridReranker) Rerank(ctx context.Context, query string, hits []retrievalHit, limit int) ([]retrievalHit, error) {
+	if strings.TrimSpace(r.url) == "" {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	reqBody := struct {
+		Query     string `json:"query"`
+		TopN      int    `json:"top_n"`
+		Documents []struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"documents"`
+	}{
+		Query: query,
+		TopN:  limit,
+	}
+	reqBody.Documents = make([]struct {
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	}, 0, len(hits))
+	index := make(map[string]retrievalHit, len(hits))
+	for _, hit := range hits {
+		id := fuseKey(hit)
+		index[id] = hit
+		reqBody.Documents = append(reqBody.Documents, struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		}{ID: id, Text: hit.content})
+	}
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(data))
+	if err != nil {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	var out struct {
+		Results []struct {
+			ID    string  `json:"id"`
+			Score float64 `json:"score"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	scored := make([]retrievalHit, 0, len(out.Results))
+	for _, result := range out.Results {
+		hit, ok := index[result.ID]
+		if !ok {
+			continue
+		}
+		hit.score = result.Score
+		hit.stage = "rerank"
+		scored = append(scored, hit)
+	}
+	if len(scored) == 0 {
+		return r.fallback.Rerank(ctx, query, hits, limit)
+	}
+	if limit > 0 && len(scored) > limit {
+		scored = scored[:limit]
+	}
+	return scored, nil
+}
+
+type fallbackReranker struct{}
+
+func (fallbackReranker) Rerank(_ context.Context, query string, hits []retrievalHit, limit int) ([]retrievalHit, error) {
 	if len(hits) == 0 {
-		return nil
+		return nil, nil
 	}
 	queryLanguage := retrieval.DetectLanguage(query)
 	queryTokens := retrieval.Tokenize(query, queryLanguage)
@@ -90,7 +177,7 @@ func (hybridReranker) Rerank(query string, hits []retrievalHit, limit int) []ret
 	for i := range scored {
 		scored[i].stage = "rerank"
 	}
-	return scored
+	return scored, nil
 }
 
 type groundingValidator struct {
@@ -165,47 +252,61 @@ func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question s
 		queries = []string{query}
 	}
 	denseDebug := make([]domain.RetrievalHit, 0)
-	sparseDebug := make([]domain.RetrievalHit, 0)
+	lexicalDebug := make([]domain.RetrievalHit, 0)
 	denseHits := make(map[string]retrievalHit)
-	sparseHits := make(map[string]retrievalHit)
-	searchLimit := maxInt(a.rerankTopN, a.topK) * 2
+	lexicalHits := make(map[string]retrievalHit)
 	for _, item := range queries {
-		vector, err := a.embedder.EmbedText(ctx, item, "RETRIEVAL_QUERY")
-		if err == nil {
-			points, err := a.search.QueryDense(ctx, book.ID, vector, searchLimit)
+		if a.retrievalMode != "lexical_only" {
+			vector, err := a.embedder.EmbedText(ctx, item, "RETRIEVAL_QUERY")
 			if err == nil {
-				for rank, point := range points {
-					hit := pointToRetrievalHit(point, "dense")
-					hit.score += reciprocalRank(rank)
-					mergeRetrievalHit(denseHits, hit)
-					denseDebug = append(denseDebug, debugHit(hit, "dense"))
+				points, err := a.search.QueryDense(ctx, book.ID, vector, a.denseRecallTopK)
+				if err == nil {
+					for rank, point := range points {
+						hit := pointToRetrievalHit(point, "dense")
+						hit.score += reciprocalRank(rank)
+						mergeRetrievalHit(denseHits, hit)
+						denseDebug = append(denseDebug, debugHit(hit, "dense"))
+					}
 				}
 			}
 		}
-		sparse := retrieval.BuildSparseVector(item, language)
-		points, err := a.search.QuerySparse(ctx, book.ID, sparse, searchLimit)
+		if a.retrievalMode == "dense_only" {
+			continue
+		}
+		terms := strings.Join(retrieval.Tokenize(item, language), " ")
+		points, err := a.lexical.QueryBM25(ctx, book.ID, terms, a.lexicalRecallTopK)
 		if err == nil {
 			for rank, point := range points {
-				hit := pointToRetrievalHit(point, "sparse")
+				hit := pointToRetrievalHit(point, "lexical")
 				hit.score += reciprocalRank(rank)
-				mergeRetrievalHit(sparseHits, hit)
-				sparseDebug = append(sparseDebug, debugHit(hit, "sparse"))
+				mergeRetrievalHit(lexicalHits, hit)
+				lexicalDebug = append(lexicalDebug, debugHit(hit, "lexical"))
 			}
 		}
 	}
-	if len(denseHits) == 0 && len(sparseHits) == 0 {
+	if len(denseHits) == 0 && len(lexicalHits) == 0 {
 		return nil, &domain.RetrievalDebug{Language: language, Queries: queries}, nil
 	}
-	fused := fuseHits(denseHits, sparseHits)
-	reranked := a.reranker.Rerank(query, fused, a.rerankTopN)
-	packed := packContext(reranked, a.topK, a.contextBudget)
+	fused := fuseHits(denseHits, lexicalHits, a.fusionTopK)
+	finalHits := fused
+	if a.retrievalMode == "dense_only" {
+		finalHits = orderedHits(denseHits, a.fusionTopK)
+	} else if a.retrievalMode == "lexical_only" {
+		finalHits = orderedHits(lexicalHits, a.fusionTopK)
+	} else if a.retrievalMode == "hybrid_best" {
+		reranked, err := a.reranker.Rerank(ctx, query, fused, a.rerankTopN)
+		if err == nil && len(reranked) > 0 {
+			finalHits = reranked
+		}
+	}
+	packed := packContext(finalHits, a.topK, a.contextBudget)
 	debugInfo := &domain.RetrievalDebug{
 		Language: language,
 		Queries:  queries,
 		Dense:    limitDebugHits(denseDebug, a.rerankTopN),
-		Sparse:   limitDebugHits(sparseDebug, a.rerankTopN),
+		Lexical:  limitDebugHits(lexicalDebug, a.rerankTopN),
 		Fused:    hitsToDebug(fused, "fusion", a.rerankTopN),
-		Reranked: hitsToDebug(reranked, "rerank", a.topK),
+		Reranked: hitsToDebug(finalHits, "rerank", a.topK),
 	}
 	return packed, debugInfo, nil
 }
@@ -218,6 +319,8 @@ func pointToRetrievalHit(point retrieval.Point, stage string) retrievalHit {
 		"page":           strings.TrimSpace(anyString(payload["page"])),
 		"section_path":   strings.TrimSpace(anyString(payload["section_path"])),
 		"chunk_index":    strings.TrimSpace(anyString(payload["chunk_index"])),
+		"chunk_family":   strings.TrimSpace(anyString(payload["chunk_family"])),
+		"retrieval_tier": strings.TrimSpace(anyString(payload["retrieval_tier"])),
 		"content_sha256": strings.TrimSpace(anyString(payload["content_sha256"])),
 		"language":       strings.TrimSpace(anyString(payload["language"])),
 	}
@@ -235,20 +338,21 @@ func pointToRetrievalHit(point retrieval.Point, stage string) retrievalHit {
 }
 
 func mergeRetrievalHit(target map[string]retrievalHit, hit retrievalHit) {
-	existing, ok := target[hit.chunk.ID]
+	key := fuseKey(hit)
+	existing, ok := target[key]
 	if !ok || hit.score > existing.score {
-		target[hit.chunk.ID] = hit
+		target[key] = hit
 	}
 }
 
-func fuseHits(denseHits, sparseHits map[string]retrievalHit) []retrievalHit {
-	fused := make(map[string]retrievalHit, len(denseHits)+len(sparseHits))
+func fuseHits(denseHits, lexicalHits map[string]retrievalHit, topK int) []retrievalHit {
+	fused := make(map[string]retrievalHit, len(denseHits)+len(lexicalHits))
 	for id, hit := range denseHits {
 		copy := hit
 		copy.stage = "fusion"
 		fused[id] = copy
 	}
-	for id, hit := range sparseHits {
+	for id, hit := range lexicalHits {
 		current, ok := fused[id]
 		if !ok {
 			hit.stage = "fusion"
@@ -268,7 +372,34 @@ func fuseHits(denseHits, sparseHits map[string]retrievalHit) []retrievalHit {
 		}
 		return out[i].score > out[j].score
 	})
+	if topK > 0 && len(out) > topK {
+		out = out[:topK]
+	}
 	return out
+}
+
+func orderedHits(items map[string]retrievalHit, topK int) []retrievalHit {
+	out := make([]retrievalHit, 0, len(items))
+	for _, hit := range items {
+		out = append(out, hit)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].score == out[j].score {
+			return out[i].chunk.ID < out[j].chunk.ID
+		}
+		return out[i].score > out[j].score
+	})
+	if topK > 0 && len(out) > topK {
+		out = out[:topK]
+	}
+	return out
+}
+
+func fuseKey(hit retrievalHit) string {
+	if family := strings.TrimSpace(hit.chunk.Metadata["chunk_family"]); family != "" {
+		return family
+	}
+	return hit.chunk.ID
 }
 
 func packContext(hits []retrievalHit, topK int, budget int) []retrievalHit {

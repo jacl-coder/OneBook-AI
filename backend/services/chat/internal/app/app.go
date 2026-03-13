@@ -28,29 +28,43 @@ type Config struct {
 	EmbeddingModel     string
 	EmbeddingDim       int
 	TopK               int
+	DenseRecallTopK    int
+	LexicalRecallTopK  int
+	FusionTopK         int
 	HistoryLimit       int
 	QdrantURL          string
 	QdrantAPIKey       string
 	QdrantCollection   string
+	OpenSearchURL      string
+	OpenSearchIndex    string
+	OpenSearchUsername string
+	OpenSearchPassword string
 	RerankTopN         int
+	RetrievalMode      string
+	RerankerURL        string
 	ContextBudget      int
 	MinEvidenceCount   int
 }
 
 // App is the core application service wiring together storage and chat logic.
 type App struct {
-	store        store.Store
-	generator    ai.TextGenerator
-	embedder     ai.Embedder
-	search       *retrieval.Client
-	rewriter     QueryRewriter
-	reranker     Reranker
-	validator    GroundingValidator
-	topK         int
-	historyLimit int
-	rerankTopN   int
-	contextBudget int
-	minEvidenceCount int
+	store             store.Store
+	generator         ai.TextGenerator
+	embedder          ai.Embedder
+	search            *retrieval.Client
+	lexical           *retrieval.OpenSearchClient
+	rewriter          QueryRewriter
+	reranker          Reranker
+	validator         GroundingValidator
+	topK              int
+	denseRecallTopK   int
+	lexicalRecallTopK int
+	fusionTopK        int
+	historyLimit      int
+	rerankTopN        int
+	retrievalMode     string
+	contextBudget     int
+	minEvidenceCount  int
 }
 
 // New constructs the application with database-backed storage for messages.
@@ -77,6 +91,10 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init qdrant client: %w", err)
 	}
+	lexicalClient, err := retrieval.NewOpenSearchClient(cfg.OpenSearchURL, cfg.OpenSearchIndex, cfg.OpenSearchUsername, cfg.OpenSearchPassword)
+	if err != nil {
+		return nil, fmt.Errorf("init opensearch client: %w", err)
+	}
 
 	// Build text generator based on provider.
 	generator, err := buildGenerator(cfg)
@@ -101,7 +119,19 @@ func New(cfg Config) (*App, error) {
 	}
 	topK := cfg.TopK
 	if topK <= 0 {
-		topK = 4
+		topK = 5
+	}
+	denseRecallTopK := cfg.DenseRecallTopK
+	if denseRecallTopK <= 0 {
+		denseRecallTopK = 40
+	}
+	lexicalRecallTopK := cfg.LexicalRecallTopK
+	if lexicalRecallTopK <= 0 {
+		lexicalRecallTopK = 60
+	}
+	fusionTopK := cfg.FusionTopK
+	if fusionTopK <= 0 {
+		fusionTopK = 30
 	}
 	historyLimit := cfg.HistoryLimit
 	if historyLimit < 0 {
@@ -109,7 +139,11 @@ func New(cfg Config) (*App, error) {
 	}
 	rerankTopN := cfg.RerankTopN
 	if rerankTopN <= 0 {
-		rerankTopN = 8
+		rerankTopN = 12
+	}
+	retrievalMode := strings.TrimSpace(cfg.RetrievalMode)
+	if retrievalMode == "" {
+		retrievalMode = "hybrid_best"
 	}
 	contextBudget := cfg.ContextBudget
 	if contextBudget <= 0 {
@@ -121,18 +155,23 @@ func New(cfg Config) (*App, error) {
 	}
 
 	return &App{
-		store:            dataStore,
-		generator:        generator,
-		embedder:         embedder,
-		search:           searchClient,
-		rewriter:         newModelQueryRewriter(generator),
-		reranker:         newHybridReranker(),
-		validator:        newGroundingValidator(generator),
-		topK:             topK,
-		historyLimit:     historyLimit,
-		rerankTopN:       rerankTopN,
-		contextBudget:    contextBudget,
-		minEvidenceCount: minEvidenceCount,
+		store:             dataStore,
+		generator:         generator,
+		embedder:          embedder,
+		search:            searchClient,
+		lexical:           lexicalClient,
+		rewriter:          newModelQueryRewriter(generator),
+		reranker:          newHybridReranker(cfg.RerankerURL),
+		validator:         newGroundingValidator(generator),
+		topK:              topK,
+		denseRecallTopK:   denseRecallTopK,
+		lexicalRecallTopK: lexicalRecallTopK,
+		fusionTopK:        fusionTopK,
+		historyLimit:      historyLimit,
+		rerankTopN:        rerankTopN,
+		retrievalMode:     retrievalMode,
+		contextBudget:     contextBudget,
+		minEvidenceCount:  minEvidenceCount,
 	}, nil
 }
 

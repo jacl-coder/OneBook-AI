@@ -52,6 +52,10 @@ func main() {
 		QdrantURL:                 cfg.QdrantURL,
 		QdrantAPIKey:              cfg.QdrantAPIKey,
 		QdrantCollection:          cfg.QdrantCollection,
+		OpenSearchURL:             cfg.OpenSearchURL,
+		OpenSearchIndex:           cfg.OpenSearchIndex,
+		OpenSearchUsername:        cfg.OpenSearchUsername,
+		OpenSearchPassword:        cfg.OpenSearchPassword,
 	})
 	if err != nil {
 		util.Fatal("failed to init app", "err", err)

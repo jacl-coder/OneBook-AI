@@ -120,7 +120,7 @@ for p in "$GATEWAY_PORT" "$AUTH_PORT" "$BOOK_PORT" "$CHAT_PORT" "$INGEST_PORT" "
   fuser -k "${p}/tcp" >/dev/null 2>&1 || true
 done
 
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui ocr-service qdrant
+docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis minio minio-init swagger-ui ocr-service qdrant opensearch
 
 echo "Waiting for MinIO to be ready..."
 until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do

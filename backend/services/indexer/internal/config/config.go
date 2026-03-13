@@ -37,6 +37,10 @@ type FileConfig struct {
 	QdrantURL                   string `yaml:"qdrantURL"`
 	QdrantAPIKey                string `yaml:"qdrantAPIKey"`
 	QdrantCollection            string `yaml:"qdrantCollection"`
+	OpenSearchURL               string `yaml:"openSearchURL"`
+	OpenSearchIndex             string `yaml:"openSearchIndex"`
+	OpenSearchUsername          string `yaml:"openSearchUsername"`
+	OpenSearchPassword          string `yaml:"openSearchPassword"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -122,6 +126,18 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("QDRANT_COLLECTION"); v != "" {
 		cfg.QdrantCollection = v
 	}
+	if v := os.Getenv("OPENSEARCH_URL"); v != "" {
+		cfg.OpenSearchURL = v
+	}
+	if v := os.Getenv("OPENSEARCH_INDEX"); v != "" {
+		cfg.OpenSearchIndex = v
+	}
+	if v := os.Getenv("OPENSEARCH_USERNAME"); v != "" {
+		cfg.OpenSearchUsername = v
+	}
+	if v := os.Getenv("OPENSEARCH_PASSWORD"); v != "" {
+		cfg.OpenSearchPassword = v
+	}
 	if v := os.Getenv("OLLAMA_HOST"); v != "" {
 		cfg.EmbeddingBaseURL = v
 		cfg.EmbeddingProvider = "ollama"
@@ -167,6 +183,12 @@ func validateConfig(cfg FileConfig) error {
 	}
 	if strings.TrimSpace(cfg.QdrantCollection) == "" {
 		return errors.New("config: qdrantCollection is required (set QDRANT_COLLECTION)")
+	}
+	if strings.TrimSpace(cfg.OpenSearchURL) == "" {
+		return errors.New("config: openSearchURL is required (set OPENSEARCH_URL)")
+	}
+	if strings.TrimSpace(cfg.OpenSearchIndex) == "" {
+		return errors.New("config: openSearchIndex is required (set OPENSEARCH_INDEX)")
 	}
 	switch provider {
 	case "ollama":

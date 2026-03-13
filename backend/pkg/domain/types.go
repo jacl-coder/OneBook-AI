@@ -119,7 +119,7 @@ type RetrievalDebug struct {
 	Language string         `json:"language"`
 	Queries  []string       `json:"queries"`
 	Dense    []RetrievalHit `json:"dense"`
-	Sparse   []RetrievalHit `json:"sparse"`
+	Lexical  []RetrievalHit `json:"lexical"`
 	Fused    []RetrievalHit `json:"fused"`
 	Reranked []RetrievalHit `json:"reranked"`
 }
@@ -200,9 +200,11 @@ const (
 type EvalRetrievalMode string
 
 const (
-	EvalRetrievalModeHybrid     EvalRetrievalMode = "hybrid"
-	EvalRetrievalModeDenseOnly  EvalRetrievalMode = "dense_only"
-	EvalRetrievalModeSparseOnly EvalRetrievalMode = "sparse_only"
+	EvalRetrievalModeHybridBest  EvalRetrievalMode = "hybrid_best"
+	EvalRetrievalModeHybrid      EvalRetrievalMode = "hybrid_no_rerank"
+	EvalRetrievalModeDenseOnly   EvalRetrievalMode = "dense_only"
+	EvalRetrievalModeLexicalOnly EvalRetrievalMode = "lexical_only"
+	EvalRetrievalModeSparseOnly  EvalRetrievalMode = "sparse_only"
 )
 
 type EvalGateStatus string

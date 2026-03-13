@@ -16,10 +16,17 @@ jwtIssuer: "onebook-auth"
 jwtAudience: "onebook-api"
 jwtLeeway: "30s"
 bookServiceURL: "http://localhost:8082"
-topK: 4
+topK: 5
+denseRecallTopK: 40
+lexicalRecallTopK: 60
+fusionTopK: 30
 historyLimit: 6
 qdrantURL: "http://localhost:6333"
 qdrantCollection: "onebook_chunks"
-rerankTopN: 8
+openSearchURL: "http://localhost:9200"
+openSearchIndex: "onebook_lexical_chunks"
+rerankTopN: 12
+retrievalMode: "hybrid_best"
+# rerankerURL: "http://localhost:8090/rerank"
 contextBudget: 2200
 minEvidenceCount: 2

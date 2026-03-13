@@ -13,6 +13,10 @@ bookServiceURL: "http://localhost:8082"
 indexerURL: "http://localhost:8085"
 chunkSize: 800
 chunkOverlap: 120
+lexicalChunkSize: 160
+lexicalChunkOverlap: 30
+semanticChunkSize: 480
+semanticChunkOverlap: 80
 ocrEnabled: false
 ocrCommand: "paddleocr"
 ocrDevice: "cpu"

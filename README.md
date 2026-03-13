@@ -32,7 +32,7 @@
 |---|---|
 | 书籍管理 | 上传 PDF/EPUB/TXT（最大 50MB），书库列表/查询/删除，预签名下载 URL（含原始文件名） |
 | 解析与分块 | PDF 优先 `pdftotext`，失败回退 Go PDF 库；扫描版 PDF 可用 PaddleOCR Docker 服务按页质量融合；EPUB/TXT 语义分块 |
-| 向量索引 | Ollama 本地 Embedding（可配置模型/维度），批量/并发写入 Qdrant；书籍状态自动流转 |
+| 检索索引 | Ollama 本地 Embedding + OpenSearch BM25，语义向量写入 Qdrant、词法索引写入 OpenSearch；书籍状态自动流转 |
 | RAG 对话 | Dense + Sparse 混合检索，证据约束生成，答案含引用及拒答支持；消息入库可续聊 |
 | 认证与鉴权 | RS256 JWT（Access 15 分钟）+ Refresh Token 轮换（Redis 原子 CAS + 重放检测）；统一 Cookie 会话 |
 | 管理后台 | 用户/书籍管理、重处理、操作审计日志、系统概览、RAG 评测中心（Admin Eval Center） |
@@ -57,7 +57,7 @@ Browser / Frontend (React + Vite, :5173)
 Auth :8081          Book :8082                Chat :8083
 注册/登录/JWT        书籍元数据/MinIO          向量检索 + LLM 生成
 RefreshToken                │                        │
-撤销/限流           ┌───────┘              Qdrant (dense+sparse)
+撤销/限流           ┌───────┘              Qdrant (dense) + OpenSearch (BM25)
 管理员/审计         │                               │
 Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
                     ▼
@@ -67,12 +67,14 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
                     ▼
              Indexer :8085
              Ollama Embedding → Qdrant
+                    Lexical Docs → OpenSearch
 
 基础设施：
   Postgres             ← 用户/书籍/消息/chunk 元数据
   Redis                ← Token/限流/Streams 队列
   MinIO (S3)           ← 书籍文件存储
-  Qdrant               ← chunk 向量索引与检索
+  Qdrant               ← semantic chunk 向量索引
+  OpenSearch           ← lexical chunk BM25 检索
   Ollama               ← 本地 Embedding
   OCR Service :8087    ← 可选 PaddleOCR Docker 服务（扫描版 PDF）
 ```
@@ -81,7 +83,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 
 1. **上传** → Gateway → Book 服务 → 写 MinIO + Postgres → 入队 Ingest Stream
 2. **解析** → Ingest 拉文件 → PDF/EPUB/TXT 解析 → 语义分块 → 写 chunks → 入队 Indexer Stream
-3. **索引** → Indexer → Ollama Embedding → Qdrant 写向量 → 状态更新为 `ready`
+3. **索引** → Indexer → Ollama Embedding → Qdrant 写 semantic 向量，同时写 lexical 文档到 OpenSearch → 状态更新为 `ready`
 4. **对话** → Chat → 问题向量化 → TopK 检索 → 上下文拼装 + 历史 N 轮 → LLM → 保存消息 + 引用
 
 ---
@@ -97,7 +99,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 | JWT | `github.com/golang-jwt/jwt/v5`（RS256 + JWKS） |
 | 对象存储 | MinIO SDK（`minio-go/v7`） |
 | 队列 | Redis Streams（`go-redis/v9`） |
-| 向量检索 | Qdrant（HTTP） |
+| 检索 | Qdrant（dense vector）+ OpenSearch（BM25 lexical） |
 | PDF 解析 | 优先 `pdftotext` CLI，回退 `ledongthuc/pdf` |
 | EPUB 解析 | `golang.org/x/net` 解析 HTML |
 | Embedding | Ollama HTTP API |
@@ -225,12 +227,12 @@ OneBook-AI/
 ### Indexer（:8085）
 
 - 从 Redis Stream 消费任务，批量调用 Ollama 生成向量（维度 `ONEBOOK_EMBEDDING_DIM`，默认 3072）。
-- 写入 Qdrant（collection：`QDRANT_COLLECTION`，默认 `onebook_chunks`）。
+- 写入 Qdrant（collection：`QDRANT_COLLECTION`，默认 `onebook_chunks`）与 OpenSearch（index：`OPENSEARCH_INDEX`，默认 `onebook_lexical_chunks`）。
 - 写入完成后更新书籍状态为 `ready`。
 
 ### Chat（:8083）
 
-- 问题向量化 → Dense + Sparse 混合检索 Qdrant（TopN recall → rerank → TopK context）。
+- 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → TopK context。
 - 拼装上下文（最近 N 轮历史 + 检索 chunks）。
 - 调用 `TextGenerator` → LLM 生成回答，附引用；证据不足时拒答（返回 `abstained: true`）。
 - 保存消息至 Postgres，支持同一会话续聊（`conversationId`）。
@@ -386,6 +388,8 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `GENERATION_BASE_URL` | — | OpenAI 兼容 endpoint（provider=openai-compat 时填写） |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant 地址 |
 | `QDRANT_COLLECTION` | `onebook_chunks` | Qdrant Collection 名 |
+| `OPENSEARCH_URL` | `http://localhost:9200` | OpenSearch 地址 |
+| `OPENSEARCH_INDEX` | `onebook_lexical_chunks` | OpenSearch BM25 索引名 |
 | `ONEBOOK_EMBEDDING_DIM` | `3072` | Embedding 维度（与 Ollama 模型一致） |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama 地址 |
 | `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:latest` | Embedding 模型名 |
@@ -440,7 +444,7 @@ cd frontend && npm install && npm run dev
 
 ```bash
 # 启动依赖
-docker compose up -d postgres redis qdrant minio minio-init swagger-ui
+docker compose up -d postgres redis qdrant opensearch minio minio-init swagger-ui
 
 # 各服务启动命令（在 backend/ 目录下）
 cd backend/services/auth    && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/auth
@@ -473,6 +477,7 @@ cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 | OCR Service | 8087 |
 | MinIO Console | 9001 |
 | Qdrant Dashboard | 6333 |
+| OpenSearch | 9200 |
 
 ### 9.6 测试与验证
 

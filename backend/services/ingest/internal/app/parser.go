@@ -17,6 +17,8 @@ import (
 	"strings"
 	"unicode"
 
+	"onebookai/pkg/retrieval"
+
 	"github.com/ledongthuc/pdf"
 	"golang.org/x/net/html"
 )
@@ -334,18 +336,19 @@ func (a *App) parseEPUB(path string) ([]chunkPayload, error) {
 		}
 		text := normalizeTextPreserveNewlines(extractText(doc))
 		baseName := filepath.Base(file.Name)
-		for idx, part := range chunkTextSemantic(text, a.chunkSize, a.chunkOverlap) {
-			chunks = append(chunks, chunkPayload{
-				Content: part,
-				Metadata: map[string]string{
-					"source_type":    "epub",
-					"source_ref":     fmt.Sprintf("section:%s", baseName),
-					"section":        baseName,
-					"chunk":          strconv.Itoa(idx),
-					"extract_method": "epub_html_parser",
-				},
-			})
+		if text == "" {
+			continue
 		}
+		chunks = append(chunks, chunkPayload{
+			Content: text,
+			Metadata: map[string]string{
+				"source_type":    "epub",
+				"source_ref":     fmt.Sprintf("section:%s", baseName),
+				"section":        baseName,
+				"section_path":   baseName,
+				"extract_method": "epub_html_parser",
+			},
+		})
 	}
 	return chunks, nil
 }
@@ -356,20 +359,17 @@ func (a *App) parseText(path string) ([]chunkPayload, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 	text := normalizeTextPreserveNewlines(string(data))
-	parts := chunkTextSemantic(text, a.chunkSize, a.chunkOverlap)
-	chunks := make([]chunkPayload, 0, len(parts))
-	for idx, part := range parts {
-		chunks = append(chunks, chunkPayload{
-			Content: part,
-			Metadata: map[string]string{
-				"source_type":    "text",
-				"source_ref":     "text",
-				"chunk":          strconv.Itoa(idx),
-				"extract_method": "plain_text_parser",
-			},
-		})
+	if text == "" {
+		return nil, nil
 	}
-	return chunks, nil
+	return []chunkPayload{{
+		Content: text,
+		Metadata: map[string]string{
+			"source_type":    "text",
+			"source_ref":     "text",
+			"extract_method": "plain_text_parser",
+		},
+	}}, nil
 }
 
 func (a *App) mergePDFPages(nativePages []pageExtraction, ocrPages []pageExtraction) []pageExtraction {
@@ -421,24 +421,24 @@ func (a *App) buildPDFChunks(pages []pageExtraction) []chunkPayload {
 	chunks := make([]chunkPayload, 0, len(pages))
 	for _, page := range pages {
 		quality := evaluatePageQuality(page.Text)
-		for idx, part := range chunkTextSemantic(page.Text, a.chunkSize, a.chunkOverlap) {
-			meta := map[string]string{
-				"source_type":        "pdf",
-				"source_ref":         fmt.Sprintf("page:%d", page.Page),
-				"page":               strconv.Itoa(page.Page),
-				"chunk":              strconv.Itoa(idx),
-				"extract_method":     page.Method,
-				"page_quality_score": fmt.Sprintf("%.3f", quality.Score),
-				"page_runes":         strconv.Itoa(quality.Runes),
-			}
-			if page.OCRAvgScore > 0 {
-				meta["ocr_avg_score"] = fmt.Sprintf("%.3f", page.OCRAvgScore)
-			}
-			chunks = append(chunks, chunkPayload{
-				Content:  part,
-				Metadata: meta,
-			})
+		if strings.TrimSpace(page.Text) == "" {
+			continue
 		}
+		meta := map[string]string{
+			"source_type":        "pdf",
+			"source_ref":         fmt.Sprintf("page:%d", page.Page),
+			"page":               strconv.Itoa(page.Page),
+			"extract_method":     page.Method,
+			"page_quality_score": fmt.Sprintf("%.3f", quality.Score),
+			"page_runes":         strconv.Itoa(quality.Runes),
+		}
+		if page.OCRAvgScore > 0 {
+			meta["ocr_avg_score"] = fmt.Sprintf("%.3f", page.OCRAvgScore)
+		}
+		chunks = append(chunks, chunkPayload{
+			Content:  page.Text,
+			Metadata: meta,
+		})
 	}
 	return chunks
 }
@@ -793,6 +793,83 @@ func chunkTextSemantic(text string, size, overlap int) []string {
 		}
 	}
 	return chunks
+}
+
+func chunkTextByTokens(text string, size, overlap int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" || size <= 0 {
+		return nil
+	}
+	language := retrieval.DetectLanguage(text)
+	units := buildSentenceUnits(text, maxInt(size*6, 240))
+	if len(units) == 0 {
+		return nil
+	}
+	var chunks []string
+	var current []sentenceUnit
+	currentTokens := 0
+	for _, unit := range units {
+		unitTokens := tokenLen(unit.text, language)
+		if len(current) > 0 && currentTokens+unitTokens > size {
+			chunkText := unitsToText(current)
+			if chunkText != "" {
+				chunks = append(chunks, chunkText)
+			}
+			current = overlapUnitsByTokens(current, overlap, language)
+			currentTokens = unitsTokenLen(current, language)
+			if len(current) > 0 && currentTokens+unitTokens > size {
+				current = nil
+				currentTokens = 0
+			}
+		}
+		current = append(current, unit)
+		currentTokens += unitTokens
+	}
+	if len(current) > 0 {
+		chunkText := unitsToText(current)
+		if chunkText != "" {
+			chunks = append(chunks, chunkText)
+		}
+	}
+	return chunks
+}
+
+func overlapUnitsByTokens(units []sentenceUnit, overlap int, language string) []sentenceUnit {
+	if overlap <= 0 || len(units) == 0 {
+		return nil
+	}
+	total := 0
+	idx := len(units)
+	for idx > 0 && total < overlap {
+		idx--
+		total += tokenLen(units[idx].text, language)
+	}
+	out := make([]sentenceUnit, len(units[idx:]))
+	copy(out, units[idx:])
+	return out
+}
+
+func unitsTokenLen(units []sentenceUnit, language string) int {
+	total := 0
+	for _, unit := range units {
+		total += tokenLen(unit.text, language)
+	}
+	return total
+}
+
+func tokenLen(text, language string) int {
+	tokens := retrieval.Tokenize(text, language)
+	if len(tokens) == 0 {
+		return maxInt(len([]rune(strings.TrimSpace(text)))/4, 1)
+	}
+	return len(tokens)
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func buildSentenceUnits(text string, size int) []sentenceUnit {
