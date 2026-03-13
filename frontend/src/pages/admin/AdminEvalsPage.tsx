@@ -83,7 +83,7 @@ export function AdminEvalsPage() {
     mode: 'all',
     retrievalMode: 'hybrid_best',
     gateMode: 'warn',
-    params: { topK: 20, contextBudget: 4000 },
+    params: { topK: 20, contextBudget: 4000, lexicalMode: 'online_real', rerankMode: 'service' },
   })
 
   const overviewQuery = useQuery({
@@ -308,6 +308,32 @@ export function AdminEvalsPage() {
                   }))
                 }
               />
+              <select
+                className={tw.input}
+                value={String(runForm.params?.lexicalMode ?? 'online_real')}
+                onChange={(event) =>
+                  setRunForm((prev) => ({
+                    ...prev,
+                    params: { ...prev.params, lexicalMode: event.target.value },
+                  }))
+                }
+              >
+                <option value="online_real">online_real</option>
+                <option value="offline_approx">offline_approx</option>
+              </select>
+              <select
+                className={tw.input}
+                value={String(runForm.params?.rerankMode ?? 'service')}
+                onChange={(event) =>
+                  setRunForm((prev) => ({
+                    ...prev,
+                    params: { ...prev.params, rerankMode: event.target.value },
+                  }))
+                }
+              >
+                <option value="service">service</option>
+                <option value="fallback">fallback</option>
+              </select>
               <input
                 className={tw.input}
                 placeholder="Context Budget"

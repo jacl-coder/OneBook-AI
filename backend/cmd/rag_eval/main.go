@@ -192,19 +192,33 @@ func runRetrieval(args []string) error {
 	embeddings := fs.String("embeddings", "", "path to embeddings.jsonl")
 	online := fs.Bool("online", false, "build run online")
 	topK := fs.Int("top-k", 20, "top-k")
+	lexicalMode := fs.String("lexical-mode", "offline_approx", "lexical mode: offline_approx|online_real")
+	rerankMode := fs.String("rerank-mode", "fallback", "rerank mode: fallback|service")
+	openSearchURL := fs.String("opensearch-url", os.Getenv("OPENSEARCH_URL"), "OpenSearch base URL")
+	openSearchIndex := fs.String("opensearch-index", os.Getenv("OPENSEARCH_INDEX"), "OpenSearch index prefix")
+	openSearchUsername := fs.String("opensearch-username", os.Getenv("OPENSEARCH_USERNAME"), "OpenSearch username")
+	openSearchPassword := fs.String("opensearch-password", os.Getenv("OPENSEARCH_PASSWORD"), "OpenSearch password")
+	rerankerURL := fs.String("reranker-url", os.Getenv("RERANKER_URL"), "reranker service URL")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	outDir, runID := normalizeOutDir("retrieval", c)
 	res, runs, err := eval.EvaluateRetrieval(eval.RetrievalOptions{
-		QueriesPath:    *queries,
-		QrelsPath:      *qrels,
-		RunPath:        *runPath,
-		ChunksPath:     *chunks,
-		EmbeddingsPath: *embeddings,
-		Online:         *online,
-		TopK:           *topK,
-		Embedder:       toEmbedCfg(e),
+		QueriesPath:        *queries,
+		QrelsPath:          *qrels,
+		RunPath:            *runPath,
+		ChunksPath:         *chunks,
+		EmbeddingsPath:     *embeddings,
+		Online:             *online,
+		TopK:               *topK,
+		LexicalMode:        *lexicalMode,
+		RerankMode:         *rerankMode,
+		OpenSearchURL:      *openSearchURL,
+		OpenSearchIndex:    *openSearchIndex,
+		OpenSearchUsername: *openSearchUsername,
+		OpenSearchPassword: *openSearchPassword,
+		RerankerURL:        *rerankerURL,
+		Embedder:           toEmbedCfg(e),
 	})
 	if err != nil {
 		return err
@@ -216,7 +230,7 @@ func runRetrieval(args []string) error {
 		}
 	}
 	gate := eval.EvaluateGate(c.gateMode, res.Warnings)
-	run := buildRun("retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "embedder": toEmbedCfg(e)})
+	run := buildRun("retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
 	return eval.WriteReport(outDir, run, res.Metrics, res.PerQuery, gate)
 }
 
@@ -295,6 +309,13 @@ func runAll(args []string) error {
 	contextBudget := fs.Int("context-budget", 4000, "context budget")
 	shortLimit := fs.Int("short-limit", 80, "short threshold")
 	longLimit := fs.Int("long-limit", 1200, "long threshold")
+	lexicalMode := fs.String("lexical-mode", "offline_approx", "lexical mode: offline_approx|online_real")
+	rerankMode := fs.String("rerank-mode", "fallback", "rerank mode: fallback|service")
+	openSearchURL := fs.String("opensearch-url", os.Getenv("OPENSEARCH_URL"), "OpenSearch base URL")
+	openSearchIndex := fs.String("opensearch-index", os.Getenv("OPENSEARCH_INDEX"), "OpenSearch index prefix")
+	openSearchUsername := fs.String("opensearch-username", os.Getenv("OPENSEARCH_USERNAME"), "OpenSearch username")
+	openSearchPassword := fs.String("opensearch-password", os.Getenv("OPENSEARCH_PASSWORD"), "OpenSearch password")
+	rerankerURL := fs.String("reranker-url", os.Getenv("RERANKER_URL"), "reranker service URL")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -306,7 +327,7 @@ func runAll(args []string) error {
 		Ingestion:   eval.IngestionOptions{ChunksPath: *chunks},
 		Chunking:    eval.ChunkingOptions{ChunksPath: *chunks, ShortLimit: *shortLimit, LongLimit: *longLimit},
 		Embedding:   eval.EmbeddingOptions{ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, Embedder: toEmbedCfg(e)},
-		Retrieval:   eval.RetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, Embedder: toEmbedCfg(e)},
+		Retrieval:   eval.RetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, LexicalMode: *lexicalMode, RerankMode: *rerankMode, OpenSearchURL: *openSearchURL, OpenSearchIndex: *openSearchIndex, OpenSearchUsername: *openSearchUsername, OpenSearchPassword: *openSearchPassword, RerankerURL: *rerankerURL, Embedder: toEmbedCfg(e)},
 		PostRetr:    eval.PostRetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, ContextBudget: *contextBudget, Embedder: toEmbedCfg(e)},
 		Answer:      eval.AnswerOptions{QueriesPath: *queries, QrelsPath: *qrels, PredictionsPath: *predictions},
 		WriteOnline: true,
@@ -315,7 +336,7 @@ func runAll(args []string) error {
 		return err
 	}
 	gate := eval.EvaluateGate(c.gateMode, warnings)
-	run := buildRun("all", runID, map[string]string{"chunks": *chunks, "queries": *queries, "qrels": *qrels, "predictions": *predictions, "run": *runPath, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "context_budget": *contextBudget, "short_limit": *shortLimit, "long_limit": *longLimit, "embedder": toEmbedCfg(e)})
+	run := buildRun("all", runID, map[string]string{"chunks": *chunks, "queries": *queries, "qrels": *qrels, "predictions": *predictions, "run": *runPath, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "context_budget": *contextBudget, "short_limit": *shortLimit, "long_limit": *longLimit, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
 	return eval.WriteReport(outDir, run, metrics, per, gate)
 }
 

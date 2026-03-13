@@ -51,8 +51,16 @@ npm run preview
 - 受保护接口走 Cookie 会话，不在前端拼接 Bearer token
 - axios 拦截器支持 `401 -> refresh -> retry`
 - refresh 使用 single-flight，避免并发风暴
+- 管理后台 `/admin/evals` 支持发起评测任务；检索模式使用：
+  - `hybrid_best`
+  - `hybrid_no_rerank`
+  - `dense_only`
+  - `lexical_only`
+- 评测任务参数支持：
+  - `params.lexicalMode = online_real | offline_approx`
+  - `params.rerankMode = service | fallback`
 
 ## 7. 参考文档
-- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/frontend/frontend_tech_stack.md`
-- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/frontend/frontend_development_workflow.md`
-- `/Users/jacl/Documents/Code/Golang/OneBook-AI/docs/backend/backend_handoff.md`
+- `../docs/frontend/frontend_development_workflow.md`
+- `../docs/backend/backend_handoff.md`
+- `../docs/product/functional_spec.md`

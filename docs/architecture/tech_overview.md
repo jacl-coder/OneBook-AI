@@ -6,10 +6,18 @@
 
 - **Embedding**：Ollama 本地模型，维度可配（`ONEBOOK_EMBEDDING_DIM`）。可替换为任何兼容 HTTP API 的 Embedding 服务。
 - **LLM**：`TextGenerator` 接口抽象，已实现 Gemini、Ollama、OpenAI 兼容三种 provider，通过 `GENERATION_PROVIDER` 切换。
-- **向量存储**：当前使用 Qdrant；接口隔离于 `pkg/retrieval`，可按需迁移。
+- **Lexical Retrieval**：当前使用 OpenSearch 承载 BM25/倒排索引；接口隔离于 `pkg/retrieval`，可按需替换为兼容搜索引擎。
+- **向量存储**：当前使用 Qdrant 承载 semantic retrieval；接口隔离于 `pkg/retrieval`，可按需迁移。
+- **Reranker**：当前使用独立 Python 服务承载 cross-encoder 重排；Go 侧通过 HTTP 调用，失败自动回退到本地 fallback reranker。
 - **对象存储**：MinIO（S3 兼容），可替换为任何 S3 兼容服务。
 
 ## 非功能约束与现状
+
+### 数据职责边界
+- **PostgreSQL**：唯一事实来源，保存书籍、正文 chunk、页码/章节/引用元数据、`chunk_index_status`。
+- **OpenSearch**：仅保存 lexical 检索副本和过滤字段，不作为正文/页码事实来源。
+- **Qdrant**：仅保存向量与最小 payload，不保存正文，不承担最终展示语义。
+- **Application Layer**：统一执行 dense recall、lexical recall、fusion、rerank、回 PostgreSQL 取正文。
 
 ### 可观测性
 - 结构化 JSON 日志（`log/slog`），字段含 `request_id`、`service`、`level`。
@@ -26,6 +34,7 @@
 ### 一致性基线
 - **Refresh Token 并发安全**：Redis 原子 CAS，防止并发请求下同一 token 双成功。
 - **队列重试一致性**：失败重试在单事务内执行 `XADD + XACK + XDEL`，避免已确认未重投的丢任务窗口。
+- **索引一致性**：`chunk_index_status` 记录 OpenSearch/Qdrant 两路同步状态、时间和失败原因；命中后统一按 `chunk_id` 回 PostgreSQL。
 
 ## 关联文档
 

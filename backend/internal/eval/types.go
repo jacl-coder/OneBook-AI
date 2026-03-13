@@ -105,19 +105,26 @@ type EmbeddingOptions struct {
 
 // RetrievalOptions configures retrieval evaluator.
 type RetrievalOptions struct {
-	QueriesPath    string
-	QrelsPath      string
-	RunPath        string
-	ChunksPath     string
-	EmbeddingsPath string
-	Online         bool
-	TopK           int
-	DenseTopK      int
-	SparseTopK     int
-	FusionTopK     int
-	RerankTopN     int
-	RetrievalMode  string
-	Embedder       EmbedderConfig
+	QueriesPath        string
+	QrelsPath          string
+	RunPath            string
+	ChunksPath         string
+	EmbeddingsPath     string
+	Online             bool
+	TopK               int
+	DenseTopK          int
+	SparseTopK         int
+	FusionTopK         int
+	RerankTopN         int
+	RetrievalMode      string
+	LexicalMode        string
+	RerankMode         string
+	OpenSearchURL      string
+	OpenSearchIndex    string
+	OpenSearchUsername string
+	OpenSearchPassword string
+	RerankerURL        string
+	Embedder           EmbedderConfig
 }
 
 // PostRetrievalOptions configures post-retrieval evaluator.

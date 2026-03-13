@@ -28,6 +28,21 @@
 - Ingest/Indexer 失败重试路径在**单事务**内执行 `XADD + XACK + XDEL`。
 - 避免"先 ACK 再重投"导致的丢任务窗口（若重投失败，原消息已不可见）。
 
+### 检索与索引一致性
+- 检索架构固定为：
+  - PostgreSQL：正文与引用事实来源
+  - OpenSearch：BM25 lexical retrieval
+  - Qdrant：semantic retrieval
+  - Application Layer：fusion + rerank + 回表
+- Ingest 写入/更新 chunk 后，会把 `chunk_index_status` 两路状态重置为 `pending`。
+- Indexer 成功写入 OpenSearch/Qdrant 后，分别更新 `opensearch_status` / `qdrant_status` 为 `synced`；失败时记录 `last_error`。
+- Chat 与 Eval 命中索引后，不直接信任索引层正文；最终上下文统一按 `chunk_id` 回 PostgreSQL 获取。
+
+### Python 模型服务边界
+- OCR 服务独立部署为 `ocr-service`（Docker），供 ingest 在扫描版 PDF 场景调用。
+- Reranker 服务独立部署为 `reranker-service`（Docker），供 chat 与 eval 的 `service` 模式调用。
+- 两个服务都通过 HTTP 调用接入 Go 主链路，模型缓存通过 Docker volume 持久化。
+
 ### 书籍删除一致性
 - 软删标记 → 后台异步清理 → 最终硬删。
 - 已软删记录不出现在用户接口（列表/详情）中。
@@ -36,6 +51,6 @@
 ## 仍待完善的方向
 
 - 可观测性：Metrics / Tracing（结构化日志已落地）。
-- 检索质量：重排、去重、提示模板（见 `docs/architecture/advanced_rag_plan.md`）。
+- 检索质量：更细粒度 query rewrite、索引修复后台入口、更严格的 reranker 容量治理（见 `docs/architecture/advanced_rag_plan.md`）。
 - 任务进度可视化与失败重试 UI。
 - 安全与配额：细粒度权限、密钥轮换自动化、配额管理。

@@ -54,7 +54,7 @@ type App struct {
 	search            *retrieval.Client
 	lexical           *retrieval.OpenSearchClient
 	rewriter          QueryRewriter
-	reranker          Reranker
+	reranker          retrieval.Reranker
 	validator         GroundingValidator
 	topK              int
 	denseRecallTopK   int
@@ -155,13 +155,16 @@ func New(cfg Config) (*App, error) {
 	}
 
 	return &App{
-		store:             dataStore,
-		generator:         generator,
-		embedder:          embedder,
-		search:            searchClient,
-		lexical:           lexicalClient,
-		rewriter:          newModelQueryRewriter(generator),
-		reranker:          newHybridReranker(cfg.RerankerURL),
+		store:     dataStore,
+		generator: generator,
+		embedder:  embedder,
+		search:    searchClient,
+		lexical:   lexicalClient,
+		rewriter:  newModelQueryRewriter(generator),
+		reranker: retrieval.ChainReranker{
+			Primary:  retrieval.NewServiceReranker(cfg.RerankerURL, 8*time.Second, 50, 2400),
+			Fallback: retrieval.FallbackReranker{},
+		},
 		validator:         newGroundingValidator(generator),
 		topK:              topK,
 		denseRecallTopK:   denseRecallTopK,
@@ -423,11 +426,11 @@ func generateConversationTitle(question string) string {
 	return text
 }
 
-func buildContext(hits []retrievalHit) (string, []domain.Source) {
+func buildContext(hits []retrieval.StageHit) (string, []domain.Source) {
 	var sb strings.Builder
 	sources := make([]domain.Source, 0, len(hits))
 	for i, hit := range hits {
-		chunk := hit.chunk
+		chunk := hit.Chunk
 		label := fmt.Sprintf("[%d]", i+1)
 		location := chunkLocation(chunk.Metadata)
 		snippet := chunk.Content
@@ -447,7 +450,7 @@ func buildContext(hits []retrievalHit) (string, []domain.Source) {
 			Snippet:   snippet,
 			ChunkID:   chunk.ID,
 			SourceRef: strings.TrimSpace(chunk.Metadata["source_ref"]),
-			Score:     hit.score,
+			Score:     hit.Score,
 			Language:  strings.TrimSpace(chunk.Metadata["language"]),
 		})
 	}

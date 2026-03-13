@@ -21,7 +21,6 @@ type SparseVector struct {
 
 type Point struct {
 	ID      string         `json:"id"`
-	Content string         `json:"content"`
 	Payload map[string]any `json:"payload"`
 	Score   float64        `json:"score"`
 }
@@ -265,13 +264,11 @@ func parseQdrantPoints(items []any) []Point {
 		}
 		point := Point{
 			ID:      anyString(row["id"]),
-			Content: "",
 			Score:   anyFloat64(row["score"]),
 			Payload: map[string]any{},
 		}
 		if payload, ok := row["payload"].(map[string]any); ok {
 			point.Payload = payload
-			point.Content = anyString(payload["content"])
 			if chunkID := anyString(payload["chunk_id"]); chunkID != "" {
 				point.ID = chunkID
 			}

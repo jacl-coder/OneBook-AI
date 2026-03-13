@@ -76,5 +76,26 @@ services:
       # Cache downloaded models across restarts
       - onebook-ocr-models:/root/.paddlex
     restart: unless-stopped
+  reranker-service:
+    build:
+      context: ./services/reranker
+      dockerfile: Dockerfile
+    container_name: onebook-reranker
+    environment:
+      RERANKER_PORT: "8088"
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_CACHE_DIR: ${RERANKER_CACHE_DIR:-/models/huggingface}
+      HF_HOME: ${RERANKER_CACHE_DIR:-/models/huggingface}
+      SENTENCE_TRANSFORMERS_HOME: ${RERANKER_SENTENCE_TRANSFORMERS_HOME:-/models/huggingface/sentence-transformers}
+      RERANKER_MAX_DOCS: ${RERANKER_MAX_DOCS:-50}
+      RERANKER_MAX_CHARS: ${RERANKER_MAX_CHARS:-2400}
+      RERANKER_BATCH_SIZE: ${RERANKER_BATCH_SIZE:-8}
+    ports:
+      - "8088:8088"
+    volumes:
+      # Cache downloaded Hugging Face / sentence-transformers models across restarts
+      - onebook-reranker-models:/models/huggingface
+    restart: unless-stopped
 volumes:
   onebook-ocr-models:
+  onebook-reranker-models:
