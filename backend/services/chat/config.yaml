@@ -27,6 +27,6 @@ openSearchURL: "http://localhost:9200"
 openSearchIndex: "onebook_lexical_chunks"
 rerankTopN: 12
 retrievalMode: "hybrid_best"
-# rerankerURL: "http://localhost:8090/rerank"
+# rerankerURL: "http://localhost:8088/rerank"
 contextBudget: 2200
 minEvidenceCount: 2

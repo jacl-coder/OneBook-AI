@@ -42,7 +42,7 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	if err := withMigrationLock(db, func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(`
@@ -105,6 +105,16 @@ func NewGormStore(dsn string) (*GormStore, error) {
 					ALTER TABLE chunk_models
 					ADD CONSTRAINT chunk_models_book_id_fkey
 					FOREIGN KEY (book_id) REFERENCES book_models(id) ON DELETE CASCADE;
+				END IF;
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE table_schema = 'public'
+					AND table_name = 'chunk_index_status_models'
+					AND constraint_name = 'chunk_index_status_models_chunk_id_fkey'
+				) THEN
+					ALTER TABLE chunk_index_status_models
+					ADD CONSTRAINT chunk_index_status_models_chunk_id_fkey
+					FOREIGN KEY (chunk_id) REFERENCES chunk_models(id) ON DELETE CASCADE;
 				END IF;
 				IF NOT EXISTS (
 					SELECT 1 FROM information_schema.table_constraints
@@ -575,6 +585,9 @@ func (s *GormStore) ListConversationMessages(conversationID string, limit int) (
 // ReplaceChunks replaces all chunks for a book.
 func (s *GormStore) ReplaceChunks(bookID string, chunks []domain.Chunk) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&ChunkIndexStatusModel{}, "book_id = ?", bookID).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&ChunkModel{}, "book_id = ?", bookID).Error; err != nil {
 			return err
 		}
@@ -596,7 +609,23 @@ func (s *GormStore) ReplaceChunks(bookID string, chunks []domain.Chunk) error {
 			model.BookID = bookID
 			models = append(models, model)
 		}
-		return tx.CreateInBatches(&models, 200).Error
+		if err := tx.CreateInBatches(&models, 200).Error; err != nil {
+			return err
+		}
+		statuses := make([]ChunkIndexStatusModel, 0, len(chunks))
+		now := time.Now().UTC()
+		for _, chunk := range chunks {
+			statuses = append(statuses, ChunkIndexStatusModel{
+				ChunkID:          chunk.ID,
+				BookID:           bookID,
+				ContentSHA256:    strings.TrimSpace(chunk.Metadata["content_sha256"]),
+				OpenSearchStatus: string(domain.ChunkIndexSyncStatusPending),
+				QdrantStatus:     string(domain.ChunkIndexSyncStatusPending),
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			})
+		}
+		return tx.CreateInBatches(&statuses, 200).Error
 	})
 }
 
@@ -611,6 +640,102 @@ func (s *GormStore) ListChunksByBook(bookID string) ([]domain.Chunk, error) {
 		chunks = append(chunks, chunkFromModel(model))
 	}
 	return chunks, nil
+}
+
+// GetChunksByIDs returns chunks for the provided IDs.
+func (s *GormStore) GetChunksByIDs(ids []string) ([]domain.Chunk, error) {
+	clean := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return nil, nil
+	}
+	var models []ChunkModel
+	if err := s.db.Where("id IN ?", clean).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	index := make(map[string]domain.Chunk, len(models))
+	for _, model := range models {
+		index[model.ID] = chunkFromModel(model)
+	}
+	out := make([]domain.Chunk, 0, len(clean))
+	for _, id := range clean {
+		if chunk, ok := index[id]; ok {
+			out = append(out, chunk)
+		}
+	}
+	return out, nil
+}
+
+// ListChunkIndexStatusesByBook returns index statuses for a book.
+func (s *GormStore) ListChunkIndexStatusesByBook(bookID string) ([]domain.ChunkIndexStatus, error) {
+	var models []ChunkIndexStatusModel
+	if err := s.db.Where("book_id = ?", bookID).Order("updated_at ASC").Find(&models).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.ChunkIndexStatus, 0, len(models))
+	for _, model := range models {
+		out = append(out, chunkIndexStatusFromModel(model))
+	}
+	return out, nil
+}
+
+// UpdateChunkIndexStatus updates sync state for one backend.
+func (s *GormStore) UpdateChunkIndexStatus(chunkIDs []string, backend domain.ChunkIndexBackend, status domain.ChunkIndexSyncStatus, embeddingModel string, embeddingDim int, errMsg string) error {
+	clean := make([]string, 0, len(chunkIDs))
+	seen := make(map[string]struct{}, len(chunkIDs))
+	for _, id := range chunkIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+	updates := map[string]any{
+		"embedding_model": strings.TrimSpace(embeddingModel),
+		"embedding_dim":   embeddingDim,
+		"updated_at":      time.Now().UTC(),
+	}
+	switch backend {
+	case domain.ChunkIndexBackendOpenSearch:
+		updates["open_search_status"] = string(status)
+		if status == domain.ChunkIndexSyncStatusSynced {
+			now := time.Now().UTC()
+			updates["open_search_synced_at"] = &now
+			updates["last_error"] = ""
+		} else if status == domain.ChunkIndexSyncStatusFailed {
+			updates["last_error"] = strings.TrimSpace(errMsg)
+		}
+	case domain.ChunkIndexBackendQdrant:
+		updates["qdrant_status"] = string(status)
+		if status == domain.ChunkIndexSyncStatusSynced {
+			now := time.Now().UTC()
+			updates["qdrant_synced_at"] = &now
+			updates["last_error"] = ""
+		} else if status == domain.ChunkIndexSyncStatusFailed {
+			updates["last_error"] = strings.TrimSpace(errMsg)
+		}
+	default:
+		return fmt.Errorf("unknown chunk index backend: %s", backend)
+	}
+	return s.db.Model(&ChunkIndexStatusModel{}).Where("chunk_id IN ?", clean).Updates(updates).Error
 }
 
 // SaveAdminAuditLog persists an admin audit event.
@@ -1274,6 +1399,23 @@ func chunkFromModel(model ChunkModel) domain.Chunk {
 		Content:   model.Content,
 		Metadata:  meta,
 		CreatedAt: model.CreatedAt,
+	}
+}
+
+func chunkIndexStatusFromModel(model ChunkIndexStatusModel) domain.ChunkIndexStatus {
+	return domain.ChunkIndexStatus{
+		ChunkID:            model.ChunkID,
+		BookID:             model.BookID,
+		ContentSHA256:      model.ContentSHA256,
+		EmbeddingModel:     model.EmbeddingModel,
+		EmbeddingDim:       model.EmbeddingDim,
+		OpenSearchStatus:   domain.ChunkIndexSyncStatus(model.OpenSearchStatus),
+		OpenSearchSyncedAt: model.OpenSearchSyncedAt,
+		QdrantStatus:       domain.ChunkIndexSyncStatus(model.QdrantStatus),
+		QdrantSyncedAt:     model.QdrantSyncedAt,
+		LastError:          model.LastError,
+		CreatedAt:          model.CreatedAt,
+		UpdatedAt:          model.UpdatedAt,
 	}
 }
 

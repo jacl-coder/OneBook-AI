@@ -6,6 +6,7 @@ bin/
 *.so
 *.dylib
 *.test
+coverage.out
 
 # Go workspace cache
 **/.DS_Store
@@ -22,6 +23,16 @@ vendor/
 *.log
 logs/
 tmp/
+.cache/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 
 # Environment
 .env
@@ -35,16 +46,17 @@ backend/data/
 backend/services/gateway/data/
 backend/services/gateway/.cache/
 backend/services/book/data/
+data/eval-center/
 docker/postgres-data/
+docker/qdrant-data/
+docker/opensearch-data/
 docker/minio-data/
-qdrant-data/
 
 # Frontend build artifacts
 node_modules/
-dist/
+frontend/dist/
 build/
 .next/
-.cache/
 
 # Package managers
 pnpm-lock.yaml

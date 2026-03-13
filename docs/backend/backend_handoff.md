@@ -90,6 +90,11 @@
 - 当 `conversationId` 为空时，后端自动创建新会话并返回 `conversation` 对象。
 - 当 `conversationId` 有值时，后端在该会话中续聊并回写历史消息。
 - 响应主字段为：`conversation`、`answer`、`citations`、`abstained`；管理员可通过 `debug=true` 获取 `retrievalDebug`。
+- `retrievalDebug` 当前阶段固定包含 4 个阶段：
+  - `dense`
+  - `lexical`
+  - `fused`
+  - `reranked`
 - 书籍未就绪时会返回冲突类错误（通常为 `409`）。
 
 ## 5. 错误响应约定
@@ -180,8 +185,16 @@ CORS_ALLOW_CREDENTIALS=true
   - 不使用 websocket
   - auth service 内部 worker 轮询数据库中的 `queued` 任务并执行
   - 前端通过轮询刷新运行状态
+- 检索模式：
+  - `hybrid_best`
+  - `hybrid_no_rerank`
+  - `dense_only`
+  - `lexical_only`
+- 评测参数支持：
+  - `params.lexicalMode = offline_approx | online_real`
+  - `params.rerankMode = fallback | service`
 - artifacts 默认包含：
   - `run.json`
   - `metrics.json`
   - `per_query.jsonl`
-  - `dense_run.jsonl` / `sparse_run.jsonl` / `fusion_run.jsonl` / `rerank_run.jsonl`（按实际运行生成）
+  - `dense_run.jsonl` / `lexical_run.jsonl` / `fusion_run.jsonl` / `rerank_run.jsonl`（按实际运行生成）

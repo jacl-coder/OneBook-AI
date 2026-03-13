@@ -132,6 +132,36 @@ type Chunk struct {
 	CreatedAt time.Time         `json:"createdAt"`
 }
 
+type ChunkIndexSyncStatus string
+
+const (
+	ChunkIndexSyncStatusPending ChunkIndexSyncStatus = "pending"
+	ChunkIndexSyncStatusSynced  ChunkIndexSyncStatus = "synced"
+	ChunkIndexSyncStatusFailed  ChunkIndexSyncStatus = "failed"
+)
+
+type ChunkIndexBackend string
+
+const (
+	ChunkIndexBackendOpenSearch ChunkIndexBackend = "opensearch"
+	ChunkIndexBackendQdrant     ChunkIndexBackend = "qdrant"
+)
+
+type ChunkIndexStatus struct {
+	ChunkID            string               `json:"chunkId"`
+	BookID             string               `json:"bookId"`
+	ContentSHA256      string               `json:"contentSha256"`
+	EmbeddingModel     string               `json:"embeddingModel,omitempty"`
+	EmbeddingDim       int                  `json:"embeddingDim,omitempty"`
+	OpenSearchStatus   ChunkIndexSyncStatus `json:"openSearchStatus"`
+	OpenSearchSyncedAt *time.Time           `json:"openSearchSyncedAt,omitempty"`
+	QdrantStatus       ChunkIndexSyncStatus `json:"qdrantStatus"`
+	QdrantSyncedAt     *time.Time           `json:"qdrantSyncedAt,omitempty"`
+	LastError          string               `json:"lastError,omitempty"`
+	CreatedAt          time.Time            `json:"createdAt"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
 type AdminAuditLog struct {
 	ID         string         `json:"id"`
 	ActorID    string         `json:"actorId"`

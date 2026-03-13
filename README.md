@@ -70,21 +70,22 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
                     Lexical Docs → OpenSearch
 
 基础设施：
-  Postgres             ← 用户/书籍/消息/chunk 元数据
+  Postgres             ← 用户/书籍/消息/chunk 正文/引用/索引状态（唯一事实来源）
   Redis                ← Token/限流/Streams 队列
   MinIO (S3)           ← 书籍文件存储
-  Qdrant               ← semantic chunk 向量索引
-  OpenSearch           ← lexical chunk BM25 检索
+  Qdrant               ← semantic chunk 向量索引（最小 payload）
+  OpenSearch           ← lexical chunk BM25 检索副本
   Ollama               ← 本地 Embedding
-  OCR Service :8087    ← 可选 PaddleOCR Docker 服务（扫描版 PDF）
+  OCR Service :8087    ← 可选 PaddleOCR Docker 服务（扫描版 PDF，缓存挂载到 volume）
+  Reranker :8088       ← 本地 Cross-Encoder 精排服务（Hugging Face 缓存挂载到 volume）
 ```
 
 ### 核心数据流
 
 1. **上传** → Gateway → Book 服务 → 写 MinIO + Postgres → 入队 Ingest Stream
 2. **解析** → Ingest 拉文件 → PDF/EPUB/TXT 解析 → 语义分块 → 写 chunks → 入队 Indexer Stream
-3. **索引** → Indexer → Ollama Embedding → Qdrant 写 semantic 向量，同时写 lexical 文档到 OpenSearch → 状态更新为 `ready`
-4. **对话** → Chat → 问题向量化 → TopK 检索 → 上下文拼装 + 历史 N 轮 → LLM → 保存消息 + 引用
+3. **索引** → Indexer → Ollama Embedding → Qdrant 写 semantic 向量，同时写 lexical 文档到 OpenSearch，并更新 `chunk_index_status`
+4. **对话** → Chat → Dense + Lexical 双召回 → fusion → rerank → 按 `chunk_id` 回 PostgreSQL 取正文/引用 → 上下文拼装 + 历史 N 轮 → LLM → 保存消息 + 引用
 
 ---
 
@@ -138,7 +139,7 @@ OneBook-AI/
 │   │   ├── auth/               # JWT 工具
 │   │   ├── domain/             # 共享领域类型（Book / User / Chunk 等）
 │   │   ├── queue/              # Redis Streams 封装
-│   │   ├── retrieval/          # 向量检索逻辑（dense + sparse）
+│   │   ├── retrieval/          # 混合检索逻辑（dense + lexical + rerank）
 │   │   ├── storage/            # MinIO 封装
 │   │   └── store/              # GORM 数据访问层
 │   ├── internal/               # 内部工具（不对外复用）
@@ -221,6 +222,7 @@ OneBook-AI/
 - OCR 融合策略：native 低质量页优先采用 OCR 结果，阈值可通过 `INGEST_PDF_*` 环境变量配置。
 - EPUB：解析 HTML 内容。TXT：直接分块。
 - 语义分块（`INGEST_CHUNK_SIZE`/`INGEST_CHUNK_OVERLAP`），保留来源元数据。
+- 产出双粒度 chunk：`semantic` 用于 Qdrant，`lexical` 用于 OpenSearch。
 - Chunk 元数据：`source_type`、`source_ref`、`extract_method`、`page`、`section`、`chunk`、`document_id`、`chunk_index`、`chunk_count`、`content_sha256`、`content_runes`、`page_quality_score`。
 - 写入 chunks 后触发 Indexer Stream。
 
@@ -228,16 +230,17 @@ OneBook-AI/
 
 - 从 Redis Stream 消费任务，批量调用 Ollama 生成向量（维度 `ONEBOOK_EMBEDDING_DIM`，默认 3072）。
 - 写入 Qdrant（collection：`QDRANT_COLLECTION`，默认 `onebook_chunks`）与 OpenSearch（index：`OPENSEARCH_INDEX`，默认 `onebook_lexical_chunks`）。
+- `chunk_index_status` 记录 OpenSearch/Qdrant 两路同步状态、时间和失败原因。
 - 写入完成后更新书籍状态为 `ready`。
 
 ### Chat（:8083）
 
-- 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → TopK context。
+- 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → 按 `chunk_id` 回 PostgreSQL → TopK context。
 - 拼装上下文（最近 N 轮历史 + 检索 chunks）。
 - 调用 `TextGenerator` → LLM 生成回答，附引用；证据不足时拒答（返回 `abstained: true`）。
 - 保存消息至 Postgres，支持同一会话续聊（`conversationId`）。
 - 管理员可带 `debug=true` 获取 `retrievalDebug`。
-- 关键参数：`CHAT_RERANK_TOPN`、`CHAT_CONTEXT_BUDGET`、`CHAT_MIN_EVIDENCE_COUNT`。
+- 关键参数：`CHAT_RERANK_TOPN`、`CHAT_CONTEXT_BUDGET`、`CHAT_MIN_EVIDENCE_COUNT`、`RERANKER_URL`。
 
 ---
 
@@ -393,8 +396,10 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `ONEBOOK_EMBEDDING_DIM` | `3072` | Embedding 维度（与 Ollama 模型一致） |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama 地址 |
 | `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:latest` | Embedding 模型名 |
-| `INGEST_CHUNK_SIZE` | `800` | 分块目标大小（runes） |
-| `INGEST_CHUNK_OVERLAP` | `120` | 分块重叠大小（runes） |
+| `INGEST_CHUNK_SIZE` | `480` | 默认语义分块目标大小（runes） |
+| `INGEST_CHUNK_OVERLAP` | `80` | 默认语义分块重叠大小（runes） |
+| `INGEST_LEXICAL_CHUNK_SIZE` | `160` | lexical chunk 目标大小（runes） |
+| `INGEST_LEXICAL_CHUNK_OVERLAP` | `30` | lexical chunk 重叠大小（runes） |
 | `INGEST_OCR_ENABLED` | `true` | 是否启用 OCR |
 | `INGEST_OCR_SERVICE_URL` | `http://localhost:8087` | OCR Docker 服务地址 |
 | `INGEST_OCR_DEVICE` | `cpu` | OCR 设备（cpu / gpu） |
@@ -403,6 +408,13 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `INGEST_PDF_MIN_PAGE_SCORE` | `0.45` | PDF 低质量页判断阈值（质量分 0~1） |
 | `INGEST_PDF_OCR_MIN_SCORE_DELTA` | `0.08` | OCR 相对 native 最小增益阈值 |
 | `CHAT_RERANK_TOPN` | `8` | Rerank 后保留 TopN |
+| `RERANKER_URL` | `http://localhost:8088/rerank` | 本地 reranker 服务地址 |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | reranker 模型 |
+| `RERANKER_CACHE_DIR` | `/models/huggingface` | reranker 容器内 Hugging Face 缓存目录 |
+| `RERANKER_SENTENCE_TRANSFORMERS_HOME` | `/models/huggingface/sentence-transformers` | sentence-transformers 缓存目录 |
+| `RERANKER_MAX_DOCS` | `50` | 单次 rerank 最大文档数 |
+| `RERANKER_MAX_CHARS` | `2400` | 单文档最大字符数 |
+| `RERANKER_BATCH_SIZE` | `8` | reranker 批大小 |
 | `CHAT_CONTEXT_BUDGET` | `2200` | 上下文字数预算（runes） |
 | `CHAT_MIN_EVIDENCE_COUNT` | `2` | 最少证据数（低于此数时拒答） |
 | `LOGS_DIR` | `backend/logs` | 日志文件目录 |
@@ -444,7 +456,7 @@ cd frontend && npm install && npm run dev
 
 ```bash
 # 启动依赖
-docker compose up -d postgres redis qdrant opensearch minio minio-init swagger-ui
+docker compose up -d postgres redis qdrant opensearch minio minio-init swagger-ui ocr-service reranker-service
 
 # 各服务启动命令（在 backend/ 目录下）
 cd backend/services/auth    && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/auth
@@ -475,9 +487,16 @@ cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 | Indexer | 8085 |
 | Swagger UI | 8086 |
 | OCR Service | 8087 |
+| Reranker Service | 8088 |
 | MinIO Console | 9001 |
 | Qdrant Dashboard | 6333 |
 | OpenSearch | 9200 |
+
+### 9.5.1 模型缓存目录
+
+- `ocr-service` 运行在 Docker 中，PaddleOCR 模型缓存目录是 `/root/.paddlex`，通过 volume `onebook-ocr-models` 持久化。
+- `reranker-service` 运行在 Docker 中，Hugging Face / sentence-transformers 模型缓存目录默认是 `/models/huggingface`，通过 volume `onebook-reranker-models` 持久化。
+- 两个 Python 服务都会把模型缓存在容器外的 Docker volume 中，因此重启容器不会重复下载模型。
 
 ### 9.6 测试与验证
 

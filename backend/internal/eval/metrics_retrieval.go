@@ -6,7 +6,9 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
+	"onebookai/pkg/domain"
 	"onebookai/pkg/retrieval"
 )
 
@@ -118,45 +120,116 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 	sparseTopK := topKOrDefault(opts.SparseTopK, opts.TopK, 20)
 	fusionTopK := topKOrDefault(opts.FusionTopK, opts.TopK, 20)
 	rerankTopN := topKOrDefault(opts.RerankTopN, fusionTopK, 10)
+	lexicalMode := strings.TrimSpace(opts.LexicalMode)
+	if lexicalMode == "" {
+		lexicalMode = "offline_approx"
+	}
+	rerankMode := strings.TrimSpace(opts.RerankMode)
+	if rerankMode == "" {
+		rerankMode = "fallback"
+	}
+
+	var lexicalClient *retrieval.OpenSearchClient
+	if lexicalMode == "online_real" {
+		client, err := newEvalLexicalClient(opts, chunks)
+		if err != nil {
+			return nil, warnings, err
+		}
+		lexicalClient = client
+		defer func() {
+			_ = lexicalClient.DeleteIndex(context.Background())
+		}()
+	}
+
+	var reranker retrieval.Reranker
+	switch rerankMode {
+	case "service":
+		reranker = retrieval.NewServiceReranker(opts.RerankerURL, 8*time.Second, 50, 2400)
+	default:
+		reranker = retrieval.FallbackReranker{}
+	}
 
 	denseRuns := make([]RunEntry, 0, len(queries))
-	sparseRuns := make([]RunEntry, 0, len(queries))
+	lexicalRuns := make([]RunEntry, 0, len(queries))
 	fusionRuns := make([]RunEntry, 0, len(queries))
 	rerankRuns := make([]RunEntry, 0, len(queries))
 
 	for _, q := range queries {
 		if strings.TrimSpace(q.Query) == "" {
 			denseRuns = append(denseRuns, RunEntry{QID: q.QID})
-			sparseRuns = append(sparseRuns, RunEntry{QID: q.QID})
+			lexicalRuns = append(lexicalRuns, RunEntry{QID: q.QID})
 			fusionRuns = append(fusionRuns, RunEntry{QID: q.QID})
 			rerankRuns = append(rerankRuns, RunEntry{QID: q.QID})
 			continue
 		}
-		query := retrieval.NormalizeText(q.Query)
-		language := retrieval.DetectLanguage(query)
-		qvec, err := embedder.EmbedText(context.Background(), query, "RETRIEVAL_QUERY")
+		pipeline := retrieval.Pipeline{
+			Dense: func(ctx context.Context, query, _ string, topK int) ([]retrieval.StageHit, error) {
+				qvec, err := embedder.EmbedText(ctx, query, "RETRIEVAL_QUERY")
+				if err != nil {
+					return nil, err
+				}
+				return runHitsToStageHits(rankByCosine(qvec, docs.embedded, topK), docs.byID, "dense"), nil
+			},
+			Lexical: func(ctx context.Context, query, language string, topK int) ([]retrieval.StageHit, error) {
+				switch lexicalMode {
+				case "online_real":
+					terms := strings.Join(retrieval.Tokenize(query, language), " ")
+					points, err := lexicalClient.QueryBM25(ctx, strings.TrimSpace(q.BookID), terms, topK)
+					if err != nil {
+						return nil, err
+					}
+					hits := make([]retrieval.StageHit, 0, len(points))
+					for _, point := range points {
+						hits = append(hits, retrieval.StageHit{
+							ChunkID: strings.TrimSpace(point.ID),
+							BookID:  strings.TrimSpace(anyMetadata(docs.byID, point.ID, "book_id")),
+							Score:   point.Score,
+							Stage:   "lexical",
+						})
+					}
+					return hits, nil
+				default:
+					return runHitsToStageHits(rankBySparse(retrieval.BuildSparseVector(query, language), docs.sparse, topK), docs.byID, "lexical"), nil
+				}
+			},
+			ChunkLoader: func(_ context.Context, ids []string) (map[string]domain.Chunk, error) {
+				return buildEvalChunkLookup(ids, docs.byID), nil
+			},
+			Reranker: reranker,
+		}
+		result, err := pipeline.Run(context.Background(), retrieval.PipelineOptions{
+			Query:         q.Query,
+			BookID:        q.BookID,
+			RetrievalMode: normalizeEvalRetrievalMode(opts.RetrievalMode),
+			TopK:          opts.TopK,
+			DenseTopK:     denseTopK,
+			LexicalTopK:   sparseTopK,
+			FusionTopK:    fusionTopK,
+			RerankTopN:    rerankTopN,
+			ContextBudget: 1 << 30,
+		})
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("query embedding failed for %s: %v", q.QID, err))
+			warnings = append(warnings, fmt.Sprintf("retrieval pipeline failed for %s: %v", q.QID, err))
 			denseRuns = append(denseRuns, RunEntry{QID: q.QID})
-			sparseRuns = append(sparseRuns, RunEntry{QID: q.QID})
+			lexicalRuns = append(lexicalRuns, RunEntry{QID: q.QID})
 			fusionRuns = append(fusionRuns, RunEntry{QID: q.QID})
 			rerankRuns = append(rerankRuns, RunEntry{QID: q.QID})
 			continue
 		}
-		denseHits := rankByCosine(qvec, docs.embedded, denseTopK)
-		lexicalHits := rankBySparse(retrieval.BuildSparseVector(query, language), docs.sparse, sparseTopK)
-		fusedHits := fuseRunHits(denseHits, lexicalHits, fusionTopK)
-		rerankedHits := rerankHits(query, docs.byID, fusedHits, rerankTopN)
-
-		denseRuns = append(denseRuns, RunEntry{QID: q.QID, Results: denseHits})
-		sparseRuns = append(sparseRuns, RunEntry{QID: q.QID, Results: lexicalHits})
-		fusionRuns = append(fusionRuns, RunEntry{QID: q.QID, Results: fusedHits})
-		rerankRuns = append(rerankRuns, RunEntry{QID: q.QID, Results: rerankedHits})
+		if len(result.Warnings) > 0 {
+			for _, warning := range result.Warnings {
+				warnings = append(warnings, fmt.Sprintf("%s (%s)", warning, q.QID))
+			}
+		}
+		denseRuns = append(denseRuns, RunEntry{QID: q.QID, Results: stageHitsToRunHits(result.Dense)})
+		lexicalRuns = append(lexicalRuns, RunEntry{QID: q.QID, Results: stageHitsToRunHits(result.Lexical)})
+		fusionRuns = append(fusionRuns, RunEntry{QID: q.QID, Results: stageHitsToRunHits(result.Fused)})
+		rerankRuns = append(rerankRuns, RunEntry{QID: q.QID, Results: stageHitsToRunHits(result.Reranked)})
 	}
 
 	return map[string][]RunEntry{
 		"dense":   denseRuns,
-		"lexical": sparseRuns,
+		"lexical": lexicalRuns,
 		"fusion":  fusionRuns,
 		"rerank":  rerankRuns,
 	}, warnings, nil
@@ -164,8 +237,10 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 
 type evalDocument struct {
 	ID       string
+	BookID   string
 	Text     string
 	Language string
+	Metadata map[string]string
 	Dense    []float32
 	Sparse   retrieval.SparseVector
 }
@@ -193,13 +268,18 @@ func buildEvalDocuments(chunks []ChunkRecord, embeddings map[string][]float32) e
 		}
 		doc := evalDocument{
 			ID:       chunk.ChunkID,
+			BookID:   strings.TrimSpace(chunk.Metadata["book_id"]),
 			Text:     text,
 			Language: language,
+			Metadata: chunk.Metadata,
 			Sparse:   retrieval.BuildSparseVector(text, language),
 		}
-		if vec := embeddings[chunk.ChunkID]; len(vec) > 0 {
+		if doc.ID == "" {
+			doc.ID = strings.TrimSpace(chunk.DocID)
+		}
+		if vec := embeddings[doc.ID]; len(vec) > 0 {
 			doc.Dense = vec
-			out.embedded = append(out.embedded, EmbeddingRecord{ID: chunk.ChunkID, Vector: vec})
+			out.embedded = append(out.embedded, EmbeddingRecord{ID: doc.ID, Vector: vec})
 		}
 		out.sparse = append(out.sparse, doc)
 		out.byID[doc.ID] = doc
@@ -229,14 +309,146 @@ func loadOrBuildChunkEmbeddings(opts RetrievalOptions, chunks []ChunkRecord) (ma
 		if strings.TrimSpace(c.Text) == "" {
 			continue
 		}
+		id := strings.TrimSpace(c.ChunkID)
+		if id == "" {
+			id = strings.TrimSpace(c.DocID)
+		}
 		vec, err := embedder.EmbedText(context.Background(), c.Text, "RETRIEVAL_DOCUMENT")
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("chunk embedding failed for %s: %v", c.ChunkID, err))
+			warnings = append(warnings, fmt.Sprintf("chunk embedding failed for %s: %v", id, err))
 			continue
 		}
-		index[c.ChunkID] = vec
+		index[id] = vec
 	}
 	return index, warnings, nil
+}
+
+func newEvalLexicalClient(opts RetrievalOptions, chunks []ChunkRecord) (*retrieval.OpenSearchClient, error) {
+	baseURL := strings.TrimSpace(opts.OpenSearchURL)
+	if baseURL == "" {
+		return nil, fmt.Errorf("opensearch url required for lexicalMode=online_real")
+	}
+	indexName := strings.TrimSpace(opts.OpenSearchIndex)
+	if indexName == "" {
+		indexName = "onebook_eval_lexical"
+	}
+	indexName = fmt.Sprintf("%s_%d", indexName, time.Now().UTC().UnixNano())
+	client, err := retrieval.NewOpenSearchClient(baseURL, indexName, opts.OpenSearchUsername, opts.OpenSearchPassword)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.EnsureIndex(context.Background()); err != nil {
+		return nil, err
+	}
+	docs := make([]retrieval.LexicalDocument, 0, len(chunks))
+	for _, chunk := range chunks {
+		text := strings.TrimSpace(chunk.Text)
+		if text == "" {
+			continue
+		}
+		id := strings.TrimSpace(chunk.ChunkID)
+		if id == "" {
+			id = strings.TrimSpace(chunk.DocID)
+		}
+		bookID := strings.TrimSpace(chunk.Metadata["book_id"])
+		payload := map[string]any{
+			"book_id":       bookID,
+			"chunk_family":  strings.TrimSpace(chunk.Metadata["chunk_family"]),
+			"section_id":    strings.TrimSpace(chunk.Metadata["section_id"]),
+			"title":         strings.TrimSpace(chunk.Metadata["title"]),
+			"section_title": strings.TrimSpace(chunk.Metadata["section_title"]),
+			"keywords":      strings.TrimSpace(chunk.Metadata["keywords"]),
+			"tags":          strings.TrimSpace(chunk.Metadata["tags"]),
+			"block_type":    strings.TrimSpace(chunk.Metadata["block_type"]),
+			"language":      strings.TrimSpace(chunk.Metadata["language"]),
+		}
+		language := strings.TrimSpace(chunk.Metadata["language"])
+		if language == "" {
+			language = retrieval.DetectLanguage(text)
+		}
+		docs = append(docs, retrieval.LexicalDocument{
+			ID:      id,
+			Content: text,
+			Terms:   strings.Join(retrieval.Tokenize(text, language), " "),
+			Payload: payload,
+		})
+	}
+	if err := client.IndexDocuments(context.Background(), docs); err != nil {
+		_ = client.DeleteIndex(context.Background())
+		return nil, err
+	}
+	return client, nil
+}
+
+func runHitsToStageHits(hits []RunHit, docs map[string]evalDocument, stage string) []retrieval.StageHit {
+	out := make([]retrieval.StageHit, 0, len(hits))
+	for _, hit := range hits {
+		doc, ok := docs[hit.DocID]
+		if !ok {
+			continue
+		}
+		out = append(out, retrieval.StageHit{
+			ChunkID:  hit.DocID,
+			Score:    hit.Score,
+			Stage:    stage,
+			Content:  doc.Text,
+			Metadata: cloneMetadata(doc.Metadata),
+		})
+	}
+	return out
+}
+
+func stageHitsToRunHits(hits []retrieval.StageHit) []RunHit {
+	out := make([]RunHit, 0, len(hits))
+	for _, hit := range hits {
+		out = append(out, RunHit{DocID: hit.ChunkID, Score: hit.Score})
+	}
+	return out
+}
+
+func buildEvalChunkLookup(ids []string, docs map[string]evalDocument) map[string]domain.Chunk {
+	out := make(map[string]domain.Chunk, len(ids))
+	for _, id := range ids {
+		doc, ok := docs[id]
+		if !ok {
+			continue
+		}
+		out[id] = domain.Chunk{
+			ID:       doc.ID,
+			BookID:   doc.BookID,
+			Content:  doc.Text,
+			Metadata: cloneMetadata(doc.Metadata),
+		}
+	}
+	return out
+}
+
+func normalizeEvalRetrievalMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "sparse_only":
+		return "lexical_only"
+	default:
+		return strings.TrimSpace(mode)
+	}
+}
+
+func anyMetadata(docs map[string]evalDocument, id, key string) string {
+	doc, ok := docs[id]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(doc.Metadata[key])
+}
+
+func cloneMetadata(meta map[string]string) map[string]string {
+	if len(meta) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(meta))
+	for key, value := range meta {
+		out[key] = value
+	}
+	return out
 }
 
 func rankByCosine(query []float32, docs []EmbeddingRecord, topK int) []RunHit {

@@ -15,7 +15,7 @@ import (
 // LexicalDocument is the canonical lexical record indexed into OpenSearch.
 type LexicalDocument struct {
 	ID      string         `json:"id"`
-	Content string         `json:"content"`
+	Content string         `json:"content_text"`
 	Terms   string         `json:"content_terms"`
 	Payload map[string]any `json:"payload"`
 }
@@ -53,20 +53,18 @@ func (c *OpenSearchClient) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
 		"mappings": map[string]any{
 			"properties": map[string]any{
-				"chunk_id":       map[string]any{"type": "keyword"},
-				"book_id":        map[string]any{"type": "keyword"},
-				"retrieval_tier": map[string]any{"type": "keyword"},
-				"chunk_family":   map[string]any{"type": "keyword"},
-				"language":       map[string]any{"type": "keyword"},
-				"source_type":    map[string]any{"type": "keyword"},
-				"source_ref":     map[string]any{"type": "keyword"},
-				"page":           map[string]any{"type": "keyword"},
-				"section_path":   map[string]any{"type": "keyword"},
-				"chunk_index":    map[string]any{"type": "keyword"},
-				"chunk_count":    map[string]any{"type": "keyword"},
-				"content_sha256": map[string]any{"type": "keyword"},
-				"content":        map[string]any{"type": "text", "index": false},
-				"content_terms":  map[string]any{"type": "text"},
+				"chunk_id":      map[string]any{"type": "keyword"},
+				"book_id":       map[string]any{"type": "keyword"},
+				"chunk_family":  map[string]any{"type": "keyword"},
+				"section_id":    map[string]any{"type": "keyword"},
+				"title":         map[string]any{"type": "text"},
+				"section_title": map[string]any{"type": "text"},
+				"keywords":      map[string]any{"type": "text"},
+				"tags":          map[string]any{"type": "keyword"},
+				"block_type":    map[string]any{"type": "keyword"},
+				"language":      map[string]any{"type": "keyword"},
+				"content_text":  map[string]any{"type": "text"},
+				"content_terms": map[string]any{"type": "text"},
 			},
 		},
 	}
@@ -115,20 +113,18 @@ func (c *OpenSearchClient) IndexDocuments(ctx context.Context, docs []LexicalDoc
 			return err
 		}
 		source := map[string]any{
-			"chunk_id":       doc.ID,
-			"content":        doc.Content,
-			"content_terms":  doc.Terms,
-			"book_id":        strings.TrimSpace(anyString(doc.Payload["book_id"])),
-			"retrieval_tier": strings.TrimSpace(anyString(doc.Payload["retrieval_tier"])),
-			"chunk_family":   strings.TrimSpace(anyString(doc.Payload["chunk_family"])),
-			"language":       strings.TrimSpace(anyString(doc.Payload["language"])),
-			"source_type":    strings.TrimSpace(anyString(doc.Payload["source_type"])),
-			"source_ref":     strings.TrimSpace(anyString(doc.Payload["source_ref"])),
-			"page":           strings.TrimSpace(anyString(doc.Payload["page"])),
-			"section_path":   strings.TrimSpace(anyString(doc.Payload["section_path"])),
-			"chunk_index":    strings.TrimSpace(anyString(doc.Payload["chunk_index"])),
-			"chunk_count":    strings.TrimSpace(anyString(doc.Payload["chunk_count"])),
-			"content_sha256": strings.TrimSpace(anyString(doc.Payload["content_sha256"])),
+			"chunk_id":      doc.ID,
+			"content_text":  doc.Content,
+			"content_terms": doc.Terms,
+			"book_id":       strings.TrimSpace(anyString(doc.Payload["book_id"])),
+			"chunk_family":  strings.TrimSpace(anyString(doc.Payload["chunk_family"])),
+			"section_id":    strings.TrimSpace(anyString(doc.Payload["section_id"])),
+			"title":         strings.TrimSpace(anyString(doc.Payload["title"])),
+			"section_title": strings.TrimSpace(anyString(doc.Payload["section_title"])),
+			"keywords":      strings.TrimSpace(anyString(doc.Payload["keywords"])),
+			"tags":          strings.TrimSpace(anyString(doc.Payload["tags"])),
+			"block_type":    strings.TrimSpace(anyString(doc.Payload["block_type"])),
+			"language":      strings.TrimSpace(anyString(doc.Payload["language"])),
 		}
 		if err := enc.Encode(source); err != nil {
 			return err
@@ -167,28 +163,33 @@ func (c *OpenSearchClient) IndexDocuments(ctx context.Context, docs []LexicalDoc
 func (c *OpenSearchClient) QueryBM25(ctx context.Context, bookID, terms string, limit int) ([]Point, error) {
 	bookID = strings.TrimSpace(bookID)
 	terms = strings.TrimSpace(terms)
-	if bookID == "" || terms == "" || limit <= 0 {
+	if terms == "" || limit <= 0 {
 		return nil, nil
+	}
+	must := []any{
+		map[string]any{
+			"match": map[string]any{
+				"content_terms": map[string]any{
+					"query":    terms,
+					"operator": "or",
+				},
+			},
+		},
+	}
+	if bookID != "" {
+		must = append([]any{
+			map[string]any{
+				"term": map[string]any{
+					"book_id": bookID,
+				},
+			},
+		}, must...)
 	}
 	body := map[string]any{
 		"size": limit,
 		"query": map[string]any{
 			"bool": map[string]any{
-				"must": []any{
-					map[string]any{
-						"term": map[string]any{
-							"book_id": bookID,
-						},
-					},
-					map[string]any{
-						"match": map[string]any{
-							"content_terms": map[string]any{
-								"query":    terms,
-								"operator": "or",
-							},
-						},
-					},
-				},
+				"must": must,
 			},
 		},
 	}
@@ -211,28 +212,34 @@ func (c *OpenSearchClient) QueryBM25(ctx context.Context, bookID, terms string, 
 	points := make([]Point, 0, len(resp.Hits.Hits))
 	for _, hit := range resp.Hits.Hits {
 		payload := map[string]any{
-			"chunk_id":       strings.TrimSpace(anyString(hit.Source["chunk_id"])),
-			"book_id":        strings.TrimSpace(anyString(hit.Source["book_id"])),
-			"retrieval_tier": strings.TrimSpace(anyString(hit.Source["retrieval_tier"])),
-			"chunk_family":   strings.TrimSpace(anyString(hit.Source["chunk_family"])),
-			"content":        strings.TrimSpace(anyString(hit.Source["content"])),
-			"language":       strings.TrimSpace(anyString(hit.Source["language"])),
-			"source_type":    strings.TrimSpace(anyString(hit.Source["source_type"])),
-			"source_ref":     strings.TrimSpace(anyString(hit.Source["source_ref"])),
-			"page":           strings.TrimSpace(anyString(hit.Source["page"])),
-			"section_path":   strings.TrimSpace(anyString(hit.Source["section_path"])),
-			"chunk_index":    strings.TrimSpace(anyString(hit.Source["chunk_index"])),
-			"chunk_count":    strings.TrimSpace(anyString(hit.Source["chunk_count"])),
-			"content_sha256": strings.TrimSpace(anyString(hit.Source["content_sha256"])),
+			"chunk_id":      strings.TrimSpace(anyString(hit.Source["chunk_id"])),
+			"book_id":       strings.TrimSpace(anyString(hit.Source["book_id"])),
+			"chunk_family":  strings.TrimSpace(anyString(hit.Source["chunk_family"])),
+			"section_id":    strings.TrimSpace(anyString(hit.Source["section_id"])),
+			"title":         strings.TrimSpace(anyString(hit.Source["title"])),
+			"section_title": strings.TrimSpace(anyString(hit.Source["section_title"])),
+			"keywords":      strings.TrimSpace(anyString(hit.Source["keywords"])),
+			"tags":          strings.TrimSpace(anyString(hit.Source["tags"])),
+			"block_type":    strings.TrimSpace(anyString(hit.Source["block_type"])),
+			"language":      strings.TrimSpace(anyString(hit.Source["language"])),
 		}
 		points = append(points, Point{
 			ID:      strings.TrimSpace(anyString(payload["chunk_id"])),
-			Content: strings.TrimSpace(anyString(payload["content"])),
 			Payload: payload,
 			Score:   hit.Score,
 		})
 	}
 	return points, nil
+}
+
+// DeleteIndex removes the lexical index.
+func (c *OpenSearchClient) DeleteIndex(ctx context.Context) error {
+	err := c.do(ctx, http.MethodDelete, "/"+url.PathEscape(c.index), nil, nil)
+	var apiErr *apiError
+	if err != nil && errorAs(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+		return nil
+	}
+	return err
 }
 
 func (c *OpenSearchClient) do(ctx context.Context, method, path string, body any, out any) error {

@@ -3,6 +3,10 @@
 ## 1. 概述
 
 本项目已落地一套本地可运行的 Advanced RAG 评测系统，采用 **文件优先、在线可选** 的执行策略。
+Retrieval 现支持：
+
+- `offline_approx`：本地近似 lexical + fallback rerank
+- `online_real`：真实 OpenSearch BM25 + 本地 reranker 服务
 
 当前首版覆盖 6 类评测：
 
@@ -47,6 +51,15 @@ go run ./cmd/rag_eval retrieval \
   --queries internal/eval/testdata/queries.jsonl \
   --qrels internal/eval/testdata/qrels.tsv \
   --run internal/eval/testdata/run.jsonl
+
+# 4.1) Retrieval（真实 OpenSearch + reranker）
+go run ./cmd/rag_eval retrieval \
+  --queries internal/eval/testdata/queries.jsonl \
+  --qrels internal/eval/testdata/qrels.tsv \
+  --chunks internal/eval/testdata/chunks.jsonl \
+  --online \
+  --lexical-mode online_real \
+  --rerank-mode service
 
 # 5) Post-Retrieval（离线）
 go run ./cmd/rag_eval post-retrieval \
@@ -131,6 +144,12 @@ go run ./cmd/rag_eval all \
 3. `per_query.jsonl`：逐样本明细（可用于定位 bad case）
 
 默认 gate 模式是 `warn`，只告警不阻断。
+若在线构建 retrieval run，还会生成：
+
+- `dense_run.jsonl`
+- `lexical_run.jsonl`
+- `fusion_run.jsonl`
+- `rerank_run.jsonl`
 
 ## 6. 核心指标
 
@@ -184,6 +203,9 @@ go run ./cmd/rag_eval all \
 
 - Embedding 在线：调用项目 Embedder（默认 `ollama`）生成向量
 - Retrieval/Post-Retrieval 在线：未提供 `--run` 时先在线生成 run 再评测
+- Retrieval 额外支持：
+  - `--lexical-mode offline_approx | online_real`
+  - `--rerank-mode fallback | service`
 
 常用参数：
 
@@ -191,6 +213,9 @@ go run ./cmd/rag_eval all \
 - `--embedding-base-url`
 - `--embedding-model`
 - `--embedding-dim`
+- `--opensearch-url`
+- `--opensearch-index`
+- `--reranker-url`
 
 ## 8. 当前状态与后续
 

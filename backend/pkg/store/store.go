@@ -96,6 +96,9 @@ type Store interface {
 	// chunks
 	ReplaceChunks(bookID string, chunks []domain.Chunk) error
 	ListChunksByBook(bookID string) ([]domain.Chunk, error)
+	GetChunksByIDs(ids []string) ([]domain.Chunk, error)
+	ListChunkIndexStatusesByBook(bookID string) ([]domain.ChunkIndexStatus, error)
+	UpdateChunkIndexStatus(chunkIDs []string, backend domain.ChunkIndexBackend, status domain.ChunkIndexSyncStatus, embeddingModel string, embeddingDim int, errMsg string) error
 
 	// admin
 	SaveAdminAuditLog(domain.AdminAuditLog) error

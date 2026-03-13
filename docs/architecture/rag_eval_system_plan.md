@@ -1,6 +1,6 @@
 # OneBook AI — Advanced RAG 评测系统（6 类首版）
 
-> 状态：已落地（本地运行版本，未接 CI 门禁）
+> 状态：已落地（本地运行版本，支持 `offline_approx` / `online_real`，未接 CI 门禁）
 
 ## 1. 范围
 
@@ -97,6 +97,12 @@ go run ./cmd/rag_eval all \
 
 其中 `metrics.json` 含 `gate_result`（本地 warn 模式）。
 
+当 Retrieval 在线构建 run 时，还会按阶段输出：
+- `dense_run.jsonl`
+- `lexical_run.jsonl`
+- `fusion_run.jsonl`
+- `rerank_run.jsonl`
+
 ## 5. 指标定义（首版）
 
 ### Ingestion
@@ -142,6 +148,15 @@ go run ./cmd/rag_eval all \
 
 - Embedding：`--online` 时调用项目现有 Embedder（默认 Ollama）生成向量。
 - Retrieval/Post-Retrieval：`--online` 且未传 `--run` 时，先在线构造 run 再评测。
+- Retrieval 额外支持两组模式：
+  - `--lexical-mode offline_approx | online_real`
+  - `--rerank-mode fallback | service`
+- `online_real`：
+  - lexical 直连 OpenSearch 构建真实 BM25 run
+  - rerank 直连本地 reranker 服务
+- `offline_approx`：
+  - lexical 使用本地近似词法打分
+  - rerank 使用本地 fallback reranker
 
 常用 embedding 参数：
 - `--embedding-provider`（默认 `ollama`）
@@ -149,11 +164,17 @@ go run ./cmd/rag_eval all \
 - `--embedding-model`
 - `--embedding-dim`
 
+常用 retrieval 参数：
+- `--opensearch-url`
+- `--opensearch-index`
+- `--reranker-url`
+
 ## 7. 当前限制
 
 1. 首版未接入 CI 阻断。
 2. 首版未接入 LLM Judge（RAGAs/TruLens）。
 3. System 层评测（P95/失败率/成本）未纳入本版范围。
+4. `online_real` 默认依赖本地 OpenSearch 和 reranker 服务，CI 里通常仍应使用 `offline_approx`。
 
 ## 8. 与 Advanced RAG 关系
 

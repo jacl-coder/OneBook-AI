@@ -68,6 +68,21 @@ type ChunkModel struct {
 	CreatedAt time.Time      `gorm:"not null;index"`
 }
 
+type ChunkIndexStatusModel struct {
+	ChunkID            string     `gorm:"primaryKey"`
+	BookID             string     `gorm:"not null;index"`
+	ContentSHA256      string     `gorm:"not null;index"`
+	EmbeddingModel     string     `gorm:"not null;default:''"`
+	EmbeddingDim       int        `gorm:"not null;default:0"`
+	OpenSearchStatus   string     `gorm:"not null;index"`
+	OpenSearchSyncedAt *time.Time `gorm:"index"`
+	QdrantStatus       string     `gorm:"not null;index"`
+	QdrantSyncedAt     *time.Time `gorm:"index"`
+	LastError          string
+	CreatedAt          time.Time `gorm:"not null;index"`
+	UpdatedAt          time.Time `gorm:"not null;index"`
+}
+
 type AdminAuditLogModel struct {
 	ID         string         `gorm:"primaryKey"`
 	ActorID    string         `gorm:"not null;index"`

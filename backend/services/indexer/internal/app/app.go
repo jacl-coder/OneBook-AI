@@ -224,10 +224,20 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 		return err
 	}
 	if err := a.embedAndStore(ctx, semanticChunks); err != nil {
+		_ = a.store.UpdateChunkIndexStatus(chunkIDs(semanticChunks), domain.ChunkIndexBackendQdrant, domain.ChunkIndexSyncStatusFailed, cfgEmbeddingModel(a.embedder), a.embedDim, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.store.UpdateChunkIndexStatus(chunkIDs(semanticChunks), domain.ChunkIndexBackendQdrant, domain.ChunkIndexSyncStatusSynced, cfgEmbeddingModel(a.embedder), a.embedDim, ""); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.indexLexical(ctx, lexicalChunks); err != nil {
+		_ = a.store.UpdateChunkIndexStatus(chunkIDs(lexicalChunks), domain.ChunkIndexBackendOpenSearch, domain.ChunkIndexSyncStatusFailed, cfgEmbeddingModel(a.embedder), a.embedDim, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		return err
+	}
+	if err := a.store.UpdateChunkIndexStatus(chunkIDs(lexicalChunks), domain.ChunkIndexBackendOpenSearch, domain.ChunkIndexSyncStatusSynced, cfgEmbeddingModel(a.embedder), a.embedDim, ""); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
 		return err
 	}
@@ -331,19 +341,12 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 			Dense:  embedding,
 			Sparse: retrieval.BuildSparseVector(batch[i].Content, language),
 			Payload: map[string]any{
-				"chunk_id":       batch[i].ID,
-				"book_id":        batch[i].BookID,
-				"retrieval_tier": firstNonEmpty(batch[i].Metadata["retrieval_tier"], "semantic"),
-				"chunk_family":   strings.TrimSpace(batch[i].Metadata["chunk_family"]),
-				"content":        batch[i].Content,
-				"language":       language,
-				"source_type":    strings.TrimSpace(batch[i].Metadata["source_type"]),
-				"source_ref":     strings.TrimSpace(batch[i].Metadata["source_ref"]),
-				"page":           strings.TrimSpace(batch[i].Metadata["page"]),
-				"section_path":   firstNonEmpty(batch[i].Metadata["section_path"], batch[i].Metadata["section"]),
-				"chunk_index":    firstNonEmpty(batch[i].Metadata["chunk_index"], batch[i].Metadata["chunk"]),
-				"chunk_count":    strings.TrimSpace(batch[i].Metadata["chunk_count"]),
-				"content_sha256": strings.TrimSpace(batch[i].Metadata["content_sha256"]),
+				"chunk_id":     batch[i].ID,
+				"book_id":      batch[i].BookID,
+				"chunk_family": strings.TrimSpace(batch[i].Metadata["chunk_family"]),
+				"section_id":   strings.TrimSpace(batch[i].Metadata["section_id"]),
+				"block_type":   firstNonEmpty(batch[i].Metadata["block_type"], batch[i].Metadata["source_type"]),
+				"language":     language,
 			},
 		})
 	}
@@ -361,19 +364,16 @@ func (a *App) indexLexical(ctx context.Context, chunks []domain.Chunk) error {
 			language = retrieval.DetectLanguage(chunk.Content)
 		}
 		payload := map[string]any{
-			"chunk_id":       chunk.ID,
-			"book_id":        chunk.BookID,
-			"retrieval_tier": firstNonEmpty(chunk.Metadata["retrieval_tier"], "lexical"),
-			"chunk_family":   strings.TrimSpace(chunk.Metadata["chunk_family"]),
-			"content":        chunk.Content,
-			"language":       language,
-			"source_type":    strings.TrimSpace(chunk.Metadata["source_type"]),
-			"source_ref":     strings.TrimSpace(chunk.Metadata["source_ref"]),
-			"page":           strings.TrimSpace(chunk.Metadata["page"]),
-			"section_path":   firstNonEmpty(chunk.Metadata["section_path"], chunk.Metadata["section"]),
-			"chunk_index":    firstNonEmpty(chunk.Metadata["chunk_index"], chunk.Metadata["chunk"]),
-			"chunk_count":    strings.TrimSpace(chunk.Metadata["chunk_count"]),
-			"content_sha256": strings.TrimSpace(chunk.Metadata["content_sha256"]),
+			"chunk_id":      chunk.ID,
+			"book_id":       chunk.BookID,
+			"chunk_family":  strings.TrimSpace(chunk.Metadata["chunk_family"]),
+			"section_id":    strings.TrimSpace(chunk.Metadata["section_id"]),
+			"title":         strings.TrimSpace(chunk.Metadata["title"]),
+			"section_title": firstNonEmpty(chunk.Metadata["section_title"], chunk.Metadata["section"], chunk.Metadata["section_path"]),
+			"keywords":      strings.TrimSpace(chunk.Metadata["keywords"]),
+			"tags":          strings.TrimSpace(chunk.Metadata["tags"]),
+			"block_type":    firstNonEmpty(chunk.Metadata["block_type"], chunk.Metadata["source_type"]),
+			"language":      language,
 		}
 		docs = append(docs, retrieval.LexicalDocument{
 			ID:      chunk.ID,
@@ -383,6 +383,27 @@ func (a *App) indexLexical(ctx context.Context, chunks []domain.Chunk) error {
 		})
 	}
 	return a.lexical.IndexDocuments(ctx, docs)
+}
+
+func chunkIDs(chunks []domain.Chunk) []string {
+	out := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if strings.TrimSpace(chunk.ID) == "" {
+			continue
+		}
+		out = append(out, chunk.ID)
+	}
+	return out
+}
+
+func cfgEmbeddingModel(embedder ai.Embedder) string {
+	type modelNamer interface {
+		ModelName() string
+	}
+	if named, ok := embedder.(modelNamer); ok {
+		return strings.TrimSpace(named.ModelName())
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {
