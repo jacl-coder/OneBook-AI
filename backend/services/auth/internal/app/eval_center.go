@@ -242,7 +242,10 @@ func (c *evalCenter) buildRunOptions(run domain.EvalRun, dataset domain.EvalData
 			Online:             boolFromParams(params, "online", true),
 			TopK:               topK,
 			DenseTopK:          intFromParams(params, "denseTopK", topK),
+			LexicalTopK:        intFromParams(params, "lexicalTopK", intFromParams(params, "sparseTopK", topK)),
 			SparseTopK:         intFromParams(params, "sparseTopK", topK),
+			DenseWeight:        floatFromParams(params, "denseWeight", 0.45),
+			LexicalWeight:      floatFromParams(params, "lexicalWeight", 0.55),
 			FusionTopK:         intFromParams(params, "fusionTopK", topK),
 			RerankTopN:         intFromParams(params, "rerankTopN", 10),
 			RetrievalMode:      string(run.RetrievalMode),
@@ -256,16 +259,30 @@ func (c *evalCenter) buildRunOptions(run domain.EvalRun, dataset domain.EvalData
 			Embedder:           embedderConfigFromParams(params),
 		},
 		PostRetr: eval.PostRetrievalOptions{
-			QueriesPath:    queriesPath,
-			QrelsPath:      qrelsPath,
-			RunPath:        c.datasetFilePath(dataset, "run"),
-			ChunksPath:     chunksPath,
-			EmbeddingsPath: c.datasetFilePath(dataset, "embeddings"),
-			Online:         boolFromParams(params, "online", true),
-			TopK:           topK,
-			ContextBudget:  contextBudget,
-			RetrievalMode:  string(run.RetrievalMode),
-			Embedder:       embedderConfigFromParams(params),
+			QueriesPath:        queriesPath,
+			QrelsPath:          qrelsPath,
+			RunPath:            c.datasetFilePath(dataset, "run"),
+			ChunksPath:         chunksPath,
+			EmbeddingsPath:     c.datasetFilePath(dataset, "embeddings"),
+			Online:             boolFromParams(params, "online", true),
+			TopK:               topK,
+			DenseTopK:          intFromParams(params, "denseTopK", topK),
+			LexicalTopK:        intFromParams(params, "lexicalTopK", intFromParams(params, "sparseTopK", topK)),
+			SparseTopK:         intFromParams(params, "sparseTopK", topK),
+			DenseWeight:        floatFromParams(params, "denseWeight", 0.45),
+			LexicalWeight:      floatFromParams(params, "lexicalWeight", 0.55),
+			FusionTopK:         intFromParams(params, "fusionTopK", topK),
+			RerankTopN:         intFromParams(params, "rerankTopN", 10),
+			ContextBudget:      contextBudget,
+			RetrievalMode:      string(run.RetrievalMode),
+			LexicalMode:        stringFromParams(params, "lexicalMode", "online_real"),
+			RerankMode:         stringFromParams(params, "rerankMode", "service"),
+			OpenSearchURL:      stringFromParams(params, "openSearchURL", os.Getenv("OPENSEARCH_URL")),
+			OpenSearchIndex:    stringFromParams(params, "openSearchIndex", os.Getenv("OPENSEARCH_INDEX")),
+			OpenSearchUsername: stringFromParams(params, "openSearchUsername", os.Getenv("OPENSEARCH_USERNAME")),
+			OpenSearchPassword: stringFromParams(params, "openSearchPassword", os.Getenv("OPENSEARCH_PASSWORD")),
+			RerankerURL:        stringFromParams(params, "rerankerURL", os.Getenv("RERANKER_URL")),
+			Embedder:           embedderConfigFromParams(params),
 		},
 		Answer: eval.AnswerOptions{
 			QueriesPath:     queriesPath,
@@ -678,6 +695,39 @@ func boolFromParams(params map[string]any, key string, fallback bool) bool {
 			return true
 		case "false", "0", "no":
 			return false
+		}
+	}
+	return fallback
+}
+
+func floatFromParams(params map[string]any, key string, fallback float64) float64 {
+	if len(params) == 0 {
+		return fallback
+	}
+	value, ok := params[key]
+	if !ok {
+		return fallback
+	}
+	switch typed := value.(type) {
+	case float64:
+		if typed >= 0 {
+			return typed
+		}
+	case float32:
+		if typed >= 0 {
+			return float64(typed)
+		}
+	case int:
+		if typed >= 0 {
+			return float64(typed)
+		}
+	case json.Number:
+		if parsed, err := typed.Float64(); err == nil && parsed >= 0 {
+			return parsed
+		}
+	case string:
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64); err == nil && parsed >= 0 {
+			return parsed
 		}
 	}
 	return fallback

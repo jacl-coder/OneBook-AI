@@ -13,6 +13,7 @@ from sentence_transformers import CrossEncoder
 
 
 MODEL_NAME = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+MODEL_REVISION = os.getenv("RERANKER_MODEL_REVISION", "").strip()
 MAX_DOCS = int(os.getenv("RERANKER_MAX_DOCS", "50"))
 MAX_CHARS = int(os.getenv("RERANKER_MAX_CHARS", "2400"))
 BATCH_SIZE = int(os.getenv("RERANKER_BATCH_SIZE", "8"))
@@ -44,7 +45,10 @@ state = {"model": None, "ready": False, "error": ""}
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
-        model = CrossEncoder(MODEL_NAME, trust_remote_code=True)
+        model_kwargs = {"trust_remote_code": True}
+        if MODEL_REVISION:
+            model_kwargs["revision"] = MODEL_REVISION
+        model = CrossEncoder(MODEL_NAME, **model_kwargs)
         _ = model.predict([["warmup query", "warmup document"]], batch_size=1)
         state["model"] = model
         state["ready"] = True
@@ -66,6 +70,7 @@ def healthz():
     return {
         "status": "ok",
         "model": MODEL_NAME,
+        "revision": MODEL_REVISION,
         "cache_dir": CACHE_DIR,
         "max_docs": MAX_DOCS,
         "max_chars": MAX_CHARS,

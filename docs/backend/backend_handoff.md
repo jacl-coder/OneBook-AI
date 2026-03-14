@@ -61,6 +61,8 @@
 - `GET /api/admin/books`：管理员书籍分页列表（支持 `query/status/ownerId/primaryCategory/tag/format/language/page/pageSize/sortBy/sortOrder`）。
 - `DELETE /api/admin/books/{id}`：管理员删除书籍。
 - `POST /api/admin/books/{id}/reprocess`：管理员重处理书籍。
+- `GET /api/admin/books/{id}/index-status`：查看书籍索引同步状态。
+- `POST /api/admin/books/{id}/repair-index`：触发索引修复；当前实现为整书重处理。
 - `GET /api/admin/audit-logs`：管理员操作审计日志分页列表。
 
 ## 4. 状态机与前端交互建议
@@ -68,8 +70,9 @@
 ### 4.0 幂等要求
 - `POST /api/books`
 - `POST /api/admin/books/{id}/reprocess`
+- `POST /api/admin/books/{id}/repair-index`
 - `POST /api/admin/evals/runs`
-- 以上 3 个接口现在强制要求请求头 `Idempotency-Key`。
+- 以上 4 个接口现在强制要求请求头 `Idempotency-Key`。
 - 命中回放时，响应头会返回 `Idempotency-Replayed: true`。
 - 同一个 `Idempotency-Key` 如果对应了不同请求内容，会返回 `409`。
 
@@ -193,6 +196,7 @@ CORS_ALLOW_CREDENTIALS=true
 - 评测参数支持：
   - `params.lexicalMode = offline_approx | online_real`
   - `params.rerankMode = fallback | service`
+  - `params.denseWeight` / `params.lexicalWeight`
 - artifacts 默认包含：
   - `run.json`
   - `metrics.json`

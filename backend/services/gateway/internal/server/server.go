@@ -1163,6 +1163,15 @@ func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 		return
 	}
+	if r.Method == http.MethodGet && action == "index-status" {
+		summary, err := s.books.GetBookIndexStatus(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
+		return
+	}
 	if r.Method == http.MethodPost && action == "reprocess" {
 		before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
 		if err != nil {
@@ -1181,6 +1190,41 @@ func (s *Server) handleAdminBookByID(w http.ResponseWriter, r *http.Request, ctx
 		}
 		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
 			Action:     "admin.book.reprocess",
+			TargetType: "book",
+			TargetID:   id,
+			Before:     toMap(before),
+			After:      toMap(updated),
+			RequestID:  util.RequestIDFromRequest(r),
+			IP:         util.ClientIP(r, s.trustedProxies),
+			UserAgent:  strings.TrimSpace(r.UserAgent()),
+		}); err != nil {
+			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
+			return
+		}
+		if replayed {
+			w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+		}
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+	if r.Method == http.MethodPost && action == "repair-index" {
+		before, err := s.books.GetBook(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		idempotencyKey := util.IdempotencyKeyFromRequest(r)
+		if idempotencyKey == "" {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "idempotency key required", "IDEMPOTENCY_KEY_REQUIRED")
+			return
+		}
+		updated, replayed, err := s.books.RepairBookIndex(util.RequestIDFromRequest(r), ctx.AccessToken, idempotencyKey, id)
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+			Action:     "admin.book.repair_index",
 			TargetType: "book",
 			TargetID:   id,
 			Before:     toMap(before),

@@ -30,6 +30,8 @@ type PipelineOptions struct {
 	TopK          int
 	DenseTopK     int
 	LexicalTopK   int
+	DenseWeight   float64
+	LexicalWeight float64
 	FusionTopK    int
 	RerankTopN    int
 	ContextBudget int
@@ -70,6 +72,7 @@ func (p Pipeline) Run(ctx context.Context, opts PipelineOptions) (PipelineResult
 	denseHits := make(map[string]StageHit)
 	lexicalHits := make(map[string]StageHit)
 	warnings := make([]string, 0, 2)
+	denseWeight, lexicalWeight := normalizedFusionWeights(opts.DenseWeight, opts.LexicalWeight)
 
 	for _, item := range queries {
 		if strings.TrimSpace(item) == "" {
@@ -80,7 +83,7 @@ func (p Pipeline) Run(ctx context.Context, opts PipelineOptions) (PipelineResult
 			if err != nil {
 				warnings = append(warnings, "dense retrieval unavailable")
 			} else {
-				accumulateStageHits(denseHits, hits, "dense")
+				accumulateStageHits(denseHits, hits, "dense", denseWeight)
 			}
 		}
 		if opts.RetrievalMode != "dense_only" && p.Lexical != nil {
@@ -88,7 +91,7 @@ func (p Pipeline) Run(ctx context.Context, opts PipelineOptions) (PipelineResult
 			if err != nil {
 				warnings = append(warnings, "lexical retrieval unavailable")
 			} else {
-				accumulateStageHits(lexicalHits, hits, "lexical")
+				accumulateStageHits(lexicalHits, hits, "lexical", lexicalWeight)
 			}
 		}
 	}
@@ -143,10 +146,11 @@ func (p Pipeline) Run(ctx context.Context, opts PipelineOptions) (PipelineResult
 	return result, nil
 }
 
-func accumulateStageHits(target map[string]StageHit, hits []StageHit, stage string) {
+func accumulateStageHits(target map[string]StageHit, hits []StageHit, stage string, weight float64) {
 	for rank, hit := range hits {
 		hit.Stage = stage
-		hit.Score += reciprocalRank(rank)
+		// Use pure rank fusion here; lexical and dense raw scores are not on the same scale.
+		hit.Score = reciprocalRank(rank) * weight
 		mergeStageHit(target, hit)
 	}
 }
@@ -324,6 +328,23 @@ func packStageHits(hits []StageHit, topK int, budget int) []StageHit {
 
 func reciprocalRank(rank int) float64 {
 	return 1.0 / float64(rank+61)
+}
+
+func normalizedFusionWeights(denseWeight, lexicalWeight float64) (float64, float64) {
+	if denseWeight <= 0 && lexicalWeight <= 0 {
+		return 0.5, 0.5
+	}
+	if denseWeight < 0 {
+		denseWeight = 0
+	}
+	if lexicalWeight < 0 {
+		lexicalWeight = 0
+	}
+	total := denseWeight + lexicalWeight
+	if total <= 0 {
+		return 0.5, 0.5
+	}
+	return denseWeight / total, lexicalWeight / total
 }
 
 func uniquePipelineStrings(items []string) []string {

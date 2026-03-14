@@ -165,6 +165,8 @@ go run ./cmd/rag_eval all \
 - `--embedding-dim`
 
 常用 retrieval 参数：
+- `--dense-weight`
+- `--lexical-weight`
 - `--opensearch-url`
 - `--opensearch-index`
 - `--reranker-url`

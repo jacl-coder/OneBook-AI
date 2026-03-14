@@ -83,7 +83,7 @@ export function AdminEvalsPage() {
     mode: 'all',
     retrievalMode: 'hybrid_best',
     gateMode: 'warn',
-    params: { topK: 20, contextBudget: 4000, lexicalMode: 'online_real', rerankMode: 'service' },
+    params: { topK: 20, contextBudget: 4000, lexicalMode: 'online_real', rerankMode: 'service', denseWeight: 0.45, lexicalWeight: 0.55 },
   })
 
   const overviewQuery = useQuery({
@@ -305,6 +305,34 @@ export function AdminEvalsPage() {
                   setRunForm((prev) => ({
                     ...prev,
                     params: { ...prev.params, topK: Number(event.target.value) || 20 },
+                  }))
+                }
+              />
+              <input
+                className={tw.input}
+                placeholder="Dense Weight"
+                type="number"
+                step="0.05"
+                min="0"
+                value={String((runForm.params?.denseWeight as number | undefined) ?? 0.45)}
+                onChange={(event) =>
+                  setRunForm((prev) => ({
+                    ...prev,
+                    params: { ...prev.params, denseWeight: Number(event.target.value) || 0 },
+                  }))
+                }
+              />
+              <input
+                className={tw.input}
+                placeholder="Lexical Weight"
+                type="number"
+                step="0.05"
+                min="0"
+                value={String((runForm.params?.lexicalWeight as number | undefined) ?? 0.55)}
+                onChange={(event) =>
+                  setRunForm((prev) => ({
+                    ...prev,
+                    params: { ...prev.params, lexicalWeight: Number(event.target.value) || 0 },
                   }))
                 }
               />

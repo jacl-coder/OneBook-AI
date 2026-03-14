@@ -192,6 +192,12 @@ func runRetrieval(args []string) error {
 	embeddings := fs.String("embeddings", "", "path to embeddings.jsonl")
 	online := fs.Bool("online", false, "build run online")
 	topK := fs.Int("top-k", 20, "top-k")
+	denseTopK := fs.Int("dense-top-k", 0, "dense recall top-k (defaults to top-k)")
+	lexicalTopK := fs.Int("lexical-top-k", 0, "lexical recall top-k (defaults to top-k)")
+	fusionTopK := fs.Int("fusion-top-k", 0, "fusion top-k (defaults to top-k)")
+	rerankTopN := fs.Int("rerank-top-n", 0, "rerank top-n (defaults to 10)")
+	denseWeight := fs.Float64("dense-weight", 0.45, "dense fusion weight")
+	lexicalWeight := fs.Float64("lexical-weight", 0.55, "lexical fusion weight")
 	lexicalMode := fs.String("lexical-mode", "offline_approx", "lexical mode: offline_approx|online_real")
 	rerankMode := fs.String("rerank-mode", "fallback", "rerank mode: fallback|service")
 	openSearchURL := fs.String("opensearch-url", os.Getenv("OPENSEARCH_URL"), "OpenSearch base URL")
@@ -211,6 +217,12 @@ func runRetrieval(args []string) error {
 		EmbeddingsPath:     *embeddings,
 		Online:             *online,
 		TopK:               *topK,
+		DenseTopK:          *denseTopK,
+		LexicalTopK:        *lexicalTopK,
+		FusionTopK:         *fusionTopK,
+		RerankTopN:         *rerankTopN,
+		DenseWeight:        *denseWeight,
+		LexicalWeight:      *lexicalWeight,
 		LexicalMode:        *lexicalMode,
 		RerankMode:         *rerankMode,
 		OpenSearchURL:      *openSearchURL,
@@ -230,7 +242,7 @@ func runRetrieval(args []string) error {
 		}
 	}
 	gate := eval.EvaluateGate(c.gateMode, res.Warnings)
-	run := buildRun("retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
+	run := buildRun("retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "dense_top_k": *denseTopK, "lexical_top_k": *lexicalTopK, "fusion_top_k": *fusionTopK, "rerank_top_n": *rerankTopN, "dense_weight": *denseWeight, "lexical_weight": *lexicalWeight, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
 	return eval.WriteReport(outDir, run, res.Metrics, res.PerQuery, gate)
 }
 
@@ -245,21 +257,47 @@ func runPostRetrieval(args []string) error {
 	embeddings := fs.String("embeddings", "", "path to embeddings.jsonl")
 	online := fs.Bool("online", false, "build run online when run is absent")
 	topK := fs.Int("top-k", 20, "top-k")
+	denseTopK := fs.Int("dense-top-k", 0, "dense recall top-k (defaults to top-k)")
+	lexicalTopK := fs.Int("lexical-top-k", 0, "lexical recall top-k (defaults to top-k)")
+	fusionTopK := fs.Int("fusion-top-k", 0, "fusion top-k (defaults to top-k)")
+	rerankTopN := fs.Int("rerank-top-n", 0, "rerank top-n (defaults to 10)")
 	contextBudget := fs.Int("context-budget", 4000, "context budget")
+	denseWeight := fs.Float64("dense-weight", 0.45, "dense fusion weight")
+	lexicalWeight := fs.Float64("lexical-weight", 0.55, "lexical fusion weight")
+	lexicalMode := fs.String("lexical-mode", "offline_approx", "lexical mode: offline_approx|online_real")
+	rerankMode := fs.String("rerank-mode", "fallback", "rerank mode: fallback|service")
+	openSearchURL := fs.String("opensearch-url", os.Getenv("OPENSEARCH_URL"), "OpenSearch base URL")
+	openSearchIndex := fs.String("opensearch-index", os.Getenv("OPENSEARCH_INDEX"), "OpenSearch index prefix")
+	openSearchUsername := fs.String("opensearch-username", os.Getenv("OPENSEARCH_USERNAME"), "OpenSearch username")
+	openSearchPassword := fs.String("opensearch-password", os.Getenv("OPENSEARCH_PASSWORD"), "OpenSearch password")
+	rerankerURL := fs.String("reranker-url", os.Getenv("RERANKER_URL"), "reranker service URL")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	outDir, runID := normalizeOutDir("post-retrieval", c)
 	res, runs, err := eval.EvaluatePostRetrieval(eval.PostRetrievalOptions{
-		QueriesPath:    *queries,
-		QrelsPath:      *qrels,
-		RunPath:        *runPath,
-		ChunksPath:     *chunks,
-		EmbeddingsPath: *embeddings,
-		Online:         *online,
-		TopK:           *topK,
-		ContextBudget:  *contextBudget,
-		Embedder:       toEmbedCfg(e),
+		QueriesPath:        *queries,
+		QrelsPath:          *qrels,
+		RunPath:            *runPath,
+		ChunksPath:         *chunks,
+		EmbeddingsPath:     *embeddings,
+		Online:             *online,
+		TopK:               *topK,
+		DenseTopK:          *denseTopK,
+		LexicalTopK:        *lexicalTopK,
+		DenseWeight:        *denseWeight,
+		LexicalWeight:      *lexicalWeight,
+		FusionTopK:         *fusionTopK,
+		RerankTopN:         *rerankTopN,
+		ContextBudget:      *contextBudget,
+		LexicalMode:        *lexicalMode,
+		RerankMode:         *rerankMode,
+		OpenSearchURL:      *openSearchURL,
+		OpenSearchIndex:    *openSearchIndex,
+		OpenSearchUsername: *openSearchUsername,
+		OpenSearchPassword: *openSearchPassword,
+		RerankerURL:        *rerankerURL,
+		Embedder:           toEmbedCfg(e),
 	})
 	if err != nil {
 		return err
@@ -271,7 +309,7 @@ func runPostRetrieval(args []string) error {
 		}
 	}
 	gate := eval.EvaluateGate(c.gateMode, res.Warnings)
-	run := buildRun("post-retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "context_budget": *contextBudget, "embedder": toEmbedCfg(e)})
+	run := buildRun("post-retrieval", runID, map[string]string{"queries": *queries, "qrels": *qrels, "run": *runPath, "chunks": *chunks, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "dense_top_k": *denseTopK, "lexical_top_k": *lexicalTopK, "fusion_top_k": *fusionTopK, "rerank_top_n": *rerankTopN, "dense_weight": *denseWeight, "lexical_weight": *lexicalWeight, "context_budget": *contextBudget, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
 	return eval.WriteReport(outDir, run, res.Metrics, res.PerQuery, gate)
 }
 
@@ -306,6 +344,12 @@ func runAll(args []string) error {
 	embeddings := fs.String("embeddings", "", "path to embeddings.jsonl")
 	online := fs.Bool("online", false, "run optional online stages")
 	topK := fs.Int("top-k", 20, "top-k")
+	denseTopK := fs.Int("dense-top-k", 0, "dense recall top-k (defaults to top-k)")
+	lexicalTopK := fs.Int("lexical-top-k", 0, "lexical recall top-k (defaults to top-k)")
+	fusionTopK := fs.Int("fusion-top-k", 0, "fusion top-k (defaults to top-k)")
+	rerankTopN := fs.Int("rerank-top-n", 0, "rerank top-n (defaults to 10)")
+	denseWeight := fs.Float64("dense-weight", 0.45, "dense fusion weight")
+	lexicalWeight := fs.Float64("lexical-weight", 0.55, "lexical fusion weight")
 	contextBudget := fs.Int("context-budget", 4000, "context budget")
 	shortLimit := fs.Int("short-limit", 80, "short threshold")
 	longLimit := fs.Int("long-limit", 1200, "long threshold")
@@ -327,8 +371,8 @@ func runAll(args []string) error {
 		Ingestion:   eval.IngestionOptions{ChunksPath: *chunks},
 		Chunking:    eval.ChunkingOptions{ChunksPath: *chunks, ShortLimit: *shortLimit, LongLimit: *longLimit},
 		Embedding:   eval.EmbeddingOptions{ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, Embedder: toEmbedCfg(e)},
-		Retrieval:   eval.RetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, LexicalMode: *lexicalMode, RerankMode: *rerankMode, OpenSearchURL: *openSearchURL, OpenSearchIndex: *openSearchIndex, OpenSearchUsername: *openSearchUsername, OpenSearchPassword: *openSearchPassword, RerankerURL: *rerankerURL, Embedder: toEmbedCfg(e)},
-		PostRetr:    eval.PostRetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, ContextBudget: *contextBudget, Embedder: toEmbedCfg(e)},
+		Retrieval:   eval.RetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, DenseTopK: *denseTopK, LexicalTopK: *lexicalTopK, DenseWeight: *denseWeight, LexicalWeight: *lexicalWeight, FusionTopK: *fusionTopK, RerankTopN: *rerankTopN, LexicalMode: *lexicalMode, RerankMode: *rerankMode, OpenSearchURL: *openSearchURL, OpenSearchIndex: *openSearchIndex, OpenSearchUsername: *openSearchUsername, OpenSearchPassword: *openSearchPassword, RerankerURL: *rerankerURL, Embedder: toEmbedCfg(e)},
+		PostRetr:    eval.PostRetrievalOptions{QueriesPath: *queries, QrelsPath: *qrels, RunPath: *runPath, ChunksPath: *chunks, EmbeddingsPath: *embeddings, Online: *online, TopK: *topK, DenseTopK: *denseTopK, LexicalTopK: *lexicalTopK, DenseWeight: *denseWeight, LexicalWeight: *lexicalWeight, FusionTopK: *fusionTopK, RerankTopN: *rerankTopN, ContextBudget: *contextBudget, LexicalMode: *lexicalMode, RerankMode: *rerankMode, OpenSearchURL: *openSearchURL, OpenSearchIndex: *openSearchIndex, OpenSearchUsername: *openSearchUsername, OpenSearchPassword: *openSearchPassword, RerankerURL: *rerankerURL, Embedder: toEmbedCfg(e)},
 		Answer:      eval.AnswerOptions{QueriesPath: *queries, QrelsPath: *qrels, PredictionsPath: *predictions},
 		WriteOnline: true,
 	})
@@ -336,7 +380,7 @@ func runAll(args []string) error {
 		return err
 	}
 	gate := eval.EvaluateGate(c.gateMode, warnings)
-	run := buildRun("all", runID, map[string]string{"chunks": *chunks, "queries": *queries, "qrels": *qrels, "predictions": *predictions, "run": *runPath, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "context_budget": *contextBudget, "short_limit": *shortLimit, "long_limit": *longLimit, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
+	run := buildRun("all", runID, map[string]string{"chunks": *chunks, "queries": *queries, "qrels": *qrels, "predictions": *predictions, "run": *runPath, "embeddings": *embeddings}, map[string]any{"online": *online, "top_k": *topK, "dense_top_k": *denseTopK, "lexical_top_k": *lexicalTopK, "fusion_top_k": *fusionTopK, "rerank_top_n": *rerankTopN, "dense_weight": *denseWeight, "lexical_weight": *lexicalWeight, "context_budget": *contextBudget, "short_limit": *shortLimit, "long_limit": *longLimit, "lexical_mode": *lexicalMode, "rerank_mode": *rerankMode, "embedder": toEmbedCfg(e)})
 	return eval.WriteReport(outDir, run, metrics, per, gate)
 }
 

@@ -152,6 +152,8 @@ func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question s
 		TopK:          a.topK,
 		DenseTopK:     a.denseRecallTopK,
 		LexicalTopK:   a.lexicalRecallTopK,
+		DenseWeight:   a.denseWeight,
+		LexicalWeight: a.lexicalWeight,
 		FusionTopK:    a.fusionTopK,
 		RerankTopN:    a.rerankTopN,
 		ContextBudget: a.contextBudget,

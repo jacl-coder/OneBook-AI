@@ -245,6 +245,38 @@ func (a *App) UpdateStatus(id string, status domain.BookStatus, errMsg string) e
 	return a.store.SetStatus(id, status, errMsg)
 }
 
+// GetBookIndexStatusSummary returns index sync state for a book.
+func (a *App) GetBookIndexStatusSummary(id string) (domain.BookIndexStatusSummary, error) {
+	book, ok, err := a.store.GetBook(id)
+	if err != nil {
+		return domain.BookIndexStatusSummary{}, err
+	}
+	if !ok {
+		return domain.BookIndexStatusSummary{}, fmt.Errorf("book not found")
+	}
+	statuses, err := a.store.ListChunkIndexStatusesByBook(book.ID)
+	if err != nil {
+		return domain.BookIndexStatusSummary{}, err
+	}
+	summary := domain.BookIndexStatusSummary{
+		BookID: book.ID,
+		Items:  statuses,
+	}
+	for _, item := range statuses {
+		summary.TotalChunks++
+		if item.OpenSearchStatus == domain.ChunkIndexSyncStatusFailed || item.QdrantStatus == domain.ChunkIndexSyncStatusFailed {
+			summary.FailedChunks++
+			continue
+		}
+		if item.OpenSearchStatus == domain.ChunkIndexSyncStatusSynced && item.QdrantStatus == domain.ChunkIndexSyncStatusSynced {
+			summary.SyncedChunks++
+			continue
+		}
+		summary.PendingChunks++
+	}
+	return summary, nil
+}
+
 // DeleteBook removes book metadata and files.
 func (a *App) DeleteBook(id string) error {
 	book, ok, err := a.store.GetBookIncludingDeleted(id)
@@ -309,6 +341,14 @@ func (a *App) ReprocessBook(actor domain.User, id, idempotencyKey string) (domai
 	}
 	_ = a.completeBookIdempotency(record, "book", updated.ID, 200)
 	return updated, false, nil
+}
+
+// RepairBookIndex triggers a full reprocess as the current index repair mechanism.
+func (a *App) RepairBookIndex(actor domain.User, id, idempotencyKey string) (domain.Book, bool, error) {
+	if _, err := a.GetBookIndexStatusSummary(id); err != nil {
+		return domain.Book{}, false, err
+	}
+	return a.ReprocessBook(actor, id, idempotencyKey)
 }
 
 func titleFromName(name string) string {
