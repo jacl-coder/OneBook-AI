@@ -242,6 +242,32 @@ func (c *OpenSearchClient) DeleteIndex(ctx context.Context) error {
 	return err
 }
 
+// ListIndicesByPrefix returns index names matching the provided prefix.
+func (c *OpenSearchClient) ListIndicesByPrefix(ctx context.Context, prefix string) ([]string, error) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil, nil
+	}
+	var resp []struct {
+		Index string `json:"index"`
+	}
+	path := fmt.Sprintf("/_cat/indices/%s*?format=json&h=index", url.PathEscape(prefix))
+	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		var apiErr *apiError
+		if errorAs(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	names := make([]string, 0, len(resp))
+	for _, item := range resp {
+		if name := strings.TrimSpace(item.Index); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
 func (c *OpenSearchClient) do(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {

@@ -113,7 +113,10 @@ type RetrievalOptions struct {
 	Online             bool
 	TopK               int
 	DenseTopK          int
+	LexicalTopK        int
 	SparseTopK         int
+	DenseWeight        float64
+	LexicalWeight      float64
 	FusionTopK         int
 	RerankTopN         int
 	RetrievalMode      string
@@ -129,16 +132,30 @@ type RetrievalOptions struct {
 
 // PostRetrievalOptions configures post-retrieval evaluator.
 type PostRetrievalOptions struct {
-	QueriesPath    string
-	QrelsPath      string
-	RunPath        string
-	ChunksPath     string
-	EmbeddingsPath string
-	Online         bool
-	TopK           int
-	ContextBudget  int
-	RetrievalMode  string
-	Embedder       EmbedderConfig
+	QueriesPath        string
+	QrelsPath          string
+	RunPath            string
+	ChunksPath         string
+	EmbeddingsPath     string
+	Online             bool
+	TopK               int
+	DenseTopK          int
+	LexicalTopK        int
+	SparseTopK         int
+	DenseWeight        float64
+	LexicalWeight      float64
+	FusionTopK         int
+	RerankTopN         int
+	ContextBudget      int
+	RetrievalMode      string
+	LexicalMode        string
+	RerankMode         string
+	OpenSearchURL      string
+	OpenSearchIndex    string
+	OpenSearchUsername string
+	OpenSearchPassword string
+	RerankerURL        string
+	Embedder           EmbedderConfig
 }
 
 // AnswerOptions configures answer evaluator.

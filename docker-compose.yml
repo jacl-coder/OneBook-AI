@@ -84,6 +84,7 @@ services:
     environment:
       RERANKER_PORT: "8088"
       RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-}
       RERANKER_CACHE_DIR: ${RERANKER_CACHE_DIR:-/models/huggingface}
       HF_HOME: ${RERANKER_CACHE_DIR:-/models/huggingface}
       SENTENCE_TRANSFORMERS_HOME: ${RERANKER_SENTENCE_TRANSFORMERS_HOME:-/models/huggingface/sentence-transformers}

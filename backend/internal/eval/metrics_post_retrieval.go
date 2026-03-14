@@ -30,13 +30,28 @@ func EvaluatePostRetrieval(opts PostRetrievalOptions) (EvalResult, []RunEntry, e
 		}
 	} else {
 		detailed, err := EvaluateRetrievalDetailed(RetrievalOptions{
-			QueriesPath:    opts.QueriesPath,
-			QrelsPath:      opts.QrelsPath,
-			ChunksPath:     opts.ChunksPath,
-			EmbeddingsPath: opts.EmbeddingsPath,
-			Online:         opts.Online,
-			TopK:           opts.TopK,
-			Embedder:       opts.Embedder,
+			QueriesPath:        opts.QueriesPath,
+			QrelsPath:          opts.QrelsPath,
+			ChunksPath:         opts.ChunksPath,
+			EmbeddingsPath:     opts.EmbeddingsPath,
+			Online:             opts.Online,
+			TopK:               opts.TopK,
+			DenseTopK:          opts.DenseTopK,
+			LexicalTopK:        opts.LexicalTopK,
+			SparseTopK:         opts.SparseTopK,
+			DenseWeight:        opts.DenseWeight,
+			LexicalWeight:      opts.LexicalWeight,
+			FusionTopK:         opts.FusionTopK,
+			RerankTopN:         opts.RerankTopN,
+			RetrievalMode:      opts.RetrievalMode,
+			LexicalMode:        opts.LexicalMode,
+			RerankMode:         opts.RerankMode,
+			OpenSearchURL:      opts.OpenSearchURL,
+			OpenSearchIndex:    opts.OpenSearchIndex,
+			OpenSearchUsername: opts.OpenSearchUsername,
+			OpenSearchPassword: opts.OpenSearchPassword,
+			RerankerURL:        opts.RerankerURL,
+			Embedder:           opts.Embedder,
 		})
 		if err != nil {
 			return EvalResult{}, nil, err

@@ -1276,6 +1276,96 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/books/{id}/index-status:
+    get:
+      tags: [admin]
+      summary: Get book index status summary (admin only)
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookIndexStatusSummary"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/admin/books/{id}/repair-index:
+    post:
+      tags: [admin]
+      summary: Repair book index by triggering full reprocess (admin only)
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Idempotency conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/admin/overview:
     get:
       tags: [admin]
@@ -1927,6 +2017,56 @@ components:
           createdAt,
           updatedAt,
         ]
+    ChunkIndexStatus:
+      type: object
+      properties:
+        chunkId:
+          type: string
+        bookId:
+          type: string
+        contentSha256:
+          type: string
+        embeddingModel:
+          type: string
+        embeddingDim:
+          type: integer
+        openSearchStatus:
+          type: string
+          enum: [pending, synced, failed]
+        openSearchSyncedAt:
+          type: string
+          format: date-time
+        qdrantStatus:
+          type: string
+          enum: [pending, synced, failed]
+        qdrantSyncedAt:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BookIndexStatusSummary:
+      type: object
+      properties:
+        bookId:
+          type: string
+        totalChunks:
+          type: integer
+        pendingChunks:
+          type: integer
+        syncedChunks:
+          type: integer
+        failedChunks:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChunkIndexStatus"
     UpdateBookRequest:
       type: object
       properties:

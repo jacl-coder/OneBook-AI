@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,6 +76,7 @@ func EvaluateRetrievalDetailed(opts RetrievalOptions) (RetrievalStageResult, err
 	metrics, _ := computeIRMetrics(queries, qrels, runs[finalStage], topKForStage(opts, finalStage))
 	metrics["stages"] = stageMetrics
 	metrics["final_stage"] = finalStage
+	metrics["dense_weight"], metrics["lexical_weight"] = evalFusionWeights(opts.DenseWeight, opts.LexicalWeight)
 	warnings = append(warnings, evaluateRetrievalWarnings(metrics)...)
 	return RetrievalStageResult{
 		Result:    EvalResult{Metrics: metrics, PerQuery: perAll, Warnings: uniqueStrings(warnings)},
@@ -117,9 +119,10 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 	}
 
 	denseTopK := topKOrDefault(opts.DenseTopK, opts.TopK, 20)
-	sparseTopK := topKOrDefault(opts.SparseTopK, opts.TopK, 20)
+	lexicalTopK := topKOrDefault(opts.LexicalTopK, opts.SparseTopK, opts.TopK, 20)
 	fusionTopK := topKOrDefault(opts.FusionTopK, opts.TopK, 20)
 	rerankTopN := topKOrDefault(opts.RerankTopN, fusionTopK, 10)
+	denseWeight, lexicalWeight := evalFusionWeights(opts.DenseWeight, opts.LexicalWeight)
 	lexicalMode := strings.TrimSpace(opts.LexicalMode)
 	if lexicalMode == "" {
 		lexicalMode = "offline_approx"
@@ -203,7 +206,9 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 			RetrievalMode: normalizeEvalRetrievalMode(opts.RetrievalMode),
 			TopK:          opts.TopK,
 			DenseTopK:     denseTopK,
-			LexicalTopK:   sparseTopK,
+			LexicalTopK:   lexicalTopK,
+			DenseWeight:   denseWeight,
+			LexicalWeight: lexicalWeight,
 			FusionTopK:    fusionTopK,
 			RerankTopN:    rerankTopN,
 			ContextBudget: 1 << 30,
@@ -233,6 +238,23 @@ func loadOrBuildRetrievalStages(opts RetrievalOptions, queries []QueryRecord) (m
 		"fusion":  fusionRuns,
 		"rerank":  rerankRuns,
 	}, warnings, nil
+}
+
+func evalFusionWeights(denseWeight, lexicalWeight float64) (float64, float64) {
+	if denseWeight <= 0 && lexicalWeight <= 0 {
+		return 0.45, 0.55
+	}
+	if denseWeight < 0 {
+		denseWeight = 0
+	}
+	if lexicalWeight < 0 {
+		lexicalWeight = 0
+	}
+	total := denseWeight + lexicalWeight
+	if total <= 0 {
+		return 0.45, 0.55
+	}
+	return denseWeight / total, lexicalWeight / total
 }
 
 type evalDocument struct {
@@ -328,11 +350,14 @@ func newEvalLexicalClient(opts RetrievalOptions, chunks []ChunkRecord) (*retriev
 	if baseURL == "" {
 		return nil, fmt.Errorf("opensearch url required for lexicalMode=online_real")
 	}
-	indexName := strings.TrimSpace(opts.OpenSearchIndex)
-	if indexName == "" {
-		indexName = "onebook_eval_lexical"
+	indexPrefix := strings.TrimSpace(opts.OpenSearchIndex)
+	if indexPrefix == "" {
+		indexPrefix = "onebook_eval_lexical"
 	}
-	indexName = fmt.Sprintf("%s_%d", indexName, time.Now().UTC().UnixNano())
+	indexPrefix = indexPrefix + "_tmp_"
+	// Best-effort cleanup keeps evals running even when the cluster disallows _cat APIs.
+	_ = cleanupOldEvalLexicalIndices(baseURL, indexPrefix, opts.OpenSearchUsername, opts.OpenSearchPassword, time.Now().UTC().Add(-6*time.Hour))
+	indexName := fmt.Sprintf("%s%d", indexPrefix, time.Now().UTC().UnixNano())
 	client, err := retrieval.NewOpenSearchClient(baseURL, indexName, opts.OpenSearchUsername, opts.OpenSearchPassword)
 	if err != nil {
 		return nil, err
@@ -378,6 +403,43 @@ func newEvalLexicalClient(opts RetrievalOptions, chunks []ChunkRecord) (*retriev
 		return nil, err
 	}
 	return client, nil
+}
+
+func cleanupOldEvalLexicalIndices(baseURL, prefix, username, password string, cutoff time.Time) error {
+	client, err := retrieval.NewOpenSearchClient(baseURL, prefix, username, password)
+	if err != nil {
+		return err
+	}
+	indices, err := client.ListIndicesByPrefix(context.Background(), prefix)
+	if err != nil {
+		return err
+	}
+	for _, indexName := range indices {
+		suffix := strings.TrimPrefix(indexName, prefix)
+		if suffix == "" {
+			continue
+		}
+		ts, err := parseEvalIndexTimestamp(suffix)
+		if err != nil || !ts.Before(cutoff) {
+			continue
+		}
+		staleClient, err := retrieval.NewOpenSearchClient(baseURL, indexName, username, password)
+		if err != nil {
+			return err
+		}
+		if err := staleClient.DeleteIndex(context.Background()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseEvalIndexTimestamp(value string) (time.Time, error) {
+	nanos, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(0, nanos).UTC(), nil
 }
 
 func runHitsToStageHits(hits []RunHit, docs map[string]evalDocument, stage string) []retrieval.StageHit {
@@ -813,7 +875,7 @@ func topKForStage(opts RetrievalOptions, stage string) int {
 	case "dense":
 		return topKOrDefault(opts.DenseTopK, opts.TopK, 20)
 	case "lexical":
-		return topKOrDefault(opts.SparseTopK, opts.TopK, 20)
+		return topKOrDefault(opts.LexicalTopK, opts.SparseTopK, opts.TopK, 20)
 	case "fusion":
 		return topKOrDefault(opts.FusionTopK, opts.TopK, 20)
 	case "rerank":

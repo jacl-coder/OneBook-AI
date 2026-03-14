@@ -200,6 +200,39 @@ func (c *Client) ReprocessBook(requestID, token, idempotencyKey, id string) (dom
 	return book, replayed, nil
 }
 
+func (c *Client) GetBookIndexStatus(requestID, token, id string) (domain.BookIndexStatusSummary, error) {
+	path := fmt.Sprintf("%s/books/%s/index-status", c.baseURL, id)
+	req, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return domain.BookIndexStatusSummary{}, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	var summary domain.BookIndexStatusSummary
+	if _, err := c.do(req, &summary); err != nil {
+		return domain.BookIndexStatusSummary{}, err
+	}
+	return summary, nil
+}
+
+func (c *Client) RepairBookIndex(requestID, token, idempotencyKey, id string) (domain.Book, bool, error) {
+	path := fmt.Sprintf("%s/books/%s/repair-index", c.baseURL, id)
+	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	addIdempotencyKeyHeader(req, idempotencyKey)
+	req.Header.Set("Content-Type", "application/json")
+	var book domain.Book
+	replayed, err := c.do(req, &book)
+	if err != nil {
+		return domain.Book{}, false, err
+	}
+	return book, replayed, nil
+}
+
 // DownloadResponse contains pre-signed URL and filename for download.
 type DownloadResponse struct {
 	URL      string `json:"url"`

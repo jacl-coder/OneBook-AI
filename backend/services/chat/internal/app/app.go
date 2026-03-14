@@ -30,6 +30,8 @@ type Config struct {
 	TopK               int
 	DenseRecallTopK    int
 	LexicalRecallTopK  int
+	DenseWeight        float64
+	LexicalWeight      float64
 	FusionTopK         int
 	HistoryLimit       int
 	QdrantURL          string
@@ -59,6 +61,8 @@ type App struct {
 	topK              int
 	denseRecallTopK   int
 	lexicalRecallTopK int
+	denseWeight       float64
+	lexicalWeight     float64
 	fusionTopK        int
 	historyLimit      int
 	rerankTopN        int
@@ -133,6 +137,12 @@ func New(cfg Config) (*App, error) {
 	if fusionTopK <= 0 {
 		fusionTopK = 30
 	}
+	denseWeight := cfg.DenseWeight
+	lexicalWeight := cfg.LexicalWeight
+	if denseWeight <= 0 && lexicalWeight <= 0 {
+		denseWeight = 0.45
+		lexicalWeight = 0.55
+	}
 	historyLimit := cfg.HistoryLimit
 	if historyLimit < 0 {
 		historyLimit = 0
@@ -169,6 +179,8 @@ func New(cfg Config) (*App, error) {
 		topK:              topK,
 		denseRecallTopK:   denseRecallTopK,
 		lexicalRecallTopK: lexicalRecallTopK,
+		denseWeight:       denseWeight,
+		lexicalWeight:     lexicalWeight,
 		fusionTopK:        fusionTopK,
 		historyLimit:      historyLimit,
 		rerankTopN:        rerankTopN,

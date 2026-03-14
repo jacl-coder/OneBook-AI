@@ -141,7 +141,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, user domain
 	}
 }
 
-// /books/{id} or /books/{id}/download or /books/{id}/reprocess
+// /books/{id} or /books/{id}/download or /books/{id}/reprocess or /books/{id}/index-status or /books/{id}/repair-index
 func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user domain.User) {
 	path := strings.TrimPrefix(r.URL.Path, "/books/")
 	parts := strings.SplitN(path, "/", 2)
@@ -158,6 +158,14 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, user dom
 	}
 	if len(parts) == 2 && parts[1] == "reprocess" {
 		s.handleReprocessBook(w, r, user, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "index-status" {
+		s.handleBookIndexStatus(w, r, user, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "repair-index" {
+		s.handleRepairBookIndex(w, r, user, id)
 		return
 	}
 	if len(parts) == 2 {
@@ -254,6 +262,71 @@ func (s *Server) handleReprocessBook(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	updated, replayed, err := s.app.ReprocessBook(user, id, idempotencyKey)
+	if err != nil {
+		status := http.StatusBadRequest
+		lower := strings.ToLower(strings.TrimSpace(err.Error()))
+		if strings.Contains(lower, "different request") || strings.Contains(lower, "in progress") {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	if replayed {
+		w.Header().Set(util.HeaderIdempotencyReplayed, "true")
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) handleBookIndexStatus(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	book, ok, err := s.app.GetBook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		notFound(w, "book not found")
+		return
+	}
+	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	summary, err := s.app.GetBookIndexStatusSummary(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Server) handleRepairBookIndex(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	book, ok, err := s.app.GetBook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		notFound(w, "book not found")
+		return
+	}
+	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	idempotencyKey := util.IdempotencyKeyFromRequest(r)
+	if idempotencyKey == "" {
+		writeError(w, http.StatusBadRequest, "idempotency key required")
+		return
+	}
+	updated, replayed, err := s.app.RepairBookIndex(user, id, idempotencyKey)
 	if err != nil {
 		status := http.StatusBadRequest
 		lower := strings.ToLower(strings.TrimSpace(err.Error()))

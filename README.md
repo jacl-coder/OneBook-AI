@@ -340,6 +340,8 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | GET | `/api/admin/books` | 书籍分页列表（支持多维度筛选/排序） |
 | DELETE | `/api/admin/books/{id}` | 删除书籍 |
 | POST | `/api/admin/books/{id}/reprocess` | 重处理书籍（需 `Idempotency-Key`） |
+| GET | `/api/admin/books/{id}/index-status` | 查看书籍索引同步状态 |
+| POST | `/api/admin/books/{id}/repair-index` | 触发书籍索引修复（当前实现为整书重处理，需 `Idempotency-Key`） |
 | GET | `/api/admin/audit-logs` | 操作审计日志分页列表 |
 | POST | `/api/admin/evals/runs` | 创建评测任务（需 `Idempotency-Key`） |
 
@@ -407,9 +409,12 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `INGEST_PDF_MIN_PAGE_RUNES` | `80` | PDF 低质量页判断阈值（字符数） |
 | `INGEST_PDF_MIN_PAGE_SCORE` | `0.45` | PDF 低质量页判断阈值（质量分 0~1） |
 | `INGEST_PDF_OCR_MIN_SCORE_DELTA` | `0.08` | OCR 相对 native 最小增益阈值 |
-| `CHAT_RERANK_TOPN` | `8` | Rerank 后保留 TopN |
+| `CHAT_DENSE_WEIGHT` | `0.45` | dense RRF 融合权重 |
+| `CHAT_LEXICAL_WEIGHT` | `0.55` | lexical RRF 融合权重 |
+| `CHAT_RERANK_TOPN` | `12` | Rerank 后保留 TopN |
 | `RERANKER_URL` | `http://localhost:8088/rerank` | 本地 reranker 服务地址 |
 | `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | reranker 模型 |
+| `RERANKER_MODEL_REVISION` | `` | 可选，固定 Hugging Face revision，避免模型漂移 |
 | `RERANKER_CACHE_DIR` | `/models/huggingface` | reranker 容器内 Hugging Face 缓存目录 |
 | `RERANKER_SENTENCE_TRANSFORMERS_HOME` | `/models/huggingface/sentence-transformers` | sentence-transformers 缓存目录 |
 | `RERANKER_MAX_DOCS` | `50` | 单次 rerank 最大文档数 |
@@ -495,7 +500,7 @@ cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 ### 9.5.1 模型缓存目录
 
 - `ocr-service` 运行在 Docker 中，PaddleOCR 模型缓存目录是 `/root/.paddlex`，通过 volume `onebook-ocr-models` 持久化。
-- `reranker-service` 运行在 Docker 中，Hugging Face / sentence-transformers 模型缓存目录默认是 `/models/huggingface`，通过 volume `onebook-reranker-models` 持久化。
+- `reranker-service` 运行在 Docker 中，Hugging Face / sentence-transformers 模型缓存目录默认是 `/models/huggingface`，通过 volume `onebook-reranker-models` 持久化；如需固定模型版本，可设置 `RERANKER_MODEL_REVISION`。
 - 两个 Python 服务都会把模型缓存在容器外的 Docker volume 中，因此重启容器不会重复下载模型。
 
 ### 9.6 测试与验证
@@ -553,7 +558,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 收到 `401` 时触发 `POST /api/auth/refresh`（**Single-flight**：并发 401 只发一次 refresh），成功后自动重放原请求。
 - 上传书籍后轮询 `GET /api/books/{id}`（建议每 2~3 秒）直到 `status` 为 `ready` 或 `failed`。
 - 仅 `ready` 书籍可发起 `POST /api/chats`。
-- `POST /api/books` 和 `POST /api/admin/books/{id}/reprocess` 强制要求请求头 `Idempotency-Key`。
+- `POST /api/books`、`POST /api/admin/books/{id}/reprocess`、`POST /api/admin/books/{id}/repair-index` 强制要求请求头 `Idempotency-Key`。
 
 ---
 

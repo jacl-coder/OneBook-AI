@@ -58,6 +58,8 @@ func main() {
 		TopK:               cfg.TopK,
 		DenseRecallTopK:    cfg.DenseRecallTopK,
 		LexicalRecallTopK:  cfg.LexicalRecallTopK,
+		DenseWeight:        cfg.DenseWeight,
+		LexicalWeight:      cfg.LexicalWeight,
 		FusionTopK:         cfg.FusionTopK,
 		HistoryLimit:       cfg.HistoryLimit,
 		QdrantURL:          cfg.QdrantURL,

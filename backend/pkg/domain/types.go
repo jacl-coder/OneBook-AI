@@ -162,6 +162,15 @@ type ChunkIndexStatus struct {
 	UpdatedAt          time.Time            `json:"updatedAt"`
 }
 
+type BookIndexStatusSummary struct {
+	BookID        string             `json:"bookId"`
+	TotalChunks   int                `json:"totalChunks"`
+	PendingChunks int                `json:"pendingChunks"`
+	SyncedChunks  int                `json:"syncedChunks"`
+	FailedChunks  int                `json:"failedChunks"`
+	Items         []ChunkIndexStatus `json:"items"`
+}
+
 type AdminAuditLog struct {
 	ID         string         `json:"id"`
 	ActorID    string         `json:"actorId"`
