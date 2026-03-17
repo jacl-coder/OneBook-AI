@@ -769,7 +769,10 @@ paths:
       summary: Ask a question about a book
       description: |
         The service may include the most recent conversation history when
-        generating the answer (history length is configurable).
+        generating the answer (history length is configurable). Obvious follow-up
+        questions may be answered from recent conversation history without a new
+        retrieval pass, while obvious out-of-scope realtime questions are
+        rejected instead of querying the book index.
       security:
         - sessionCookieAuth: []
       requestBody:

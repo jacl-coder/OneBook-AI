@@ -566,16 +566,23 @@ func (s *GormStore) ListMessages(bookID string, limit int) ([]domain.Message, er
 
 // ListConversationMessages returns recent messages for a conversation.
 func (s *GormStore) ListConversationMessages(conversationID string, limit int) ([]domain.Message, error) {
-	query := s.db.Where("conversation_id = ?", conversationID).
-		Order("created_at ASC")
+	query := s.db.Where("conversation_id = ?", conversationID)
 	if limit > 0 {
-		query = query.Limit(limit)
+		query = query.Order("created_at DESC").Limit(limit)
+	} else {
+		query = query.Order("created_at ASC")
 	}
 	var models []MessageModel
 	if err := query.Find(&models).Error; err != nil {
 		return nil, err
 	}
 	msgs := make([]domain.Message, 0, len(models))
+	if limit > 0 {
+		for i := len(models) - 1; i >= 0; i-- {
+			msgs = append(msgs, messageFromModel(models[i]))
+		}
+		return msgs, nil
+	}
 	for _, model := range models {
 		msgs = append(msgs, messageFromModel(model))
 	}

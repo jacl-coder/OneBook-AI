@@ -236,6 +236,7 @@ OneBook-AI/
 ### Chat（:8083）
 
 - 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → 按 `chunk_id` 回 PostgreSQL → TopK context。
+- 聊天前先做轻量路由：明显跟进问题优先复用最近会话历史，明显书外/实时问题直接拒答，其余问题再进入检索链路。
 - 拼装上下文（最近 N 轮历史 + 检索 chunks）。
 - 调用 `TextGenerator` → LLM 生成回答，附引用；证据不足时拒答（返回 `abstained: true`）。
 - 保存消息至 Postgres，支持同一会话续聊（`conversationId`）。
