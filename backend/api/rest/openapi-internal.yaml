@@ -120,7 +120,10 @@ paths:
       summary: Ask a question (chat service)
       description: |
         The chat service may include recent conversation history when
-        generating the answer (history length is configurable).
+        generating the answer (history length is configurable). Obvious follow-up
+        questions may be answered from recent conversation history without a new
+        retrieval pass, while obvious out-of-scope realtime questions are
+        rejected instead of querying the book index.
       security:
         - bearerAuth: []
       requestBody:

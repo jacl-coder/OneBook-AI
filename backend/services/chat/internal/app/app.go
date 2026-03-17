@@ -243,34 +243,52 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 			return domain.Answer{}, fmt.Errorf("load history: %w", err)
 		}
 	}
-	retrieved, debugInfo, err := a.retrieveEvidence(ctx, book, question)
-	if err != nil {
-		return domain.Answer{}, err
-	}
 	historyText := buildHistory(history)
-	contextText, citations := buildContext(retrieved)
-	abstained := len(retrieved) < a.minEvidenceCount
-	answerText := defaultAbstainAnswer
-	var userPrompt string
-	if !abstained {
-		if historyText != "" {
-			userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, historyText, question, contextText)
-		} else {
-			userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, question, contextText)
+	decision := decideQueryRoute(question, history)
+
+	var (
+		answerText string
+		abstained  bool
+		citations  []domain.Source
+		debugInfo  *domain.RetrievalDebug
+	)
+	switch decision.Route {
+	case queryRouteHistoryOnly:
+		answerText, citations, abstained = a.answerFromHistory(ctx, book, question, historyText, history)
+	case queryRouteOutOfScopeReject:
+		answerText = outOfScopeAbstainAnswer
+		abstained = true
+	default:
+		retrieved, routeDebug, routeErr := a.retrieveEvidence(ctx, book, question)
+		if routeErr != nil {
+			return domain.Answer{}, routeErr
 		}
-		systemPrompt := "你是一个严格基于证据回答的读书助手。不要使用证据外知识。每个结论都必须可由提供证据支持。"
-		response, genErr := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
-		if genErr == nil {
-			answerText = strings.TrimSpace(response)
-		}
-		if strings.TrimSpace(answerText) == "" {
-			abstained = true
-			answerText = defaultAbstainAnswer
-		}
-		if !abstained && !a.validator.Validate(question, answerText, citations) {
-			abstained = true
-			answerText = defaultAbstainAnswer
-			citations = nil
+		debugInfo = routeDebug
+		contextText, routeCitations := buildContext(retrieved)
+		citations = routeCitations
+		abstained = len(retrieved) < a.minEvidenceCount
+		answerText = defaultAbstainAnswer
+		if !abstained {
+			var userPrompt string
+			if historyText != "" {
+				userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, historyText, question, contextText)
+			} else {
+				userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, question, contextText)
+			}
+			systemPrompt := "你是一个严格基于证据回答的读书助手。不要使用证据外知识。每个结论都必须可由提供证据支持。"
+			response, genErr := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+			if genErr == nil {
+				answerText = strings.TrimSpace(response)
+			}
+			if strings.TrimSpace(answerText) == "" {
+				abstained = true
+				answerText = defaultAbstainAnswer
+			}
+			if !abstained && !a.validator.Validate(question, answerText, citations) {
+				abstained = true
+				answerText = defaultAbstainAnswer
+				citations = nil
+			}
 		}
 	}
 	answer := domain.Answer{
@@ -316,6 +334,26 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	answer.Conversation.LastMessageAt = &assistantMessageTime
 	answer.Conversation.UpdatedAt = assistantMessageTime
 	return answer, nil
+}
+
+func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question string, historyText string, history []domain.Message) (string, []domain.Source, bool) {
+	if strings.TrimSpace(historyText) == "" {
+		return defaultAbstainAnswer, nil, true
+	}
+	userPrompt := fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n要求：只基于当前对话历史继续回答，不要引入对话外知识；如果历史不足以支撑回答，就明确说明证据不足。", book.Title, historyText, question)
+	systemPrompt := "你是一个延续当前会话上下文的读书助手。只使用给定对话历史，不要虚构新的事实。"
+	answerText := defaultAbstainAnswer
+	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+	if err == nil {
+		answerText = strings.TrimSpace(response)
+	}
+	if strings.TrimSpace(answerText) == "" {
+		return defaultAbstainAnswer, nil, true
+	}
+	if strings.Contains(answerText, "证据不足") || strings.Contains(strings.ToLower(answerText), "insufficient") {
+		return defaultAbstainAnswer, nil, true
+	}
+	return answerText, latestAssistantSources(history), false
 }
 
 // ListConversations lists recent conversations for current user.
