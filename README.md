@@ -236,12 +236,12 @@ OneBook-AI/
 ### Chat（:8083）
 
 - 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → 按 `chunk_id` 回 PostgreSQL → TopK context。
-- 聊天前先做轻量路由：明显跟进问题优先复用最近会话历史，明显书外/实时问题直接拒答，其余问题再进入检索链路。
+- 聊天前先做轻量路由：明显跟进问题优先复用最近会话历史；明显书外/实时问题默认直接拒答（可由 `CHAT_ABSTAIN_ENABLED=false` 关闭），其余问题再进入检索链路。
 - 拼装上下文（最近 N 轮历史 + 检索 chunks）。
-- 调用 `TextGenerator` → LLM 生成回答，附引用；证据不足时拒答（返回 `abstained: true`）。
+- 调用 `TextGenerator` → LLM 生成回答，附引用；默认在证据不足时拒答（返回 `abstained: true`，可由 `CHAT_ABSTAIN_ENABLED=false` 关闭策略拒答）。
 - 保存消息至 Postgres，支持同一会话续聊（`conversationId`）。
 - 管理员可带 `debug=true` 获取 `retrievalDebug`。
-- 关键参数：`CHAT_RERANK_TOPN`、`CHAT_CONTEXT_BUDGET`、`CHAT_MIN_EVIDENCE_COUNT`、`RERANKER_URL`。
+- 关键参数：`CHAT_QUERY_REWRITE_ENABLED`、`CHAT_MULTI_QUERY_ENABLED`、`CHAT_ABSTAIN_ENABLED`、`CHAT_RERANK_TOPN`、`CHAT_CONTEXT_BUDGET`、`CHAT_MIN_EVIDENCE_COUNT`、`RERANKER_URL`。
 
 ---
 
@@ -412,6 +412,8 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `INGEST_PDF_OCR_MIN_SCORE_DELTA` | `0.08` | OCR 相对 native 最小增益阈值 |
 | `CHAT_DENSE_WEIGHT` | `0.45` | dense RRF 融合权重 |
 | `CHAT_LEXICAL_WEIGHT` | `0.55` | lexical RRF 融合权重 |
+| `CHAT_QUERY_REWRITE_ENABLED` | `true` | 是否启用模型驱动的 query rewrite |
+| `CHAT_MULTI_QUERY_ENABLED` | `true` | 是否启用多查询召回与融合 |
 | `CHAT_RERANK_TOPN` | `12` | Rerank 后保留 TopN |
 | `RERANKER_URL` | `http://localhost:8088/rerank` | 本地 reranker 服务地址 |
 | `RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | reranker 模型 |
@@ -423,6 +425,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `RERANKER_BATCH_SIZE` | `8` | reranker 批大小 |
 | `CHAT_CONTEXT_BUDGET` | `2200` | 上下文字数预算（runes） |
 | `CHAT_MIN_EVIDENCE_COUNT` | `2` | 最少证据数（低于此数时拒答） |
+| `CHAT_ABSTAIN_ENABLED` | `true` | 是否启用拒答策略（书外实时问题、证据不足、grounding 失败） |
 | `LOGS_DIR` | `backend/logs` | 日志文件目录 |
 | `AUTH_EVAL_STORAGE_DIR` | `data/eval-center` | Eval Center 文件存储目录 |
 | `AUTH_EVAL_WORKER_POLL_INTERVAL` | `3s` | Eval Worker 轮询间隔 |
@@ -608,23 +611,25 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 完整蓝图见 `docs/architecture/advanced_rag_plan.md`。
 
-### 当前阶段：M0（已完成）
+### 当前判断：M1 收尾 + M2 已落地 + M3/M4 起步
 - 文档清洗与 chunk 元数据规范落地。
 - PDF 页级 OCR 触发与 native/OCR 融合机制。
-- 基础测试覆盖。
+- Query normalize、query variants、模型驱动 query rewrite、多查询召回已接入。
+- Dense + BM25 + fusion + rerank + context packing 主链已在 chat 落地。
+- 证据约束回答、证据不足拒答、基础 groundedness 校验已接入。
+- 离线 `rag_eval` CLI 与一键脚本已可运行。
 
-### 下一阶段：M1（进行中）— 检索前增强
-- Query normalize + 术语归一。
-- 查询改写（可开关）+ 多查询召回。
-- 结构优先分块升级 + 增量幂等重建。
+### 当前未闭环重点
+- 增量重建 / 索引修复链路仍需补齐。
+- RAG 指标尚未接入 CI 阈值阻断。
 
 ### 后续里程碑
 
 | 里程碑 | 目标 |
 |---|---|
-| M2 | 混合检索（Dense + BM25）+ 两阶段检索（rerank）+ 去重打包 |
-| M3 | 证据约束生成模板 + 拒答策略 + 引用一致性校验 |
-| M4 | 固定离线评测集 + CI 门禁 + 指标看板 |
+| M2 | 主链已落地，继续做参数、容量、降级与恢复策略治理 |
+| M3 | 补强引用一致性校验、低置信度降级与答案质量控制闭环 |
+| M4 | 把固定离线评测与 CI 门禁、版本对比报告真正接通 |
 | M5 | 特性开关灰度 + 成本预算 + 回滚预案 |
 
 ### KPI 目标（M3）

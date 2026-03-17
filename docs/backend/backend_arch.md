@@ -34,6 +34,10 @@
   - OpenSearch：BM25 lexical retrieval
   - Qdrant：semantic retrieval
   - Application Layer：fusion + rerank + 回表
+- Chat 检索增强当前支持独立开关：
+  - `CHAT_QUERY_REWRITE_ENABLED`
+  - `CHAT_MULTI_QUERY_ENABLED`
+  - `CHAT_ABSTAIN_ENABLED`
 - Ingest 写入/更新 chunk 后，会把 `chunk_index_status` 两路状态重置为 `pending`。
 - Indexer 成功写入 OpenSearch/Qdrant 后，分别更新 `opensearch_status` / `qdrant_status` 为 `synced`；失败时记录 `last_error`。
 - Chat 与 Eval 命中索引后，不直接信任索引层正文；最终上下文统一按 `chunk_id` 回 PostgreSQL 获取。
@@ -51,6 +55,6 @@
 ## 仍待完善的方向
 
 - 可观测性：Metrics / Tracing（结构化日志已落地）。
-- 检索质量：更细粒度 query rewrite、索引修复后台入口、更严格的 reranker 容量治理（见 `docs/architecture/advanced_rag_plan.md`）。
+- 检索质量：更细粒度 query rewrite、术语归一、query route 深化、索引修复后台入口、更严格的 reranker 容量治理（见 `docs/architecture/advanced_rag_plan.md`）。
 - 任务进度可视化与失败重试 UI。
 - 安全与配额：细粒度权限、密钥轮换自动化、配额管理。

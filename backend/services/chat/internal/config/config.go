@@ -13,48 +13,55 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port               string  `yaml:"port"`
-	DatabaseURL        string  `yaml:"databaseURL"`
-	LogLevel           string  `yaml:"logLevel"`
-	LogsDir            string  `yaml:"logsDir"`
-	AuthServiceURL     string  `yaml:"authServiceURL"`
-	AuthJWKSURL        string  `yaml:"authJwksURL"`
-	JWTIssuer          string  `yaml:"jwtIssuer"`
-	JWTAudience        string  `yaml:"jwtAudience"`
-	JWTLeeway          string  `yaml:"jwtLeeway"`
-	BookServiceURL     string  `yaml:"bookServiceURL"`
-	GenerationProvider string  `yaml:"generationProvider"`
-	GenerationBaseURL  string  `yaml:"generationBaseURL"`
-	GenerationAPIKey   string  `yaml:"generationAPIKey"`
-	GenerationModel    string  `yaml:"generationModel"`
-	EmbeddingProvider  string  `yaml:"embeddingProvider"`
-	EmbeddingBaseURL   string  `yaml:"embeddingBaseURL"`
-	EmbeddingModel     string  `yaml:"embeddingModel"`
-	EmbeddingDim       int     `yaml:"embeddingDim"`
-	TopK               int     `yaml:"topK"`
-	DenseRecallTopK    int     `yaml:"denseRecallTopK"`
-	LexicalRecallTopK  int     `yaml:"lexicalRecallTopK"`
-	DenseWeight        float64 `yaml:"denseWeight"`
-	LexicalWeight      float64 `yaml:"lexicalWeight"`
-	FusionTopK         int     `yaml:"fusionTopK"`
-	HistoryLimit       int     `yaml:"historyLimit"`
-	QdrantURL          string  `yaml:"qdrantURL"`
-	QdrantAPIKey       string  `yaml:"qdrantAPIKey"`
-	QdrantCollection   string  `yaml:"qdrantCollection"`
-	OpenSearchURL      string  `yaml:"openSearchURL"`
-	OpenSearchIndex    string  `yaml:"openSearchIndex"`
-	OpenSearchUsername string  `yaml:"openSearchUsername"`
-	OpenSearchPassword string  `yaml:"openSearchPassword"`
-	RerankTopN         int     `yaml:"rerankTopN"`
-	RetrievalMode      string  `yaml:"retrievalMode"`
-	RerankerURL        string  `yaml:"rerankerURL"`
-	ContextBudget      int     `yaml:"contextBudget"`
-	MinEvidenceCount   int     `yaml:"minEvidenceCount"`
+	Port                string  `yaml:"port"`
+	DatabaseURL         string  `yaml:"databaseURL"`
+	LogLevel            string  `yaml:"logLevel"`
+	LogsDir             string  `yaml:"logsDir"`
+	AuthServiceURL      string  `yaml:"authServiceURL"`
+	AuthJWKSURL         string  `yaml:"authJwksURL"`
+	JWTIssuer           string  `yaml:"jwtIssuer"`
+	JWTAudience         string  `yaml:"jwtAudience"`
+	JWTLeeway           string  `yaml:"jwtLeeway"`
+	BookServiceURL      string  `yaml:"bookServiceURL"`
+	GenerationProvider  string  `yaml:"generationProvider"`
+	GenerationBaseURL   string  `yaml:"generationBaseURL"`
+	GenerationAPIKey    string  `yaml:"generationAPIKey"`
+	GenerationModel     string  `yaml:"generationModel"`
+	EmbeddingProvider   string  `yaml:"embeddingProvider"`
+	EmbeddingBaseURL    string  `yaml:"embeddingBaseURL"`
+	EmbeddingModel      string  `yaml:"embeddingModel"`
+	EmbeddingDim        int     `yaml:"embeddingDim"`
+	TopK                int     `yaml:"topK"`
+	DenseRecallTopK     int     `yaml:"denseRecallTopK"`
+	LexicalRecallTopK   int     `yaml:"lexicalRecallTopK"`
+	DenseWeight         float64 `yaml:"denseWeight"`
+	LexicalWeight       float64 `yaml:"lexicalWeight"`
+	FusionTopK          int     `yaml:"fusionTopK"`
+	HistoryLimit        int     `yaml:"historyLimit"`
+	QdrantURL           string  `yaml:"qdrantURL"`
+	QdrantAPIKey        string  `yaml:"qdrantAPIKey"`
+	QdrantCollection    string  `yaml:"qdrantCollection"`
+	OpenSearchURL       string  `yaml:"openSearchURL"`
+	OpenSearchIndex     string  `yaml:"openSearchIndex"`
+	OpenSearchUsername  string  `yaml:"openSearchUsername"`
+	OpenSearchPassword  string  `yaml:"openSearchPassword"`
+	RerankTopN          int     `yaml:"rerankTopN"`
+	RetrievalMode       string  `yaml:"retrievalMode"`
+	RerankerURL         string  `yaml:"rerankerURL"`
+	ContextBudget       int     `yaml:"contextBudget"`
+	MinEvidenceCount    int     `yaml:"minEvidenceCount"`
+	QueryRewriteEnabled bool    `yaml:"queryRewriteEnabled"`
+	MultiQueryEnabled   bool    `yaml:"multiQueryEnabled"`
+	AbstainEnabled      bool    `yaml:"abstainEnabled"`
 }
 
 // Load reads config from path (defaults to config.yaml).
 func Load(path string) (FileConfig, error) {
-	cfg := FileConfig{}
+	cfg := FileConfig{
+		QueryRewriteEnabled: true,
+		MultiQueryEnabled:   true,
+		AbstainEnabled:      true,
+	}
 	if path == "" {
 		path = ConfigPath
 	}
@@ -185,6 +192,21 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("CHAT_MIN_EVIDENCE_COUNT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.MinEvidenceCount = n
+		}
+	}
+	if v := os.Getenv("CHAT_QUERY_REWRITE_ENABLED"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.QueryRewriteEnabled = enabled
+		}
+	}
+	if v := os.Getenv("CHAT_MULTI_QUERY_ENABLED"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.MultiQueryEnabled = enabled
+		}
+	}
+	if v := os.Getenv("CHAT_ABSTAIN_ENABLED"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			cfg.AbstainEnabled = enabled
 		}
 	}
 	if err := validateConfig(cfg); err != nil {

@@ -19,6 +19,11 @@
 - **Qdrant**：仅保存向量与最小 payload，不保存正文，不承担最终展示语义。
 - **Application Layer**：统一执行 dense recall、lexical recall、fusion、rerank、回 PostgreSQL 取正文。
 
+### Chat 策略开关
+- `CHAT_QUERY_REWRITE_ENABLED`：控制模型驱动 query rewrite。
+- `CHAT_MULTI_QUERY_ENABLED`：控制多查询召回与融合。
+- `CHAT_ABSTAIN_ENABLED`：控制策略拒答；关闭时 chat 会在信息不足场景退化为谨慎 best-effort 回答，而不是强制拒答。
+
 ### 可观测性
 - 结构化 JSON 日志（`log/slog`），字段含 `request_id`、`service`、`level`。
 - 按状态码分级：5xx → Error，4xx → Warn，2xx → Info。
