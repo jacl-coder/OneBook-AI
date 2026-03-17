@@ -42,19 +42,11 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	if err := withMigrationLock(db, func(tx *gorm.DB) error {
+		if err := cleanupLegacyVectorArtifacts(tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
-		}
-		if err := tx.Exec(`
-			ALTER TABLE chunk_models
-			DROP COLUMN IF EXISTS embedding;
-		`).Error; err != nil {
-			return fmt.Errorf("drop legacy chunk embedding column: %w", err)
-		}
-		if err := tx.Exec(`
-			DROP EXTENSION IF EXISTS vector;
-		`).Error; err != nil {
-			return fmt.Errorf("drop legacy vector extension: %w", err)
 		}
 		if err := tx.Exec(`
 			UPDATE chunk_models
@@ -157,6 +149,21 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		return nil, err
 	}
 	return &GormStore{db: db}, nil
+}
+
+func cleanupLegacyVectorArtifacts(tx *gorm.DB) error {
+	if err := tx.Exec(`
+		ALTER TABLE IF EXISTS chunk_models
+		DROP COLUMN IF EXISTS embedding;
+	`).Error; err != nil {
+		return fmt.Errorf("drop legacy chunk embedding column: %w", err)
+	}
+	if err := tx.Exec(`
+		DROP EXTENSION IF EXISTS vector;
+	`).Error; err != nil {
+		return fmt.Errorf("drop legacy vector extension: %w", err)
+	}
+	return nil
 }
 
 func withMigrationLock(db *gorm.DB, fn func(*gorm.DB) error) error {

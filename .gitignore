@@ -51,6 +51,8 @@ docker/postgres-data/
 docker/qdrant-data/
 docker/opensearch-data/
 docker/minio-data/
+docker/initdb/
+docker/kafka-data/
 
 # Frontend build artifacts
 node_modules/

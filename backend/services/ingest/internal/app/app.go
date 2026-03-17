@@ -48,9 +48,10 @@ type Config struct {
 	IndexerURL                string
 	InternalJWTPrivateKeyPath string
 	InternalJWTKeyID          string
-	RedisAddr                 string
-	RedisPassword             string
-	QueueName                 string
+	KafkaBrokers              []string
+	KafkaClientID             string
+	KafkaTopicPrefix          string
+	QueueTopic                string
 	QueueGroup                string
 	QueueConcurrency          int
 	QueueMaxRetries           int
@@ -76,7 +77,7 @@ type App struct {
 	store                store.Store
 	bookClient           *bookClient
 	indexClient          *indexerClient
-	queue                *queue.RedisJobQueue
+	queue                queue.JobQueue
 	lexicalChunkSize     int
 	lexicalChunkOverlap  int
 	semanticChunkSize    int
@@ -166,14 +167,20 @@ func New(cfg Config) (*App, error) {
 	if pdfScoreDiff < 0 {
 		pdfScoreDiff = 0
 	}
-	q, err := queue.NewRedisJobQueue(queue.RedisQueueConfig{
-		Addr:       cfg.RedisAddr,
-		Password:   cfg.RedisPassword,
-		Stream:     defaultQueueName(cfg.QueueName),
-		Group:      defaultQueueGroup(cfg.QueueGroup),
-		Consumer:   util.NewID(),
-		MaxRetries: cfg.QueueMaxRetries,
-		RetryDelay: time.Duration(cfg.QueueRetryDelaySeconds) * time.Second,
+	jobStore, err := queue.NewPostgresJobStore(cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	q, err := queue.NewKafkaJobQueue(queue.KafkaQueueConfig{
+		Brokers:      cfg.KafkaBrokers,
+		ClientID:     defaultKafkaClientID(cfg.KafkaClientID, "ingest"),
+		Topic:        defaultQueueTopic(cfg.QueueTopic, cfg.KafkaTopicPrefix, "ingest"),
+		Group:        defaultQueueGroup(cfg.QueueGroup),
+		JobType:      "ingest",
+		ResourceType: "book",
+		MaxRetries:   cfg.QueueMaxRetries,
+		RetryDelay:   time.Duration(cfg.QueueRetryDelaySeconds) * time.Second,
+		Store:        jobStore,
 	})
 	if err != nil {
 		return nil, err
@@ -224,6 +231,10 @@ func (a *App) GetJob(id string) (Job, bool) {
 		return Job{}, false
 	}
 	return jobFromStatus(status), true
+}
+
+func (a *App) Ready(ctx context.Context) error {
+	return a.queue.Ready(ctx)
 }
 
 func (a *App) process(ctx context.Context, job queue.JobStatus) error {
@@ -290,17 +301,33 @@ func jobFromStatus(status queue.JobStatus) Job {
 }
 
 func defaultQueueName(name string) string {
-	if strings.TrimSpace(name) == "" {
-		return "onebook:ingest"
-	}
-	return name
+	return defaultQueueTopic(name, "", "ingest")
 }
 
 func defaultQueueGroup(name string) string {
 	if strings.TrimSpace(name) == "" {
-		return "ingest"
+		return "onebook-ingest-service"
 	}
 	return name
+}
+
+func defaultQueueTopic(topic string, prefix string, domain string) string {
+	if strings.TrimSpace(topic) != "" {
+		return strings.TrimSpace(topic)
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "onebook"
+	}
+	return prefix + "." + domain + ".jobs"
+}
+
+func defaultKafkaClientID(clientID string, service string) string {
+	clientID = strings.TrimSpace(clientID)
+	if clientID != "" {
+		return clientID
+	}
+	return "onebook-" + service
 }
 
 func (a *App) downloadFile(ctx context.Context, url string, filename string) (string, error) {

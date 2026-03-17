@@ -25,8 +25,8 @@
 ## 一致性与可靠性（细节）
 
 ### 队列重试一致性
-- Ingest/Indexer 失败重试路径在**单事务**内执行 `XADD + XACK + XDEL`。
-- 避免"先 ACK 再重投"导致的丢任务窗口（若重投失败，原消息已不可见）。
+- Ingest/Indexer 使用 Kafka `at-least-once` 交付，任务状态/去重/尝试次数统一落 Postgres。
+- 失败时先更新任务状态，再按重试策略重投主 topic；超过最大重试次数后写入 DLQ。
 
 ### 检索与索引一致性
 - 检索架构固定为：
@@ -50,7 +50,7 @@
 ### 书籍删除一致性
 - 软删标记 → 后台异步清理 → 最终硬删。
 - 已软删记录不出现在用户接口（列表/详情）中。
-- Ingest/Indexer 队列按 `book_id` 去重，重复 reprocess 不堆积多条进行中任务。
+- Ingest/Indexer 队列按 `job_type + resource_id` 去重，重复 reprocess 不堆积多条进行中任务。
 
 ## 仍待完善的方向
 

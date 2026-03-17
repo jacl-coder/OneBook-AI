@@ -38,7 +38,7 @@
 
 ### 一致性基线
 - **Refresh Token 并发安全**：Redis 原子 CAS，防止并发请求下同一 token 双成功。
-- **队列重试一致性**：失败重试在单事务内执行 `XADD + XACK + XDEL`，避免已确认未重投的丢任务窗口。
+- **任务队列一致性**：Kafka 采用 `at-least-once` 交付；任务状态、去重与尝试次数统一落 Postgres，失败重试与 DLQ 由应用层控制。
 - **索引一致性**：`chunk_index_status` 记录 OpenSearch/Qdrant 两路同步状态、时间和失败原因；命中后统一按 `chunk_id` 回 PostgreSQL。
 
 ## 关联文档

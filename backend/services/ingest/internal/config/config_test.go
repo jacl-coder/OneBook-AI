@@ -27,7 +27,7 @@ indexerURL: "http://localhost:8085"
 internalJwtPrivateKeyPath: "secrets/internal-jwt/private.pem"
 internalJwtPublicKeyPath: "secrets/internal-jwt/public.pem"
 internalJwtKeyId: "internal-active"
-redisAddr: "localhost:6379"
+kafkaBrokers: ["localhost:9092"]
 chunkSize: 800
 chunkOverlap: 120
 `
@@ -76,7 +76,7 @@ func TestValidateConfigRejectsInvalidChunkSettings(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		RedisAddr:                 "localhost:6379",
+		KafkaBrokers:              []string{"localhost:9092"},
 		ChunkSize:                 100,
 		ChunkOverlap:              100,
 	}
@@ -93,7 +93,7 @@ func TestValidateConfigRejectsMissingOCRCommand(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		RedisAddr:                 "localhost:6379",
+		KafkaBrokers:              []string{"localhost:9092"},
 		ChunkSize:                 800,
 		ChunkOverlap:              120,
 		OCREnabled:                true,
@@ -112,7 +112,7 @@ func TestValidateConfigRejectsInvalidPDFThresholds(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		RedisAddr:                 "localhost:6379",
+		KafkaBrokers:              []string{"localhost:9092"},
 		ChunkSize:                 800,
 		ChunkOverlap:              120,
 		PDFMinPageScore:           1.5,

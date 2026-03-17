@@ -15,7 +15,7 @@
 - Chat：已接入 query normalize、query variants、模型驱动 query rewrite、多查询召回、基础 query route（history-only / out-of-scope reject）。
 - Chat：LLM（TextGenerator，支持 Gemini/Ollama/OpenAI 兼容）生成回答，附出处；消息入库并拼接最近 N 轮历史。
 - Chat：证据约束 prompt、证据不足拒答、基础 groundedness 校验已落地。
-- 任务队列：Redis Streams 持久队列，支持重试与失败回写。
+- 任务队列：Kafka 持久队列（单机 KRaft），任务状态/去重落 Postgres，支持失败重试与 DLQ。
 - 上传限制：网关/Book 扩展名白名单与大小限制（默认 50MB）。
 - 工具与脚本：`run.sh` 一键启动；`cmd/bench_embed` 基准测试。
 - 文档与规范：OpenAPI（Gateway/Internal）、Swagger UI、通用 Dockerfile、CI（go test）。

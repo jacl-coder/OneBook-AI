@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"onebookai/internal/servicetoken"
-	"onebookai/internal/util"
 	"onebookai/pkg/ai"
 	"onebookai/pkg/domain"
 	"onebookai/pkg/queue"
@@ -44,9 +43,10 @@ type Config struct {
 	BookServiceURL            string
 	InternalJWTPrivateKeyPath string
 	InternalJWTKeyID          string
-	RedisAddr                 string
-	RedisPassword             string
-	QueueName                 string
+	KafkaBrokers              []string
+	KafkaClientID             string
+	KafkaTopicPrefix          string
+	QueueTopic                string
 	QueueGroup                string
 	QueueConcurrency          int
 	QueueMaxRetries           int
@@ -72,7 +72,7 @@ type App struct {
 	bookClient       *bookClient
 	embedder         ai.Embedder
 	embedDim         int
-	queue            *queue.RedisJobQueue
+	queue            queue.JobQueue
 	embedBatchSize   int
 	embedConcurrency int
 	search           *retrieval.Client
@@ -123,14 +123,20 @@ func New(cfg Config) (*App, error) {
 	default:
 		return nil, fmt.Errorf("unknown embedding provider: %s", provider)
 	}
-	q, err := queue.NewRedisJobQueue(queue.RedisQueueConfig{
-		Addr:       cfg.RedisAddr,
-		Password:   cfg.RedisPassword,
-		Stream:     defaultQueueName(cfg.QueueName),
-		Group:      defaultQueueGroup(cfg.QueueGroup),
-		Consumer:   util.NewID(),
-		MaxRetries: cfg.QueueMaxRetries,
-		RetryDelay: time.Duration(cfg.QueueRetryDelaySeconds) * time.Second,
+	jobStore, err := queue.NewPostgresJobStore(cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	q, err := queue.NewKafkaJobQueue(queue.KafkaQueueConfig{
+		Brokers:      cfg.KafkaBrokers,
+		ClientID:     defaultKafkaClientID(cfg.KafkaClientID, "indexer"),
+		Topic:        defaultQueueTopic(cfg.QueueTopic, cfg.KafkaTopicPrefix, "indexer"),
+		Group:        defaultQueueGroup(cfg.QueueGroup),
+		JobType:      "indexer",
+		ResourceType: "book",
+		MaxRetries:   cfg.QueueMaxRetries,
+		RetryDelay:   time.Duration(cfg.QueueRetryDelaySeconds) * time.Second,
+		Store:        jobStore,
 	})
 	if err != nil {
 		return nil, err
@@ -181,6 +187,10 @@ func (a *App) GetJob(id string) (Job, bool) {
 		return Job{}, false
 	}
 	return jobFromStatus(status), true
+}
+
+func (a *App) Ready(ctx context.Context) error {
+	return a.queue.Ready(ctx)
 }
 
 func (a *App) process(ctx context.Context, job queue.JobStatus) error {
@@ -428,15 +438,31 @@ func jobFromStatus(status queue.JobStatus) Job {
 }
 
 func defaultQueueName(name string) string {
-	if strings.TrimSpace(name) == "" {
-		return "onebook:indexer"
-	}
-	return name
+	return defaultQueueTopic(name, "", "indexer")
 }
 
 func defaultQueueGroup(name string) string {
 	if strings.TrimSpace(name) == "" {
-		return "indexer"
+		return "onebook-indexer-service"
 	}
 	return name
+}
+
+func defaultQueueTopic(topic string, prefix string, domain string) string {
+	if strings.TrimSpace(topic) != "" {
+		return strings.TrimSpace(topic)
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "onebook"
+	}
+	return prefix + "." + domain + ".jobs"
+}
+
+func defaultKafkaClientID(clientID string, service string) string {
+	clientID = strings.TrimSpace(clientID)
+	if clientID != "" {
+		return clientID
+	}
+	return "onebook-" + service
 }

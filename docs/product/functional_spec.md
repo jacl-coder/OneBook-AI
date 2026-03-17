@@ -10,7 +10,7 @@
 ### 2.1 上传与处理
 1) 用户选择文件（PDF/EPUB/TXT）。
 2) 系统校验扩展名白名单与大小上限（默认 50MB）。
-3) 进入后台处理队列（Redis Streams）：`queued → processing → ready | failed`。
+3) 进入后台处理队列（Kafka）：`queued → processing → ready | failed`。
 4) 失败时返回错误信息；队列会自动重试（可配置次数）。
 
 ### 2.2 选择书并对话
