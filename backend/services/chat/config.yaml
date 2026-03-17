@@ -7,6 +7,7 @@ port: "8083"
 # ONEBOOK_EMBEDDING_DIM (canonical embedding dim for qdrant/chat/indexer),
 # CHAT_HISTORY_LIMIT, CHAT_AUTH_SERVICE_URL, CHAT_BOOK_SERVICE_URL
 # CHAT_AUTH_JWKS_URL
+# CHAT_QUERY_REWRITE_ENABLED, CHAT_MULTI_QUERY_ENABLED, CHAT_ABSTAIN_ENABLED
 # JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY
 logLevel: "info"
 logsDir: "backend/logs"
@@ -32,3 +33,6 @@ retrievalMode: "hybrid_best"
 # rerankerURL: "http://localhost:8088/rerank"
 contextBudget: 2200
 minEvidenceCount: 2
+queryRewriteEnabled: true
+multiQueryEnabled: true
+abstainEnabled: true

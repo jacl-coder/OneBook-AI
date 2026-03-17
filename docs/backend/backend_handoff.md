@@ -93,6 +93,11 @@
 - 当 `conversationId` 为空时，后端自动创建新会话并返回 `conversation` 对象。
 - 当 `conversationId` 有值时，后端在该会话中续聊并回写历史消息。
 - 响应主字段为：`conversation`、`answer`、`citations`、`abstained`；管理员可通过 `debug=true` 获取 `retrievalDebug`。
+- 当前 chat 策略有 3 个独立开关：
+  - `CHAT_QUERY_REWRITE_ENABLED`：是否启用模型驱动 query rewrite
+  - `CHAT_MULTI_QUERY_ENABLED`：是否启用多查询召回
+  - `CHAT_ABSTAIN_ENABLED`：是否启用策略拒答（书外实时问题、证据不足、grounding 失败）
+- 当 `CHAT_ABSTAIN_ENABLED=false` 时，后端不会因为上述策略条件强制 `abstained=true`，而会返回更偏 best-effort 的谨慎回答。
 - `retrievalDebug` 当前阶段固定包含 4 个阶段：
   - `dense`
   - `lexical`
@@ -152,6 +157,10 @@ Content-Type: application/json
 
 ## 6. 本地联调准备
 - 复制并填写环境变量：`.env.example` -> `.env`
+- 如需联调不同问答策略，可关注：
+  - `CHAT_QUERY_REWRITE_ENABLED`
+  - `CHAT_MULTI_QUERY_ENABLED`
+  - `CHAT_ABSTAIN_ENABLED`
 - 推荐一键启动：
 ```bash
 ./run.sh

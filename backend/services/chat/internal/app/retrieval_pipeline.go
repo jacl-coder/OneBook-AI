@@ -30,20 +30,19 @@ func newModelQueryRewriter(generator ai.TextGenerator) QueryRewriter {
 }
 
 func (r *modelQueryRewriter) Rewrite(ctx context.Context, query, language string) ([]string, error) {
-	base := retrieval.BuildQueryVariants(query)
 	if r.generator == nil {
-		return base, nil
+		return nil, nil
 	}
 	prompt := fmt.Sprintf("Language: %s\nQuestion: %s\nReturn a JSON array with up to 3 short search rewrites.", language, query)
 	out, err := r.generator.GenerateText(ctx, "You rewrite search queries. Output valid JSON only.", prompt)
 	if err != nil {
-		return base, err
+		return nil, err
 	}
 	var rewrites []string
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rewrites); err != nil {
-		return base, err
+		return nil, err
 	}
-	return retrieval.BuildQueryVariants(strings.Join(append(base, rewrites...), "\n")), nil
+	return rewrites, nil
 }
 
 type groundingValidator struct {
@@ -110,9 +109,35 @@ func validationTokenOverlap(left, right []string) float64 {
 	return float64(matches) / float64(len(seen))
 }
 
+func (a *App) buildRetrievalQueries(ctx context.Context, question string) []string {
+	normalized := retrieval.NormalizeText(question)
+	if normalized == "" {
+		return nil
+	}
+	queries := []string{normalized}
+	if a.multiQueryEnabled {
+		queries = retrieval.BuildQueryVariants(normalized)
+	}
+	if a.queryRewriteEnabled && a.rewriter != nil {
+		language := retrieval.DetectLanguage(normalized)
+		rewrites, err := a.rewriter.Rewrite(ctx, normalized, language)
+		if err == nil {
+			rewrites = normalizeRetrievalQueries(rewrites)
+			if len(rewrites) > 0 {
+				if a.multiQueryEnabled {
+					queries = uniqueRetrievalQueries(append(queries, rewrites...))
+				} else {
+					queries = []string{rewrites[0]}
+				}
+			}
+		}
+	}
+	return uniqueRetrievalQueries(queries)
+}
+
 func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question string) ([]retrieval.StageHit, *domain.RetrievalDebug, error) {
+	queries := a.buildRetrievalQueries(ctx, question)
 	pipeline := retrieval.Pipeline{
-		Rewrite: a.rewriter.Rewrite,
 		Dense: func(ctx context.Context, query, _ string, topK int) ([]retrieval.StageHit, error) {
 			vector, err := a.embedder.EmbedText(ctx, query, "RETRIEVAL_QUERY")
 			if err != nil {
@@ -147,6 +172,7 @@ func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question s
 	}
 	result, err := pipeline.Run(ctx, retrieval.PipelineOptions{
 		Query:         question,
+		Queries:       queries,
 		BookID:        book.ID,
 		RetrievalMode: a.retrievalMode,
 		TopK:          a.topK,
@@ -248,4 +274,33 @@ func anyString(value any) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeRetrievalQueries(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = retrieval.NormalizeText(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return uniqueRetrievalQueries(out)
+}
+
+func uniqueRetrievalQueries(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }

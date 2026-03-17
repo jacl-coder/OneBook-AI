@@ -25,6 +25,7 @@ type ChunkLoadFunc func(ctx context.Context, ids []string) (map[string]domain.Ch
 
 type PipelineOptions struct {
 	Query         string
+	Queries       []string
 	BookID        string
 	RetrievalMode string
 	TopK          int
@@ -59,14 +60,17 @@ type Pipeline struct {
 func (p Pipeline) Run(ctx context.Context, opts PipelineOptions) (PipelineResult, error) {
 	query := NormalizeText(opts.Query)
 	language := DetectLanguage(query)
-	queries := BuildQueryVariants(query)
-	if p.Rewrite != nil {
-		if rewritten, err := p.Rewrite(ctx, query, language); err == nil && len(rewritten) > 0 {
-			queries = rewritten
-		}
-	}
+	queries := normalizeQueries(opts.Queries)
 	if len(queries) == 0 {
-		queries = []string{query}
+		queries = BuildQueryVariants(query)
+		if p.Rewrite != nil {
+			if rewritten, err := p.Rewrite(ctx, query, language); err == nil && len(rewritten) > 0 {
+				queries = rewritten
+			}
+		}
+		if len(queries) == 0 {
+			queries = []string{query}
+		}
 	}
 
 	denseHits := make(map[string]StageHit)
@@ -365,6 +369,21 @@ func uniquePipelineStrings(items []string) []string {
 		out = append(out, item)
 	}
 	return out
+}
+
+func normalizeQueries(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(items))
+	for _, item := range items {
+		item = NormalizeText(item)
+		if item == "" {
+			continue
+		}
+		normalized = append(normalized, item)
+	}
+	return uniquePipelineStrings(normalized)
 }
 
 func minInt(left, right int) int {

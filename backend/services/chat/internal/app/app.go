@@ -17,58 +17,64 @@ const defaultConversationTitle = "新对话"
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL        string
-	Store              store.Store
-	GenerationProvider string
-	GenerationBaseURL  string
-	GenerationAPIKey   string
-	GenerationModel    string
-	EmbeddingProvider  string
-	EmbeddingBaseURL   string
-	EmbeddingModel     string
-	EmbeddingDim       int
-	TopK               int
-	DenseRecallTopK    int
-	LexicalRecallTopK  int
-	DenseWeight        float64
-	LexicalWeight      float64
-	FusionTopK         int
-	HistoryLimit       int
-	QdrantURL          string
-	QdrantAPIKey       string
-	QdrantCollection   string
-	OpenSearchURL      string
-	OpenSearchIndex    string
-	OpenSearchUsername string
-	OpenSearchPassword string
-	RerankTopN         int
-	RetrievalMode      string
-	RerankerURL        string
-	ContextBudget      int
-	MinEvidenceCount   int
+	DatabaseURL         string
+	Store               store.Store
+	GenerationProvider  string
+	GenerationBaseURL   string
+	GenerationAPIKey    string
+	GenerationModel     string
+	EmbeddingProvider   string
+	EmbeddingBaseURL    string
+	EmbeddingModel      string
+	EmbeddingDim        int
+	TopK                int
+	DenseRecallTopK     int
+	LexicalRecallTopK   int
+	DenseWeight         float64
+	LexicalWeight       float64
+	FusionTopK          int
+	HistoryLimit        int
+	QdrantURL           string
+	QdrantAPIKey        string
+	QdrantCollection    string
+	OpenSearchURL       string
+	OpenSearchIndex     string
+	OpenSearchUsername  string
+	OpenSearchPassword  string
+	RerankTopN          int
+	RetrievalMode       string
+	RerankerURL         string
+	ContextBudget       int
+	MinEvidenceCount    int
+	QueryRewriteEnabled bool
+	MultiQueryEnabled   bool
+	AbstainEnabled      bool
 }
 
 // App is the core application service wiring together storage and chat logic.
 type App struct {
-	store             store.Store
-	generator         ai.TextGenerator
-	embedder          ai.Embedder
-	search            *retrieval.Client
-	lexical           *retrieval.OpenSearchClient
-	rewriter          QueryRewriter
-	reranker          retrieval.Reranker
-	validator         GroundingValidator
-	topK              int
-	denseRecallTopK   int
-	lexicalRecallTopK int
-	denseWeight       float64
-	lexicalWeight     float64
-	fusionTopK        int
-	historyLimit      int
-	rerankTopN        int
-	retrievalMode     string
-	contextBudget     int
-	minEvidenceCount  int
+	store               store.Store
+	generator           ai.TextGenerator
+	embedder            ai.Embedder
+	search              *retrieval.Client
+	lexical             *retrieval.OpenSearchClient
+	rewriter            QueryRewriter
+	reranker            retrieval.Reranker
+	validator           GroundingValidator
+	topK                int
+	denseRecallTopK     int
+	lexicalRecallTopK   int
+	denseWeight         float64
+	lexicalWeight       float64
+	fusionTopK          int
+	historyLimit        int
+	rerankTopN          int
+	retrievalMode       string
+	contextBudget       int
+	minEvidenceCount    int
+	queryRewriteEnabled bool
+	multiQueryEnabled   bool
+	abstainEnabled      bool
 }
 
 // New constructs the application with database-backed storage for messages.
@@ -163,6 +169,9 @@ func New(cfg Config) (*App, error) {
 	if minEvidenceCount <= 0 {
 		minEvidenceCount = 2
 	}
+	queryRewriteEnabled := cfg.QueryRewriteEnabled
+	multiQueryEnabled := cfg.MultiQueryEnabled
+	abstainEnabled := cfg.AbstainEnabled
 
 	return &App{
 		store:     dataStore,
@@ -175,18 +184,21 @@ func New(cfg Config) (*App, error) {
 			Primary:  retrieval.NewServiceReranker(cfg.RerankerURL, 8*time.Second, 50, 2400),
 			Fallback: retrieval.FallbackReranker{},
 		},
-		validator:         newGroundingValidator(generator),
-		topK:              topK,
-		denseRecallTopK:   denseRecallTopK,
-		lexicalRecallTopK: lexicalRecallTopK,
-		denseWeight:       denseWeight,
-		lexicalWeight:     lexicalWeight,
-		fusionTopK:        fusionTopK,
-		historyLimit:      historyLimit,
-		rerankTopN:        rerankTopN,
-		retrievalMode:     retrievalMode,
-		contextBudget:     contextBudget,
-		minEvidenceCount:  minEvidenceCount,
+		validator:           newGroundingValidator(generator),
+		topK:                topK,
+		denseRecallTopK:     denseRecallTopK,
+		lexicalRecallTopK:   lexicalRecallTopK,
+		denseWeight:         denseWeight,
+		lexicalWeight:       lexicalWeight,
+		fusionTopK:          fusionTopK,
+		historyLimit:        historyLimit,
+		rerankTopN:          rerankTopN,
+		retrievalMode:       retrievalMode,
+		contextBudget:       contextBudget,
+		minEvidenceCount:    minEvidenceCount,
+		queryRewriteEnabled: queryRewriteEnabled,
+		multiQueryEnabled:   multiQueryEnabled,
+		abstainEnabled:      abstainEnabled,
 	}, nil
 }
 
@@ -256,8 +268,12 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	case queryRouteHistoryOnly:
 		answerText, citations, abstained = a.answerFromHistory(ctx, book, question, historyText, history)
 	case queryRouteOutOfScopeReject:
-		answerText = outOfScopeAbstainAnswer
-		abstained = true
+		if a.abstainEnabled {
+			answerText = outOfScopeAbstainAnswer
+			abstained = true
+			break
+		}
+		fallthrough
 	default:
 		retrieved, routeDebug, routeErr := a.retrieveEvidence(ctx, book, question)
 		if routeErr != nil {
@@ -266,16 +282,21 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		debugInfo = routeDebug
 		contextText, routeCitations := buildContext(retrieved)
 		citations = routeCitations
-		abstained = len(retrieved) < a.minEvidenceCount
+		abstained = a.abstainEnabled && len(retrieved) < a.minEvidenceCount
 		answerText = defaultAbstainAnswer
 		if !abstained {
 			var userPrompt string
-			if historyText != "" {
-				userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, historyText, question, contextText)
-			} else {
-				userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n要求：只基于证据回答；引用相关编号；证据不足则明确拒答。", book.Title, question, contextText)
-			}
+			promptRequirement := "要求：只基于证据回答；引用相关编号；证据不足则明确拒答。"
 			systemPrompt := "你是一个严格基于证据回答的读书助手。不要使用证据外知识。每个结论都必须可由提供证据支持。"
+			if !a.abstainEnabled {
+				promptRequirement = "要求：优先基于证据回答；引用相关编号；证据不足时可以给出谨慎的最佳努力回答，并明确说明不确定性，但不要编造引用。"
+				systemPrompt = "你是一个优先基于证据回答的读书助手。可以在证据不足时给出谨慎的最佳努力回答，但必须明确不确定性，且不要虚构引用或把证据外信息说成确定事实。"
+			}
+			if historyText != "" {
+				userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n%s", book.Title, historyText, question, contextText, promptRequirement)
+			} else {
+				userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n%s", book.Title, question, contextText, promptRequirement)
+			}
 			response, genErr := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
 			if genErr == nil {
 				answerText = strings.TrimSpace(response)
@@ -284,7 +305,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 				abstained = true
 				answerText = defaultAbstainAnswer
 			}
-			if !abstained && !a.validator.Validate(question, answerText, citations) {
+			if !abstained && a.abstainEnabled && !a.validator.Validate(question, answerText, citations) {
 				abstained = true
 				answerText = defaultAbstainAnswer
 				citations = nil
@@ -340,8 +361,13 @@ func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question 
 	if strings.TrimSpace(historyText) == "" {
 		return defaultAbstainAnswer, nil, true
 	}
-	userPrompt := fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n要求：只基于当前对话历史继续回答，不要引入对话外知识；如果历史不足以支撑回答，就明确说明证据不足。", book.Title, historyText, question)
+	requirement := "要求：只基于当前对话历史继续回答，不要引入对话外知识；如果历史不足以支撑回答，就明确说明证据不足。"
 	systemPrompt := "你是一个延续当前会话上下文的读书助手。只使用给定对话历史，不要虚构新的事实。"
+	if !a.abstainEnabled {
+		requirement = "要求：只基于当前对话历史继续回答，不要引入对话外知识；如果历史不足，也可以给出谨慎的最佳努力回答，并明确说明不确定性。"
+		systemPrompt = "你是一个延续当前会话上下文的读书助手。只使用给定对话历史，不要虚构新的事实；在信息不足时可以给出谨慎回答，但要明确不确定性。"
+	}
+	userPrompt := fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n%s", book.Title, historyText, question, requirement)
 	answerText := defaultAbstainAnswer
 	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
 	if err == nil {
@@ -350,7 +376,7 @@ func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question 
 	if strings.TrimSpace(answerText) == "" {
 		return defaultAbstainAnswer, nil, true
 	}
-	if strings.Contains(answerText, "证据不足") || strings.Contains(strings.ToLower(answerText), "insufficient") {
+	if a.abstainEnabled && (strings.Contains(answerText, "证据不足") || strings.Contains(strings.ToLower(answerText), "insufficient")) {
 		return defaultAbstainAnswer, nil, true
 	}
 	return answerText, latestAssistantSources(history), false
