@@ -55,12 +55,21 @@ func (s *Server) Router() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
+	s.mux.HandleFunc("/readyz", s.handleReady)
 	s.mux.Handle("/indexer/jobs", s.withInternal(s.handleJobs))
 	s.mux.Handle("/indexer/jobs/", s.withInternal(s.handleJobByID))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if err := s.app.Ready(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (s *Server) withInternal(next http.HandlerFunc) http.Handler {

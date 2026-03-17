@@ -37,7 +37,7 @@
 | 认证与鉴权 | RS256 JWT（Access 15 分钟）+ Refresh Token 轮换（Redis 原子 CAS + 重放检测）；统一 Cookie 会话 |
 | 管理后台 | 用户/书籍管理、重处理、操作审计日志、系统概览、RAG 评测中心（Admin Eval Center） |
 | 速率限制 | Gateway/Auth 使用 Redis 分布式固定窗口限流；Redis 异常时拒绝请求（fail-closed） |
-| 可靠性 | Redis Streams 持久队列（Ingest/Indexer），失败重试采用事务化 `XADD + XACK + XDEL` |
+| 可靠性 | Kafka 持久队列（Ingest/Indexer），任务状态与去重落 Postgres，失败重试 + DLQ |
 
 ---
 
@@ -63,7 +63,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
                     ▼
              Ingest :8084
              文件解析/分块
-                    │ Redis Stream
+                    │ Kafka Topic
                     ▼
              Indexer :8085
              Ollama Embedding → Qdrant
@@ -71,7 +71,8 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 
 基础设施：
   Postgres             ← 用户/书籍/消息/chunk 正文/引用/索引状态（唯一事实来源）
-  Redis                ← Token/限流/Streams 队列
+  Redis                ← Token/限流
+  Kafka                ← Ingest/Indexer 异步任务总线（单机 KRaft，本地开发）
   MinIO (S3)           ← 书籍文件存储
   Qdrant               ← semantic chunk 向量索引（最小 payload）
   OpenSearch           ← lexical chunk BM25 检索副本
@@ -99,7 +100,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 | ORM | GORM |
 | JWT | `github.com/golang-jwt/jwt/v5`（RS256 + JWKS） |
 | 对象存储 | MinIO SDK（`minio-go/v7`） |
-| 队列 | Redis Streams（`go-redis/v9`） |
+| 队列 | Kafka（`segmentio/kafka-go`）+ Postgres 任务状态 |
 | 检索 | Qdrant（dense vector）+ OpenSearch（BM25 lexical） |
 | PDF 解析 | 优先 `pdftotext` CLI，回退 `ledongthuc/pdf` |
 | EPUB 解析 | `golang.org/x/net` 解析 HTML |
@@ -138,7 +139,7 @@ OneBook-AI/
 │   │   ├── ai/                 # TextGenerator 接口（Gemini/Ollama/OpenAI 兼容）
 │   │   ├── auth/               # JWT 工具
 │   │   ├── domain/             # 共享领域类型（Book / User / Chunk 等）
-│   │   ├── queue/              # Redis Streams 封装
+│   │   ├── queue/              # Kafka job bus + Postgres 任务状态
 │   │   ├── retrieval/          # 混合检索逻辑（dense + lexical + rerank）
 │   │   ├── storage/            # MinIO 封装
 │   │   └── store/              # GORM 数据访问层
@@ -210,25 +211,25 @@ OneBook-AI/
 
 - 上传校验（扩展名白名单：pdf/epub/txt；大小限制：默认 50MB）。
 - 书籍元数据（`primaryCategory`、`tags[]`、`format`、`language`）存 Postgres，文件存 MinIO。
-- 上传后写入 Redis Stream → 触发 Ingest。
+- 上传后提交 Kafka ingest job，并把任务状态写入 Postgres。
 - 状态机：`queued → processing → ready | failed`。
 - 软删除 + 后台异步清理（最终硬删除）。
 - 支持 `PATCH /api/books/{id}` 更新书名/分类/标签。
 
 ### Ingest（:8084）
 
-- 从 Redis Stream 消费任务，拉取 MinIO 文件。
+- 从 Kafka topic 消费任务，拉取 MinIO 文件。
 - PDF：优先 `pdftotext`，失败回退 Go PDF 库；按页质量评估触发 OCR（阈值可配置）。
 - OCR 融合策略：native 低质量页优先采用 OCR 结果，阈值可通过 `INGEST_PDF_*` 环境变量配置。
 - EPUB：解析 HTML 内容。TXT：直接分块。
 - 语义分块（`INGEST_CHUNK_SIZE`/`INGEST_CHUNK_OVERLAP`），保留来源元数据。
 - 产出双粒度 chunk：`semantic` 用于 Qdrant，`lexical` 用于 OpenSearch。
 - Chunk 元数据：`source_type`、`source_ref`、`extract_method`、`page`、`section`、`chunk`、`document_id`、`chunk_index`、`chunk_count`、`content_sha256`、`content_runes`、`page_quality_score`。
-- 写入 chunks 后触发 Indexer Stream。
+- 写入 chunks 后通过内部接口提交 indexer job。
 
 ### Indexer（:8085）
 
-- 从 Redis Stream 消费任务，批量调用 Ollama 生成向量（维度 `ONEBOOK_EMBEDDING_DIM`，默认 3072）。
+- 从 Kafka topic 消费任务，批量调用 Ollama 生成向量（维度 `ONEBOOK_EMBEDDING_DIM`，默认 3072）。
 - 写入 Qdrant（collection：`QDRANT_COLLECTION`，默认 `onebook_chunks`）与 OpenSearch（index：`OPENSEARCH_INDEX`，默认 `onebook_lexical_chunks`）。
 - `chunk_index_status` 记录 OpenSearch/Qdrant 两路同步状态、时间和失败原因。
 - 写入完成后更新书籍状态为 `ready`。
@@ -370,8 +371,21 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | 变量 | 默认值（示例） | 说明 |
 |---|---|---|
 | `DATABASE_URL` | `postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable` | Postgres 连接 |
-| `REDIS_ADDR` | `localhost:6379` | Redis 地址 |
+| `REDIS_ADDR` | `localhost:6379` | Redis 地址（refresh token / 撤销 / 限流） |
 | `REDIS_PASSWORD` | `` | Redis 密码（为空则不鉴权） |
+| `KAFKA_BROKERS` | `localhost:9092` | Kafka broker 列表（逗号分隔） |
+| `KAFKA_CLIENT_ID` | `onebook-local` | Kafka client id |
+| `KAFKA_TOPIC_PREFIX` | `onebook` | 任务 topic 前缀 |
+| `INGEST_QUEUE_TOPIC` | `onebook.ingest.jobs` | ingest 主 topic |
+| `INGEST_QUEUE_GROUP` | `onebook-ingest-service` | ingest consumer group |
+| `INGEST_QUEUE_CONCURRENCY` | `2` | ingest 并发 worker 数 |
+| `INGEST_QUEUE_MAX_RETRIES` | `3` | ingest 最大重试次数 |
+| `INGEST_QUEUE_RETRY_DELAY_SECONDS` | `2` | ingest 重投前延迟 |
+| `INDEXER_QUEUE_TOPIC` | `onebook.indexer.jobs` | indexer 主 topic |
+| `INDEXER_QUEUE_GROUP` | `onebook-indexer-service` | indexer consumer group |
+| `INDEXER_QUEUE_CONCURRENCY` | `2` | indexer 并发 worker 数 |
+| `INDEXER_QUEUE_MAX_RETRIES` | `3` | indexer 最大重试次数 |
+| `INDEXER_QUEUE_RETRY_DELAY_SECONDS` | `2` | indexer 重投前延迟 |
 | `JWT_PRIVATE_KEY_PATH` | `secrets/jwt/private.pem` | RS256 私钥（`run.sh` 自动生成） |
 | `JWT_PUBLIC_KEY_PATH` | `secrets/jwt/public.pem` | RS256 公钥 |
 | `JWT_KEY_ID` | `jwt-active` | JWK kid |
@@ -450,7 +464,7 @@ cp .env.example .env
 # 2. 启动基础设施 + 所有后端服务
 # 如果本机可用 npm 且存在 frontend/package.json，run.sh 默认也会自动启动前端
 ./run.sh
-# run.sh 顺序：按需启动前端 → 启动 Docker 依赖 → 生成 JWT 密钥 → 按 Auth→Book→Chat→Ingest→Indexer→Gateway 顺序启动
+# run.sh 顺序：按需启动前端 → 启动 Docker 依赖（含 Kafka KRaft）→ 创建任务 topics → 生成 JWT 密钥 → 按 Auth→Book→Chat→Ingest→Indexer→Gateway 顺序启动
 # 前端默认地址：http://localhost:5173
 
 # 3. 如果只想启动后端，可显式关闭前端自动启动

@@ -12,35 +12,36 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                        string `yaml:"port"`
-	LogLevel                    string `yaml:"logLevel"`
-	LogsDir                     string `yaml:"logsDir"`
-	DatabaseURL                 string `yaml:"databaseURL"`
-	BookServiceURL              string `yaml:"bookServiceURL"`
-	InternalJWTPrivateKeyPath   string `yaml:"internalJwtPrivateKeyPath"`
-	InternalJWTPublicKeyPath    string `yaml:"internalJwtPublicKeyPath"`
-	InternalJWTVerifyPublicKeys string `yaml:"internalJwtVerifyPublicKeys"`
-	InternalJWTKeyID            string `yaml:"internalJwtKeyId"`
-	RedisAddr                   string `yaml:"redisAddr"`
-	RedisPassword               string `yaml:"redisPassword"`
-	QueueName                   string `yaml:"queueName"`
-	QueueGroup                  string `yaml:"queueGroup"`
-	QueueConcurrency            int    `yaml:"queueConcurrency"`
-	QueueMaxRetries             int    `yaml:"queueMaxRetries"`
-	QueueRetryDelaySeconds      int    `yaml:"queueRetryDelaySeconds"`
-	EmbeddingProvider           string `yaml:"embeddingProvider"`
-	EmbeddingBaseURL            string `yaml:"embeddingBaseURL"`
-	EmbeddingModel              string `yaml:"embeddingModel"`
-	EmbeddingDim                int    `yaml:"embeddingDim"`
-	EmbeddingBatchSize          int    `yaml:"embeddingBatchSize"`
-	EmbeddingConcurrency        int    `yaml:"embeddingConcurrency"`
-	QdrantURL                   string `yaml:"qdrantURL"`
-	QdrantAPIKey                string `yaml:"qdrantAPIKey"`
-	QdrantCollection            string `yaml:"qdrantCollection"`
-	OpenSearchURL               string `yaml:"openSearchURL"`
-	OpenSearchIndex             string `yaml:"openSearchIndex"`
-	OpenSearchUsername          string `yaml:"openSearchUsername"`
-	OpenSearchPassword          string `yaml:"openSearchPassword"`
+	Port                        string   `yaml:"port"`
+	LogLevel                    string   `yaml:"logLevel"`
+	LogsDir                     string   `yaml:"logsDir"`
+	DatabaseURL                 string   `yaml:"databaseURL"`
+	BookServiceURL              string   `yaml:"bookServiceURL"`
+	InternalJWTPrivateKeyPath   string   `yaml:"internalJwtPrivateKeyPath"`
+	InternalJWTPublicKeyPath    string   `yaml:"internalJwtPublicKeyPath"`
+	InternalJWTVerifyPublicKeys string   `yaml:"internalJwtVerifyPublicKeys"`
+	InternalJWTKeyID            string   `yaml:"internalJwtKeyId"`
+	KafkaBrokers                []string `yaml:"kafkaBrokers"`
+	KafkaClientID               string   `yaml:"kafkaClientId"`
+	KafkaTopicPrefix            string   `yaml:"kafkaTopicPrefix"`
+	QueueTopic                  string   `yaml:"queueTopic"`
+	QueueGroup                  string   `yaml:"queueGroup"`
+	QueueConcurrency            int      `yaml:"queueConcurrency"`
+	QueueMaxRetries             int      `yaml:"queueMaxRetries"`
+	QueueRetryDelaySeconds      int      `yaml:"queueRetryDelaySeconds"`
+	EmbeddingProvider           string   `yaml:"embeddingProvider"`
+	EmbeddingBaseURL            string   `yaml:"embeddingBaseURL"`
+	EmbeddingModel              string   `yaml:"embeddingModel"`
+	EmbeddingDim                int      `yaml:"embeddingDim"`
+	EmbeddingBatchSize          int      `yaml:"embeddingBatchSize"`
+	EmbeddingConcurrency        int      `yaml:"embeddingConcurrency"`
+	QdrantURL                   string   `yaml:"qdrantURL"`
+	QdrantAPIKey                string   `yaml:"qdrantAPIKey"`
+	QdrantCollection            string   `yaml:"qdrantCollection"`
+	OpenSearchURL               string   `yaml:"openSearchURL"`
+	OpenSearchIndex             string   `yaml:"openSearchIndex"`
+	OpenSearchUsername          string   `yaml:"openSearchUsername"`
+	OpenSearchPassword          string   `yaml:"openSearchPassword"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -75,14 +76,17 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_KEY_ID"); v != "" {
 		cfg.InternalJWTKeyID = v
 	}
-	if v := os.Getenv("REDIS_ADDR"); v != "" {
-		cfg.RedisAddr = v
+	if v := os.Getenv("KAFKA_BROKERS"); v != "" {
+		cfg.KafkaBrokers = splitCSV(v)
 	}
-	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
-		cfg.RedisPassword = v
+	if v := os.Getenv("KAFKA_CLIENT_ID"); v != "" {
+		cfg.KafkaClientID = v
 	}
-	if v := os.Getenv("INDEXER_QUEUE_NAME"); v != "" {
-		cfg.QueueName = v
+	if v := os.Getenv("KAFKA_TOPIC_PREFIX"); v != "" {
+		cfg.KafkaTopicPrefix = v
+	}
+	if v := os.Getenv("INDEXER_QUEUE_TOPIC"); v != "" {
+		cfg.QueueTopic = v
 	}
 	if v := os.Getenv("INDEXER_QUEUE_GROUP"); v != "" {
 		cfg.QueueGroup = v
@@ -165,8 +169,8 @@ func validateConfig(cfg FileConfig) error {
 	if strings.TrimSpace(cfg.InternalJWTPrivateKeyPath) == "" || strings.TrimSpace(cfg.InternalJWTPublicKeyPath) == "" {
 		return errors.New("config: internal service auth requires ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH + ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH")
 	}
-	if cfg.RedisAddr == "" {
-		return errors.New("config: redisAddr is required (set in config.yaml or REDIS_ADDR)")
+	if len(cfg.KafkaBrokers) == 0 {
+		return errors.New("config: kafkaBrokers is required (set in config.yaml or KAFKA_BROKERS)")
 	}
 	provider := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
 	if provider == "" {
@@ -196,4 +200,17 @@ func validateConfig(cfg FileConfig) error {
 		return errors.New("config: embeddingProvider must be ollama")
 	}
 	return nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
