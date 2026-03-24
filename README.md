@@ -490,6 +490,8 @@ cd backend/services/indexer && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
+> 本地开发的 OpenSearch 使用 `docker/opensearch/opensearch.yml` 显式关闭 security plugin，默认通过 `http://localhost:9200` 提供明文 HTTP 接口，后端无需额外用户名/密码。
+
 ### 9.4 单服务热重启
 
 ```bash
