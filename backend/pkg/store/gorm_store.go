@@ -45,7 +45,7 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := cleanupLegacyVectorArtifacts(tx); err != nil {
 			return err
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := tx.Exec(`
@@ -298,8 +298,32 @@ func (s *GormStore) SaveBook(b domain.Book) error {
 	model := bookToModel(b)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
 	}).Create(&model).Error
+}
+
+func (s *GormStore) SaveBookAndOutbox(book domain.Book, record *domain.IdempotencyRecord, msg *domain.OutboxMessage) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		model := bookToModel(book)
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
+		}).Create(&model).Error; err != nil {
+			return err
+		}
+		if record != nil {
+			if err := saveIdempotencyRecordTx(tx, *record); err != nil {
+				return err
+			}
+		}
+		if msg != nil {
+			outbox := outboxMessageToModel(*msg)
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&outbox).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // SetStatus updates book status/error.
@@ -311,6 +335,17 @@ func (s *GormStore) SetStatus(id string, status domain.BookStatus, errMsg string
 			"error_message": errMsg,
 			"updated_at":    time.Now().UTC(),
 		}).Error
+}
+
+func (s *GormStore) SetStatusIfGeneration(id string, generation int64, status domain.BookStatus, errMsg string) (bool, error) {
+	tx := s.db.Model(&BookModel{}).
+		Where("id = ? AND deleted_at IS NULL AND processing_generation = ?", id, generation).
+		Updates(map[string]any{
+			"status":        string(status),
+			"error_message": errMsg,
+			"updated_at":    time.Now().UTC(),
+		})
+	return tx.RowsAffected > 0, tx.Error
 }
 
 // ListBooks returns all books ordered by created_at.
@@ -436,6 +471,61 @@ func (s *GormStore) ListBooksPendingCleanup(limit int) ([]domain.Book, error) {
 	return items, nil
 }
 
+func (s *GormStore) ClaimBooksPendingCleanup(limit int) ([]domain.Book, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	now := time.Now().UTC()
+	var models []BookModel
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("deleted_at IS NOT NULL AND cleanup_status IN ?", []string{string(domain.BookCleanupStatusQueued), string(domain.BookCleanupStatusFailed)}).
+			Order("cleanup_updated_at ASC NULLS FIRST").
+			Limit(limit).
+			Find(&models).Error; err != nil {
+			return err
+		}
+		if len(models) == 0 {
+			return nil
+		}
+		ids := make([]string, 0, len(models))
+		for i := range models {
+			ids = append(ids, models[i].ID)
+		}
+		if err := tx.Model(&BookModel{}).
+			Where("id IN ?", ids).
+			Updates(map[string]any{
+				"cleanup_status":     string(domain.BookCleanupStatusRunning),
+				"cleanup_error":      "",
+				"cleanup_updated_at": &now,
+				"updated_at":         now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&BookModel{}).
+			Where("id IN ?", ids).
+			UpdateColumn("cleanup_attempts", gorm.Expr("cleanup_attempts + 1")).Error; err != nil {
+			return err
+		}
+		for i := range models {
+			models[i].CleanupStatus = string(domain.BookCleanupStatusRunning)
+			models[i].CleanupError = ""
+			models[i].CleanupAttempts++
+			models[i].CleanupUpdatedAt = &now
+			models[i].UpdatedAt = now
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.Book, 0, len(models))
+	for _, model := range models {
+		items = append(items, bookFromModel(model))
+	}
+	return items, nil
+}
+
 func (s *GormStore) MarkBookDeleted(id string, cleanupStatus domain.BookCleanupStatus) error {
 	now := time.Now().UTC()
 	return s.db.Model(&BookModel{}).
@@ -550,6 +640,41 @@ func (s *GormStore) AppendConversationMessage(conversationID string, msg domain.
 	model.ConversationID = &conversationID
 	model.BookID = msg.BookID
 	return s.db.Create(&model).Error
+}
+
+func (s *GormStore) SaveConversationExchange(conversation domain.Conversation, createConversation bool, userMsg, assistantMsg domain.Message, record *domain.IdempotencyRecord) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if createConversation {
+			model := conversationToModel(conversation)
+			if err := tx.Create(&model).Error; err != nil {
+				return err
+			}
+		}
+		userModel := messageToModel(userMsg)
+		if err := tx.Create(&userModel).Error; err != nil {
+			return err
+		}
+		assistantModel := messageToModel(assistantMsg)
+		if err := tx.Create(&assistantModel).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{
+			"updated_at":      time.Now().UTC(),
+			"last_message_at": assistantMsg.CreatedAt.UTC(),
+		}
+		if strings.TrimSpace(conversation.Title) != "" {
+			updates["title"] = strings.TrimSpace(conversation.Title)
+		}
+		if err := tx.Model(&ConversationModel{}).Where("id = ?", conversation.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if record != nil {
+			if err := saveIdempotencyRecordTx(tx, *record); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ListMessages returns recent messages for a book (newest first, then reversed to chronological).
@@ -1123,13 +1248,7 @@ func (s *GormStore) GetAdminEvalOverview(windowStart time.Time) (domain.AdminEva
 }
 
 func (s *GormStore) SaveIdempotencyRecord(record domain.IdempotencyRecord) error {
-	model := idempotencyRecordToModel(record)
-	return s.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"scope", "actor_id", "idempotency_key", "request_hash", "resource_type", "resource_id", "status_code", "state", "updated_at",
-		}),
-	}).Create(&model).Error
+	return saveIdempotencyRecordTx(s.db, record)
 }
 
 func (s *GormStore) GetIdempotencyRecord(scope, actorID, key string) (domain.IdempotencyRecord, bool, error) {
@@ -1142,6 +1261,95 @@ func (s *GormStore) GetIdempotencyRecord(scope, actorID, key string) (domain.Ide
 		return domain.IdempotencyRecord{}, false, err
 	}
 	return idempotencyRecordFromModel(model), true, nil
+}
+
+func (s *GormStore) ClaimOutboxMessages(topic string, limit int, lease time.Duration) ([]domain.OutboxMessage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if lease <= 0 {
+		lease = 30 * time.Second
+	}
+	now := time.Now().UTC()
+	staleBefore := now.Add(-lease)
+	var models []OutboxMessageModel
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("topic = ? AND dispatched_at IS NULL AND available_at <= ? AND (locked_at IS NULL OR locked_at < ?)", strings.TrimSpace(topic), now, staleBefore).
+			Order("available_at ASC").
+			Limit(limit).
+			Find(&models).Error; err != nil {
+			return err
+		}
+		if len(models) == 0 {
+			return nil
+		}
+		ids := make([]string, 0, len(models))
+		for i := range models {
+			ids = append(ids, models[i].ID)
+		}
+		if err := tx.Model(&OutboxMessageModel{}).
+			Where("id IN ?", ids).
+			Updates(map[string]any{
+				"locked_at":  &now,
+				"updated_at": now,
+				"attempts":   gorm.Expr("attempts + 1"),
+				"last_error": "",
+			}).Error; err != nil {
+			return err
+		}
+		for i := range models {
+			models[i].Attempts++
+			models[i].LockedAt = &now
+			models[i].UpdatedAt = now
+			models[i].LastError = ""
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.OutboxMessage, 0, len(models))
+	for _, model := range models {
+		items = append(items, outboxMessageFromModel(model))
+	}
+	return items, nil
+}
+
+func (s *GormStore) MarkOutboxDispatched(id string) error {
+	now := time.Now().UTC()
+	return s.db.Model(&OutboxMessageModel{}).
+		Where("id = ?", strings.TrimSpace(id)).
+		Updates(map[string]any{
+			"dispatched_at": &now,
+			"locked_at":     nil,
+			"updated_at":    now,
+			"last_error":    "",
+		}).Error
+}
+
+func (s *GormStore) ReleaseOutboxMessage(id, errMsg string, availableAt time.Time) error {
+	if availableAt.IsZero() {
+		availableAt = time.Now().UTC()
+	}
+	return s.db.Model(&OutboxMessageModel{}).
+		Where("id = ?", strings.TrimSpace(id)).
+		Updates(map[string]any{
+			"locked_at":    nil,
+			"available_at": availableAt.UTC(),
+			"updated_at":   time.Now().UTC(),
+			"last_error":   strings.TrimSpace(errMsg),
+		}).Error
+}
+
+func saveIdempotencyRecordTx(tx *gorm.DB, record domain.IdempotencyRecord) error {
+	model := idempotencyRecordToModel(record)
+	return tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"scope", "actor_id", "idempotency_key", "request_hash", "resource_type", "resource_id", "status_code", "state", "response_json", "updated_at",
+		}),
+	}).Create(&model).Error
 }
 
 func normalizePage(page, pageSize int) (int, int) {
@@ -1226,50 +1434,52 @@ func userFromModel(m UserModel) domain.User {
 func bookToModel(b domain.Book) BookModel {
 	tags, _ := marshalStringSliceJSON(b.Tags)
 	return BookModel{
-		ID:               b.ID,
-		OwnerID:          b.OwnerID,
-		Title:            b.Title,
-		OriginalFilename: b.OriginalFilename,
-		PrimaryCategory:  string(domain.NormalizeBookPrimaryCategory(b.PrimaryCategory)),
-		Tags:             tags,
-		Format:           string(domain.NormalizeBookFormat(b.Format)),
-		Language:         string(domain.NormalizeBookLanguage(b.Language)),
-		StorageKey:       b.StorageKey,
-		Status:           string(b.Status),
-		ErrorMessage:     b.ErrorMessage,
-		SizeBytes:        b.SizeBytes,
-		CreatedAt:        b.CreatedAt,
-		UpdatedAt:        b.UpdatedAt,
-		DeletedAt:        normalizeTimePtr(b.DeletedAt),
-		CleanupStatus:    strings.TrimSpace(b.CleanupStatus),
-		CleanupError:     strings.TrimSpace(b.CleanupError),
-		CleanupAttempts:  b.CleanupAttempts,
-		CleanupUpdatedAt: normalizeTimePtr(b.CleanupUpdatedAt),
+		ID:                   b.ID,
+		OwnerID:              b.OwnerID,
+		Title:                b.Title,
+		OriginalFilename:     b.OriginalFilename,
+		PrimaryCategory:      string(domain.NormalizeBookPrimaryCategory(b.PrimaryCategory)),
+		Tags:                 tags,
+		Format:               string(domain.NormalizeBookFormat(b.Format)),
+		Language:             string(domain.NormalizeBookLanguage(b.Language)),
+		StorageKey:           b.StorageKey,
+		Status:               string(b.Status),
+		ErrorMessage:         b.ErrorMessage,
+		SizeBytes:            b.SizeBytes,
+		CreatedAt:            b.CreatedAt,
+		UpdatedAt:            b.UpdatedAt,
+		DeletedAt:            normalizeTimePtr(b.DeletedAt),
+		CleanupStatus:        strings.TrimSpace(b.CleanupStatus),
+		CleanupError:         strings.TrimSpace(b.CleanupError),
+		CleanupAttempts:      b.CleanupAttempts,
+		CleanupUpdatedAt:     normalizeTimePtr(b.CleanupUpdatedAt),
+		ProcessingGeneration: b.ProcessingGeneration,
 	}
 }
 
 func bookFromModel(m BookModel) domain.Book {
 	tags, _ := unmarshalStringSliceJSON(m.Tags)
 	return domain.Book{
-		ID:               m.ID,
-		OwnerID:          m.OwnerID,
-		Title:            m.Title,
-		OriginalFilename: m.OriginalFilename,
-		PrimaryCategory:  string(domain.NormalizeBookPrimaryCategory(m.PrimaryCategory)),
-		Tags:             tags,
-		Format:           string(domain.NormalizeBookFormat(m.Format)),
-		Language:         string(domain.NormalizeBookLanguage(m.Language)),
-		StorageKey:       m.StorageKey,
-		Status:           domain.BookStatus(m.Status),
-		ErrorMessage:     m.ErrorMessage,
-		SizeBytes:        m.SizeBytes,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
-		DeletedAt:        m.DeletedAt,
-		CleanupStatus:    m.CleanupStatus,
-		CleanupError:     m.CleanupError,
-		CleanupAttempts:  m.CleanupAttempts,
-		CleanupUpdatedAt: m.CleanupUpdatedAt,
+		ID:                   m.ID,
+		OwnerID:              m.OwnerID,
+		Title:                m.Title,
+		OriginalFilename:     m.OriginalFilename,
+		PrimaryCategory:      string(domain.NormalizeBookPrimaryCategory(m.PrimaryCategory)),
+		Tags:                 tags,
+		Format:               string(domain.NormalizeBookFormat(m.Format)),
+		Language:             string(domain.NormalizeBookLanguage(m.Language)),
+		StorageKey:           m.StorageKey,
+		Status:               domain.BookStatus(m.Status),
+		ErrorMessage:         m.ErrorMessage,
+		SizeBytes:            m.SizeBytes,
+		CreatedAt:            m.CreatedAt,
+		UpdatedAt:            m.UpdatedAt,
+		DeletedAt:            m.DeletedAt,
+		CleanupStatus:        m.CleanupStatus,
+		CleanupError:         m.CleanupError,
+		CleanupAttempts:      m.CleanupAttempts,
+		CleanupUpdatedAt:     m.CleanupUpdatedAt,
+		ProcessingGeneration: m.ProcessingGeneration,
 	}
 }
 
@@ -1630,6 +1840,7 @@ func idempotencyRecordToModel(record domain.IdempotencyRecord) IdempotencyRecord
 		ResourceID:     strings.TrimSpace(record.ResourceID),
 		StatusCode:     record.StatusCode,
 		State:          strings.TrimSpace(string(record.State)),
+		ResponseJSON:   datatypes.JSON(record.ResponseJSON),
 		CreatedAt:      record.CreatedAt.UTC(),
 		UpdatedAt:      record.UpdatedAt.UTC(),
 	}
@@ -1646,8 +1857,43 @@ func idempotencyRecordFromModel(model IdempotencyRecordModel) domain.Idempotency
 		ResourceID:     model.ResourceID,
 		StatusCode:     model.StatusCode,
 		State:          domain.IdempotencyState(model.State),
+		ResponseJSON:   append([]byte(nil), model.ResponseJSON...),
 		CreatedAt:      model.CreatedAt,
 		UpdatedAt:      model.UpdatedAt,
+	}
+}
+
+func outboxMessageToModel(msg domain.OutboxMessage) OutboxMessageModel {
+	return OutboxMessageModel{
+		ID:           strings.TrimSpace(msg.ID),
+		Topic:        strings.TrimSpace(msg.Topic),
+		ResourceType: strings.TrimSpace(msg.ResourceType),
+		ResourceID:   strings.TrimSpace(msg.ResourceID),
+		PayloadJSON:  datatypes.JSON(append([]byte(nil), msg.PayloadJSON...)),
+		Attempts:     msg.Attempts,
+		LastError:    strings.TrimSpace(msg.LastError),
+		AvailableAt:  msg.AvailableAt.UTC(),
+		LockedAt:     normalizeTimePtr(msg.LockedAt),
+		DispatchedAt: normalizeTimePtr(msg.DispatchedAt),
+		CreatedAt:    msg.CreatedAt.UTC(),
+		UpdatedAt:    msg.UpdatedAt.UTC(),
+	}
+}
+
+func outboxMessageFromModel(model OutboxMessageModel) domain.OutboxMessage {
+	return domain.OutboxMessage{
+		ID:           model.ID,
+		Topic:        model.Topic,
+		ResourceType: model.ResourceType,
+		ResourceID:   model.ResourceID,
+		PayloadJSON:  append([]byte(nil), model.PayloadJSON...),
+		Attempts:     model.Attempts,
+		LastError:    model.LastError,
+		AvailableAt:  model.AvailableAt,
+		LockedAt:     model.LockedAt,
+		DispatchedAt: model.DispatchedAt,
+		CreatedAt:    model.CreatedAt,
+		UpdatedAt:    model.UpdatedAt,
 	}
 }
 

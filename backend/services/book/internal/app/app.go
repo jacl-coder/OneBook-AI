@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/http"
 	"path"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,8 @@ type App struct {
 	maxUploadBytes    int64
 	allowedExtensions map[string]struct{}
 }
+
+var ErrStaleBookGeneration = errors.New("stale book generation")
 
 // New constructs the application with database-backed metadata storage and filesystem file storage.
 func New(cfg Config) (*App, error) {
@@ -98,6 +101,7 @@ func New(cfg Config) (*App, error) {
 		allowedExtensions: normalizeExtensions(cfg.AllowedExtensions),
 	}
 	app.startCleanupWorker()
+	app.startOutboxWorker()
 	return app, nil
 }
 
@@ -131,19 +135,20 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 	id := util.NewID()
 	storageKey := buildStorageKey(id, filename)
 	book := domain.Book{
-		ID:               id,
-		OwnerID:          owner.ID,
-		Title:            titleFromName(filename),
-		OriginalFilename: filepath.Base(filename),
-		PrimaryCategory:  normalizedCategory,
-		Tags:             normalizedTags,
-		Format:           detectBookFormat(filename),
-		Language:         string(domain.BookLanguageUnknown),
-		StorageKey:       storageKey,
-		Status:           domain.StatusQueued,
-		SizeBytes:        size,
-		CreatedAt:        time.Now().UTC(),
-		UpdatedAt:        time.Now().UTC(),
+		ID:                   id,
+		OwnerID:              owner.ID,
+		Title:                titleFromName(filename),
+		OriginalFilename:     filepath.Base(filename),
+		PrimaryCategory:      normalizedCategory,
+		Tags:                 normalizedTags,
+		Format:               detectBookFormat(filename),
+		Language:             string(domain.BookLanguageUnknown),
+		StorageKey:           storageKey,
+		Status:               domain.StatusQueued,
+		SizeBytes:            size,
+		CreatedAt:            time.Now().UTC(),
+		UpdatedAt:            time.Now().UTC(),
+		ProcessingGeneration: 1,
 	}
 	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
 	if contentType == "" {
@@ -153,17 +158,18 @@ func (a *App) UploadBook(owner domain.User, filename string, r io.Reader, size i
 		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
 		return domain.Book{}, false, fmt.Errorf("save file: %w", err)
 	}
-	if err := a.store.SaveBook(book); err != nil {
+	completedRecord := record
+	completedRecord.State = domain.IdempotencyStateCompleted
+	completedRecord.ResourceType = "book"
+	completedRecord.ResourceID = book.ID
+	completedRecord.StatusCode = http.StatusCreated
+	completedRecord.UpdatedAt = time.Now().UTC()
+	if err := a.store.SaveBookAndOutbox(book, &completedRecord, buildIngestOutboxMessage(book.ID, book.ProcessingGeneration)); err != nil {
 		_ = a.objects.Delete(context.Background(), storageKey)
 		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
 		return domain.Book{}, false, fmt.Errorf("save book: %w", err)
 	}
-	if err := a.ingest.Enqueue(id); err != nil {
-		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
-		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
-		return domain.Book{}, false, fmt.Errorf("enqueue ingest: %w", err)
-	}
-	_ = a.completeBookIdempotency(record, "book", book.ID, 201)
+	a.dispatchPendingIngestOutbox(context.Background(), 1)
 	return book, false, nil
 }
 
@@ -241,7 +247,17 @@ func (a *App) GetDownloadURL(id string) (string, string, error) {
 }
 
 // UpdateStatus updates book status and error message.
-func (a *App) UpdateStatus(id string, status domain.BookStatus, errMsg string) error {
+func (a *App) UpdateStatus(id string, status domain.BookStatus, errMsg string, generation int64) error {
+	if generation > 0 {
+		applied, err := a.store.SetStatusIfGeneration(id, generation, status, errMsg)
+		if err != nil {
+			return err
+		}
+		if !applied {
+			return ErrStaleBookGeneration
+		}
+		return nil
+	}
 	return a.store.SetStatus(id, status, errMsg)
 }
 
@@ -323,15 +339,24 @@ func (a *App) ReprocessBook(actor domain.User, id, idempotencyKey string) (domai
 		_ = a.completeBookIdempotency(record, "book", current.ID, 200)
 		return current, false, nil
 	}
-	if err := a.store.SetStatus(id, domain.StatusQueued, ""); err != nil {
+	current.Status = domain.StatusQueued
+	current.ErrorMessage = ""
+	current.UpdatedAt = time.Now().UTC()
+	current.ProcessingGeneration++
+	if current.ProcessingGeneration <= 0 {
+		current.ProcessingGeneration = 1
+	}
+	completedRecord := record
+	completedRecord.State = domain.IdempotencyStateCompleted
+	completedRecord.ResourceType = "book"
+	completedRecord.ResourceID = current.ID
+	completedRecord.StatusCode = http.StatusOK
+	completedRecord.UpdatedAt = time.Now().UTC()
+	if err := a.store.SaveBookAndOutbox(current, &completedRecord, buildIngestOutboxMessage(current.ID, current.ProcessingGeneration)); err != nil {
 		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
 		return domain.Book{}, false, err
 	}
-	if err := a.ingest.Enqueue(id); err != nil {
-		_ = a.store.SetStatus(id, domain.StatusFailed, err.Error())
-		_ = a.markBookIdempotencyFailed(record, httpStatusFromErr(err))
-		return domain.Book{}, false, fmt.Errorf("enqueue ingest: %w", err)
-	}
+	a.dispatchPendingIngestOutbox(context.Background(), 1)
 	updated, ok, err := a.store.GetBook(id)
 	if err != nil {
 		return domain.Book{}, false, err
@@ -339,7 +364,6 @@ func (a *App) ReprocessBook(actor domain.User, id, idempotencyKey string) (domai
 	if !ok {
 		return domain.Book{}, false, fmt.Errorf("book not found")
 	}
-	_ = a.completeBookIdempotency(record, "book", updated.ID, 200)
 	return updated, false, nil
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +42,11 @@ type Job struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+type ingestJobPayload struct {
+	BookID     string `json:"bookId"`
+	Generation int64  `json:"generation,omitempty"`
+}
+
 // Config holds runtime configuration.
 type Config struct {
 	DatabaseURL               string
@@ -48,11 +55,10 @@ type Config struct {
 	IndexerURL                string
 	InternalJWTPrivateKeyPath string
 	InternalJWTKeyID          string
-	KafkaBrokers              []string
-	KafkaClientID             string
-	KafkaTopicPrefix          string
-	QueueTopic                string
-	QueueGroup                string
+	RabbitMQURL               string
+	QueueExchange             string
+	QueueName                 string
+	QueueConsumer             string
 	QueueConcurrency          int
 	QueueMaxRetries           int
 	QueueRetryDelaySeconds    int
@@ -171,11 +177,11 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	q, err := queue.NewKafkaJobQueue(queue.KafkaQueueConfig{
-		Brokers:      cfg.KafkaBrokers,
-		ClientID:     defaultKafkaClientID(cfg.KafkaClientID, "ingest"),
-		Topic:        defaultQueueTopic(cfg.QueueTopic, cfg.KafkaTopicPrefix, "ingest"),
-		Group:        defaultQueueGroup(cfg.QueueGroup),
+	q, err := queue.NewRabbitMQJobQueue(queue.RabbitMQQueueConfig{
+		URL:          cfg.RabbitMQURL,
+		Exchange:     defaultQueueExchange(cfg.QueueExchange),
+		QueueName:    defaultQueueName(cfg.QueueName),
+		ConsumerName: defaultQueueConsumer(cfg.QueueConsumer),
 		JobType:      "ingest",
 		ResourceType: "book",
 		MaxRetries:   cfg.QueueMaxRetries,
@@ -209,13 +215,20 @@ func New(cfg Config) (*App, error) {
 }
 
 // Enqueue registers a new ingest job and begins processing.
-func (a *App) Enqueue(bookID string) (Job, error) {
+func (a *App) Enqueue(bookID string, generation int64) (Job, error) {
 	if strings.TrimSpace(bookID) == "" {
 		return Job{}, fmt.Errorf("bookId required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	status, err := a.queue.Enqueue(ctx, bookID)
+	payload, err := json.Marshal(ingestJobPayload{
+		BookID:     strings.TrimSpace(bookID),
+		Generation: generation,
+	})
+	if err != nil {
+		return Job{}, err
+	}
+	status, err := a.queue.EnqueueWithPayload(ctx, bookID, payload)
 	if err != nil {
 		return Job{}, err
 	}
@@ -241,44 +254,48 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusProcessing, ""); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+	generation := generationFromPayload(job.Payload)
+	if err := a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusProcessing, ""); err != nil {
+		if errors.Is(err, ErrStaleBookGeneration) {
+			return nil
+		}
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	fileInfo, err := a.bookClient.FetchFile(ctx, job.BookID)
 	if err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	tempPath, err := a.downloadFile(ctx, fileInfo.URL, fileInfo.Filename)
 	if err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	defer os.Remove(tempPath)
 
 	blocks, err := a.parseAndChunk(fileInfo.Filename, tempPath)
 	if err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if len(blocks) == 0 {
 		err := fmt.Errorf("no content extracted")
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	domainChunks := a.buildRetrievalChunks(job.BookID, blocks)
 	if len(domainChunks) == 0 {
 		err := fmt.Errorf("no retrieval chunks generated")
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.store.ReplaceChunks(job.BookID, domainChunks); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
-	if err := a.indexClient.Enqueue(ctx, job.BookID); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+	if err := a.indexClient.Enqueue(ctx, job.BookID, generation); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	return nil
@@ -300,34 +317,36 @@ func jobFromStatus(status queue.JobStatus) Job {
 	}
 }
 
-func defaultQueueName(name string) string {
-	return defaultQueueTopic(name, "", "ingest")
+func generationFromPayload(payload json.RawMessage) int64 {
+	if len(payload) == 0 {
+		return 0
+	}
+	var body ingestJobPayload
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return 0
+	}
+	return body.Generation
 }
 
-func defaultQueueGroup(name string) string {
+func defaultQueueName(name string) string {
+	if strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	return "onebook.ingest.jobs"
+}
+
+func defaultQueueConsumer(name string) string {
 	if strings.TrimSpace(name) == "" {
 		return "onebook-ingest-service"
 	}
 	return name
 }
 
-func defaultQueueTopic(topic string, prefix string, domain string) string {
-	if strings.TrimSpace(topic) != "" {
-		return strings.TrimSpace(topic)
+func defaultQueueExchange(name string) string {
+	if strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
 	}
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		prefix = "onebook"
-	}
-	return prefix + "." + domain + ".jobs"
-}
-
-func defaultKafkaClientID(clientID string, service string) string {
-	clientID = strings.TrimSpace(clientID)
-	if clientID != "" {
-		return clientID
-	}
-	return "onebook-" + service
+	return "onebook.jobs"
 }
 
 func (a *App) downloadFile(ctx context.Context, url string, filename string) (string, error) {

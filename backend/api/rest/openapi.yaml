@@ -448,6 +448,12 @@ paths:
       summary: Update current user email
       security:
         - sessionCookieAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -457,6 +463,11 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
           content:
             application/json:
               schema:

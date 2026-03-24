@@ -229,19 +229,26 @@ func buildGenerator(cfg Config) (ai.TextGenerator, error) {
 }
 
 // AskQuestion performs an evidence-grounded question/answer flow bound to a book and conversation.
-func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string, includeDebug bool) (domain.Answer, error) {
+func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string, idempotencyKey string, includeDebug bool) (domain.Answer, bool, error) {
 	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
-		return domain.Answer{}, fmt.Errorf("forbidden")
+		return domain.Answer{}, false, fmt.Errorf("forbidden")
 	}
 	if book.Status != domain.StatusReady {
-		return domain.Answer{}, ErrBookNotReady
+		return domain.Answer{}, false, ErrBookNotReady
 	}
 	if strings.TrimSpace(question) == "" {
-		return domain.Answer{}, fmt.Errorf("question required")
+		return domain.Answer{}, false, fmt.Errorf("question required")
 	}
-	conversation, err := a.ensureConversation(user, book, question, conversationID)
+	record, replayedAnswer, replayed, err := a.beginChatIdempotency(user.ID, book.ID, conversationID, question, idempotencyKey)
 	if err != nil {
-		return domain.Answer{}, err
+		return domain.Answer{}, false, err
+	}
+	if replayed {
+		return replayedAnswer, true, nil
+	}
+	conversation, createConversation, err := a.ensureConversation(user, book, question, conversationID)
+	if err != nil {
+		return domain.Answer{}, false, err
 	}
 	ctx := context.Background()
 	var history []domain.Message
@@ -252,7 +259,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		}
 		history, err = a.store.ListConversationMessages(conversation.ID, historyLimit)
 		if err != nil {
-			return domain.Answer{}, fmt.Errorf("load history: %w", err)
+			return domain.Answer{}, false, fmt.Errorf("load history: %w", err)
 		}
 	}
 	historyText := buildHistory(history)
@@ -277,7 +284,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	default:
 		retrieved, routeDebug, routeErr := a.retrieveEvidence(ctx, book, question)
 		if routeErr != nil {
-			return domain.Answer{}, routeErr
+			return domain.Answer{}, false, routeErr
 		}
 		debugInfo = routeDebug
 		contextText, routeCitations := buildContext(retrieved)
@@ -324,7 +331,7 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		answer.RetrievalDebug = debugInfo
 	}
 	userMessageTime := time.Now().UTC()
-	if err := a.store.AppendConversationMessage(conversation.ID, domain.Message{
+	userMessage := domain.Message{
 		ID:             util.NewID(),
 		ConversationID: conversation.ID,
 		UserID:         user.ID,
@@ -332,11 +339,9 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		Role:           "user",
 		Content:        question,
 		CreatedAt:      userMessageTime,
-	}); err != nil {
-		return domain.Answer{}, fmt.Errorf("save user message: %w", err)
 	}
 	assistantMessageTime := time.Now().UTC()
-	if err := a.store.AppendConversationMessage(conversation.ID, domain.Message{
+	assistantMessage := domain.Message{
 		ID:             util.NewID(),
 		ConversationID: conversation.ID,
 		UserID:         user.ID,
@@ -346,15 +351,27 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 		Sources:        answer.Citations,
 		Abstained:      abstained,
 		CreatedAt:      assistantMessageTime,
-	}); err != nil {
-		return domain.Answer{}, fmt.Errorf("save answer message: %w", err)
-	}
-	if err := a.store.UpdateConversation(conversation.ID, "", assistantMessageTime); err != nil {
-		return domain.Answer{}, fmt.Errorf("update conversation: %w", err)
 	}
 	answer.Conversation.LastMessageAt = &assistantMessageTime
 	answer.Conversation.UpdatedAt = assistantMessageTime
-	return answer, nil
+	var completedRecord *domain.IdempotencyRecord
+	if strings.TrimSpace(record.ID) != "" {
+		record.State = domain.IdempotencyStateCompleted
+		record.ResourceType = "conversation"
+		record.ResourceID = conversation.ID
+		record.StatusCode = 200
+		record.UpdatedAt = time.Now().UTC()
+		responseJSON, err := marshalAnswerResponse(answer)
+		if err != nil {
+			return domain.Answer{}, false, fmt.Errorf("marshal chat response: %w", err)
+		}
+		record.ResponseJSON = responseJSON
+		completedRecord = &record
+	}
+	if err := a.store.SaveConversationExchange(conversation, createConversation, userMessage, assistantMessage, completedRecord); err != nil {
+		return domain.Answer{}, false, fmt.Errorf("save conversation exchange: %w", err)
+	}
+	return answer, false, nil
 }
 
 func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question string, historyText string, history []domain.Message) (string, []domain.Source, bool) {
@@ -444,20 +461,20 @@ func (a *App) ListConversationMessages(user domain.User, conversationID string, 
 	return items, nil
 }
 
-func (a *App) ensureConversation(user domain.User, book domain.Book, question string, conversationID string) (domain.Conversation, error) {
+func (a *App) ensureConversation(user domain.User, book domain.Book, question string, conversationID string) (domain.Conversation, bool, error) {
 	conversationID = strings.TrimSpace(conversationID)
 	if conversationID != "" {
 		conversation, ok, err := a.store.GetConversation(conversationID)
 		if err != nil {
-			return domain.Conversation{}, fmt.Errorf("load conversation: %w", err)
+			return domain.Conversation{}, false, fmt.Errorf("load conversation: %w", err)
 		}
 		if !ok {
-			return domain.Conversation{}, ErrConversationNotFound
+			return domain.Conversation{}, false, ErrConversationNotFound
 		}
 		if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
-			return domain.Conversation{}, ErrConversationForbidden
+			return domain.Conversation{}, false, ErrConversationForbidden
 		}
-		return conversation, nil
+		return conversation, false, nil
 	}
 
 	now := time.Now().UTC()
@@ -470,10 +487,7 @@ func (a *App) ensureConversation(user domain.User, book domain.Book, question st
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	if err := a.store.CreateConversation(conversation); err != nil {
-		return domain.Conversation{}, fmt.Errorf("create conversation: %w", err)
-	}
-	return conversation, nil
+	return conversation, true, nil
 }
 
 func generateConversationTitle(question string) string {

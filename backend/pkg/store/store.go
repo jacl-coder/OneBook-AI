@@ -72,13 +72,16 @@ type Store interface {
 
 	// books
 	SaveBook(domain.Book) error
+	SaveBookAndOutbox(domain.Book, *domain.IdempotencyRecord, *domain.OutboxMessage) error
 	SetStatus(id string, status domain.BookStatus, errMsg string) error
+	SetStatusIfGeneration(id string, generation int64, status domain.BookStatus, errMsg string) (bool, error)
 	ListBooks() ([]domain.Book, error)
 	ListBooksWithOptions(BookListOptions) ([]domain.Book, int, error)
 	ListBooksByOwner(ownerID string) ([]domain.Book, error)
 	GetBook(id string) (domain.Book, bool, error)
 	GetBookIncludingDeleted(id string) (domain.Book, bool, error)
 	ListBooksPendingCleanup(limit int) ([]domain.Book, error)
+	ClaimBooksPendingCleanup(limit int) ([]domain.Book, error)
 	MarkBookDeleted(id string, cleanupStatus domain.BookCleanupStatus) error
 	UpdateBookCleanup(id string, status domain.BookCleanupStatus, errMsg string, incrementAttempts bool) error
 	DeleteBook(id string) error
@@ -92,6 +95,7 @@ type Store interface {
 	UpdateConversation(id string, title string, lastMessageAt time.Time) error
 	AppendConversationMessage(conversationID string, msg domain.Message) error
 	ListConversationMessages(conversationID string, limit int) ([]domain.Message, error)
+	SaveConversationExchange(domain.Conversation, bool, domain.Message, domain.Message, *domain.IdempotencyRecord) error
 
 	// chunks
 	ReplaceChunks(bookID string, chunks []domain.Chunk) error
@@ -117,6 +121,9 @@ type Store interface {
 	GetAdminEvalOverview(windowStart time.Time) (domain.AdminEvalOverview, error)
 	SaveIdempotencyRecord(domain.IdempotencyRecord) error
 	GetIdempotencyRecord(scope, actorID, key string) (domain.IdempotencyRecord, bool, error)
+	ClaimOutboxMessages(topic string, limit int, lease time.Duration) ([]domain.OutboxMessage, error)
+	MarkOutboxDispatched(id string) error
+	ReleaseOutboxMessage(id, errMsg string, availableAt time.Time) error
 }
 
 // SessionStore persists session tokens.

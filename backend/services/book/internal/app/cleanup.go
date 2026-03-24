@@ -20,7 +20,7 @@ func (a *App) startCleanupWorker() {
 }
 
 func (a *App) cleanupDeletedBooks(ctx context.Context) {
-	books, err := a.store.ListBooksPendingCleanup(10)
+	books, err := a.store.ClaimBooksPendingCleanup(10)
 	if err != nil {
 		return
 	}
@@ -30,9 +30,6 @@ func (a *App) cleanupDeletedBooks(ctx context.Context) {
 }
 
 func (a *App) cleanupDeletedBook(ctx context.Context, book domain.Book) {
-	if err := a.store.UpdateBookCleanup(book.ID, domain.BookCleanupStatusRunning, "", true); err != nil {
-		return
-	}
 	if a.search != nil {
 		if err := a.search.DeleteByBook(ctx, book.ID); err != nil {
 			_ = a.store.UpdateBookCleanup(book.ID, domain.BookCleanupStatusFailed, err.Error(), false)

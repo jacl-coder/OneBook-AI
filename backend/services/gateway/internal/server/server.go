@@ -822,9 +822,10 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		writeErrorWithCode(w, r, http.StatusBadRequest, "book ID is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
-	ans, err := s.chat.AskQuestion(
+	ans, replayed, err := s.chat.AskQuestion(
 		util.RequestIDFromRequest(r),
 		ctx.AccessToken,
+		util.IdempotencyKeyFromRequest(r),
 		req.ConversationID,
 		req.BookID,
 		req.Question,
@@ -833,6 +834,9 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 	if err != nil {
 		writeChatError(w, r, err)
 		return
+	}
+	if replayed {
+		w.Header().Set("Idempotency-Replayed", "true")
 	}
 	writeJSON(w, http.StatusOK, ans)
 }

@@ -25,8 +25,10 @@
 ## 一致性与可靠性（细节）
 
 ### 队列重试一致性
-- Ingest/Indexer 使用 Kafka `at-least-once` 交付，任务状态/去重/尝试次数统一落 Postgres。
-- 失败时先更新任务状态，再按重试策略重投主 topic；超过最大重试次数后写入 DLQ。
+- Ingest/Indexer 使用 RabbitMQ 手动 ack + 持久化消息实现 `at-least-once` 交付，任务状态/去重/尝试次数统一落 Postgres。
+- 主 queue 配置了 RabbitMQ 原生 dead-letter exchange（DLX）；消息解码失败或超过最大重试次数时，通过 `nack/reject` 自动进入 DLQ。
+- Book 服务通过 Postgres outbox 异步投递 ingest job，避免“书已写库但消息未入队”的双写不一致。
+- Book 状态更新按 `processing_generation` 比对，旧 generation 的迟到写入会被忽略，避免 `ready -> failed` 状态回退。
 
 ### 检索与索引一致性
 - 检索架构固定为：

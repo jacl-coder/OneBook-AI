@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"onebookai/internal/servicetoken"
 	"onebookai/pkg/domain"
 )
+
+var ErrStaleBookGeneration = errors.New("stale book generation")
 
 type bookClient struct {
 	baseURL    string
@@ -52,10 +55,11 @@ func (c *bookClient) FetchFile(ctx context.Context, bookID string) (bookFile, er
 	return resp, nil
 }
 
-func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, status domain.BookStatus, errMsg string) error {
-	payload, err := json.Marshal(map[string]string{
+func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, generation int64, status domain.BookStatus, errMsg string) error {
+	payload, err := json.Marshal(map[string]any{
 		"status":       string(status),
 		"errorMessage": errMsg,
+		"generation":   generation,
 	})
 	if err != nil {
 		return err
@@ -79,6 +83,15 @@ func (c *bookClient) do(req *http.Request, out any) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		var errResp struct {
+			Code string `json:"code"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		if strings.EqualFold(strings.TrimSpace(errResp.Code), "BOOK_STALE_GENERATION") {
+			return ErrStaleBookGeneration
+		}
+	}
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`
@@ -113,8 +126,8 @@ func newIndexerClient(baseURL string, signer *servicetoken.Signer) *indexerClien
 	}
 }
 
-func (c *indexerClient) Enqueue(ctx context.Context, bookID string) error {
-	payload, err := json.Marshal(map[string]string{"bookId": bookID})
+func (c *indexerClient) Enqueue(ctx context.Context, bookID string, generation int64) error {
+	payload, err := json.Marshal(map[string]any{"bookId": bookID, "generation": generation})
 	if err != nil {
 		return err
 	}

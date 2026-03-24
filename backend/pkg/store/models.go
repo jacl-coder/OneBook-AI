@@ -18,25 +18,26 @@ type UserModel struct {
 }
 
 type BookModel struct {
-	ID               string         `gorm:"primaryKey"`
-	OwnerID          string         `gorm:"not null;index"`
-	Title            string         `gorm:"not null"`
-	OriginalFilename string         `gorm:"not null"`
-	PrimaryCategory  string         `gorm:"not null;default:'other';index"`
-	Tags             datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
-	Format           string         `gorm:"not null;default:'';index"`
-	Language         string         `gorm:"not null;default:'unknown';index"`
-	StorageKey       string
-	Status           string `gorm:"not null"`
-	ErrorMessage     string
-	SizeBytes        int64      `gorm:"not null"`
-	CreatedAt        time.Time  `gorm:"not null"`
-	UpdatedAt        time.Time  `gorm:"not null"`
-	DeletedAt        *time.Time `gorm:"index"`
-	CleanupStatus    string     `gorm:"index"`
-	CleanupError     string
-	CleanupAttempts  int        `gorm:"not null;default:0"`
-	CleanupUpdatedAt *time.Time `gorm:"index"`
+	ID                   string         `gorm:"primaryKey"`
+	OwnerID              string         `gorm:"not null;index"`
+	Title                string         `gorm:"not null"`
+	OriginalFilename     string         `gorm:"not null"`
+	PrimaryCategory      string         `gorm:"not null;default:'other';index"`
+	Tags                 datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	Format               string         `gorm:"not null;default:'';index"`
+	Language             string         `gorm:"not null;default:'unknown';index"`
+	StorageKey           string
+	Status               string `gorm:"not null"`
+	ErrorMessage         string
+	SizeBytes            int64      `gorm:"not null"`
+	CreatedAt            time.Time  `gorm:"not null"`
+	UpdatedAt            time.Time  `gorm:"not null"`
+	DeletedAt            *time.Time `gorm:"index"`
+	CleanupStatus        string     `gorm:"index"`
+	CleanupError         string
+	CleanupAttempts      int        `gorm:"not null;default:0"`
+	CleanupUpdatedAt     *time.Time `gorm:"index"`
+	ProcessingGeneration int64      `gorm:"not null;default:0"`
 }
 
 type ConversationModel struct {
@@ -142,8 +143,24 @@ type IdempotencyRecordModel struct {
 	RequestHash    string `gorm:"not null"`
 	ResourceType   string
 	ResourceID     string
-	StatusCode     int       `gorm:"not null"`
-	State          string    `gorm:"not null;index"`
-	CreatedAt      time.Time `gorm:"not null;index"`
-	UpdatedAt      time.Time `gorm:"not null;index"`
+	StatusCode     int            `gorm:"not null"`
+	State          string         `gorm:"not null;index"`
+	ResponseJSON   datatypes.JSON `gorm:"type:jsonb"`
+	CreatedAt      time.Time      `gorm:"not null;index"`
+	UpdatedAt      time.Time      `gorm:"not null;index"`
+}
+
+type OutboxMessageModel struct {
+	ID           string         `gorm:"primaryKey"`
+	Topic        string         `gorm:"not null;index"`
+	ResourceType string         `gorm:"not null;index"`
+	ResourceID   string         `gorm:"not null;index"`
+	PayloadJSON  datatypes.JSON `gorm:"type:jsonb;not null"`
+	Attempts     int            `gorm:"not null;default:0"`
+	LastError    string
+	AvailableAt  time.Time  `gorm:"not null;index"`
+	LockedAt     *time.Time `gorm:"index"`
+	DispatchedAt *time.Time `gorm:"index"`
+	CreatedAt    time.Time  `gorm:"not null;index"`
+	UpdatedAt    time.Time  `gorm:"not null;index"`
 }

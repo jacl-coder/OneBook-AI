@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type BookStatus string
 
@@ -34,25 +37,26 @@ const (
 )
 
 type Book struct {
-	ID               string     `json:"id"`
-	OwnerID          string     `json:"ownerId"`
-	Title            string     `json:"title"`
-	OriginalFilename string     `json:"originalFilename"`
-	PrimaryCategory  string     `json:"primaryCategory"`
-	Tags             []string   `json:"tags"`
-	Format           string     `json:"format"`
-	Language         string     `json:"language"`
-	StorageKey       string     `json:"-"`
-	Status           BookStatus `json:"status"`
-	ErrorMessage     string     `json:"errorMessage,omitempty"`
-	SizeBytes        int64      `json:"sizeBytes"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	DeletedAt        *time.Time `json:"deletedAt,omitempty"`
-	CleanupStatus    string     `json:"cleanupStatus,omitempty"`
-	CleanupError     string     `json:"cleanupError,omitempty"`
-	CleanupAttempts  int        `json:"cleanupAttempts,omitempty"`
-	CleanupUpdatedAt *time.Time `json:"cleanupUpdatedAt,omitempty"`
+	ID                   string     `json:"id"`
+	OwnerID              string     `json:"ownerId"`
+	Title                string     `json:"title"`
+	OriginalFilename     string     `json:"originalFilename"`
+	PrimaryCategory      string     `json:"primaryCategory"`
+	Tags                 []string   `json:"tags"`
+	Format               string     `json:"format"`
+	Language             string     `json:"language"`
+	StorageKey           string     `json:"-"`
+	Status               BookStatus `json:"status"`
+	ErrorMessage         string     `json:"errorMessage,omitempty"`
+	SizeBytes            int64      `json:"sizeBytes"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+	DeletedAt            *time.Time `json:"deletedAt,omitempty"`
+	CleanupStatus        string     `json:"cleanupStatus,omitempty"`
+	CleanupError         string     `json:"cleanupError,omitempty"`
+	CleanupAttempts      int        `json:"cleanupAttempts,omitempty"`
+	CleanupUpdatedAt     *time.Time `json:"cleanupUpdatedAt,omitempty"`
+	ProcessingGeneration int64      `json:"-"`
 }
 
 type User struct {
@@ -322,8 +326,24 @@ type IdempotencyRecord struct {
 	ResourceID     string           `json:"resourceId,omitempty"`
 	StatusCode     int              `json:"statusCode"`
 	State          IdempotencyState `json:"state"`
+	ResponseJSON   json.RawMessage  `json:"-"`
 	CreatedAt      time.Time        `json:"createdAt"`
 	UpdatedAt      time.Time        `json:"updatedAt"`
+}
+
+type OutboxMessage struct {
+	ID           string          `json:"id"`
+	Topic        string          `json:"topic"`
+	ResourceType string          `json:"resourceType"`
+	ResourceID   string          `json:"resourceId"`
+	PayloadJSON  json.RawMessage `json:"payloadJson"`
+	Attempts     int             `json:"attempts"`
+	LastError    string          `json:"lastError,omitempty"`
+	AvailableAt  time.Time       `json:"availableAt"`
+	LockedAt     *time.Time      `json:"lockedAt,omitempty"`
+	DispatchedAt *time.Time      `json:"dispatchedAt,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 type AdminEvalOverview struct {

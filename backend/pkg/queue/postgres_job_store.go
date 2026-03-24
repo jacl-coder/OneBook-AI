@@ -163,6 +163,7 @@ func jobFromModel(model AsyncJobModel) JobStatus {
 		Status:       model.Status,
 		ErrorMessage: model.ErrorMessage,
 		Attempts:     model.Attempts,
+		Payload:      append([]byte(nil), model.PayloadJSON...),
 		CreatedAt:    model.CreatedAt,
 		UpdatedAt:    model.UpdatedAt,
 	}

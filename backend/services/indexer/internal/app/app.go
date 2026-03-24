@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -36,6 +38,11 @@ type Job struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+type indexJobPayload struct {
+	BookID     string `json:"bookId"`
+	Generation int64  `json:"generation,omitempty"`
+}
+
 // Config holds runtime configuration.
 type Config struct {
 	DatabaseURL               string
@@ -43,11 +50,10 @@ type Config struct {
 	BookServiceURL            string
 	InternalJWTPrivateKeyPath string
 	InternalJWTKeyID          string
-	KafkaBrokers              []string
-	KafkaClientID             string
-	KafkaTopicPrefix          string
-	QueueTopic                string
-	QueueGroup                string
+	RabbitMQURL               string
+	QueueExchange             string
+	QueueName                 string
+	QueueConsumer             string
 	QueueConcurrency          int
 	QueueMaxRetries           int
 	QueueRetryDelaySeconds    int
@@ -127,11 +133,11 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	q, err := queue.NewKafkaJobQueue(queue.KafkaQueueConfig{
-		Brokers:      cfg.KafkaBrokers,
-		ClientID:     defaultKafkaClientID(cfg.KafkaClientID, "indexer"),
-		Topic:        defaultQueueTopic(cfg.QueueTopic, cfg.KafkaTopicPrefix, "indexer"),
-		Group:        defaultQueueGroup(cfg.QueueGroup),
+	q, err := queue.NewRabbitMQJobQueue(queue.RabbitMQQueueConfig{
+		URL:          cfg.RabbitMQURL,
+		Exchange:     defaultQueueExchange(cfg.QueueExchange),
+		QueueName:    defaultQueueName(cfg.QueueName),
+		ConsumerName: defaultQueueConsumer(cfg.QueueConsumer),
 		JobType:      "indexer",
 		ResourceType: "book",
 		MaxRetries:   cfg.QueueMaxRetries,
@@ -165,13 +171,20 @@ func New(cfg Config) (*App, error) {
 }
 
 // Enqueue registers a new index job and begins processing.
-func (a *App) Enqueue(bookID string) (Job, error) {
+func (a *App) Enqueue(bookID string, generation int64) (Job, error) {
 	if strings.TrimSpace(bookID) == "" {
 		return Job{}, fmt.Errorf("bookId required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	status, err := a.queue.Enqueue(ctx, bookID)
+	payload, err := json.Marshal(indexJobPayload{
+		BookID:     strings.TrimSpace(bookID),
+		Generation: generation,
+	})
+	if err != nil {
+		return Job{}, err
+	}
+	status, err := a.queue.EnqueueWithPayload(ctx, bookID, payload)
 	if err != nil {
 		return Job{}, err
 	}
@@ -197,62 +210,66 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusProcessing, ""); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+	generation := generationFromPayload(job.Payload)
+	if err := a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusProcessing, ""); err != nil {
+		if errors.Is(err, ErrStaleBookGeneration) {
+			return nil
+		}
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	chunks, err := a.store.ListChunksByBook(job.BookID)
 	if err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if len(chunks) == 0 {
 		err := fmt.Errorf("no chunks to index")
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	semanticChunks, lexicalChunks := splitChunksByTier(chunks)
 	if len(semanticChunks) == 0 {
 		err := fmt.Errorf("no semantic chunks to index")
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.search.EnsureCollection(ctx); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.lexical.EnsureIndex(ctx); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.search.DeleteByBook(ctx, job.BookID); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.lexical.DeleteByBook(ctx, job.BookID); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.embedAndStore(ctx, semanticChunks); err != nil {
 		_ = a.store.UpdateChunkIndexStatus(chunkIDs(semanticChunks), domain.ChunkIndexBackendQdrant, domain.ChunkIndexSyncStatusFailed, cfgEmbeddingModel(a.embedder), a.embedDim, err.Error())
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.store.UpdateChunkIndexStatus(chunkIDs(semanticChunks), domain.ChunkIndexBackendQdrant, domain.ChunkIndexSyncStatusSynced, cfgEmbeddingModel(a.embedder), a.embedDim, ""); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.indexLexical(ctx, lexicalChunks); err != nil {
 		_ = a.store.UpdateChunkIndexStatus(chunkIDs(lexicalChunks), domain.ChunkIndexBackendOpenSearch, domain.ChunkIndexSyncStatusFailed, cfgEmbeddingModel(a.embedder), a.embedDim, err.Error())
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	if err := a.store.UpdateChunkIndexStatus(chunkIDs(lexicalChunks), domain.ChunkIndexBackendOpenSearch, domain.ChunkIndexSyncStatusSynced, cfgEmbeddingModel(a.embedder), a.embedDim, ""); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
-	if err := a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusReady, ""); err != nil {
-		_ = a.bookClient.UpdateStatus(ctx, job.BookID, domain.StatusFailed, err.Error())
+	if err := a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusReady, ""); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
 	return nil
@@ -270,6 +287,17 @@ func splitChunksByTier(chunks []domain.Chunk) ([]domain.Chunk, []domain.Chunk) {
 		}
 	}
 	return semantic, lexical
+}
+
+func generationFromPayload(payload json.RawMessage) int64 {
+	if len(payload) == 0 {
+		return 0
+	}
+	var body indexJobPayload
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return 0
+	}
+	return body.Generation
 }
 
 func (a *App) startWorkers(concurrency int) {
@@ -438,31 +466,22 @@ func jobFromStatus(status queue.JobStatus) Job {
 }
 
 func defaultQueueName(name string) string {
-	return defaultQueueTopic(name, "", "indexer")
+	if strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	return "onebook.indexer.jobs"
 }
 
-func defaultQueueGroup(name string) string {
+func defaultQueueConsumer(name string) string {
 	if strings.TrimSpace(name) == "" {
 		return "onebook-indexer-service"
 	}
 	return name
 }
 
-func defaultQueueTopic(topic string, prefix string, domain string) string {
-	if strings.TrimSpace(topic) != "" {
-		return strings.TrimSpace(topic)
+func defaultQueueExchange(name string) string {
+	if strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
 	}
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		prefix = "onebook"
-	}
-	return prefix + "." + domain + ".jobs"
-}
-
-func defaultKafkaClientID(clientID string, service string) string {
-	clientID = strings.TrimSpace(clientID)
-	if clientID != "" {
-		return clientID
-	}
-	return "onebook-" + service
+	return "onebook.jobs"
 }

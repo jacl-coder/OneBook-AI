@@ -101,7 +101,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	job, err := s.app.Enqueue(req.BookID)
+	job, err := s.app.Enqueue(req.BookID, req.Generation)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -132,7 +132,8 @@ func methodNotAllowed(w http.ResponseWriter) {
 }
 
 type ingestRequest struct {
-	BookID string `json:"bookId"`
+	BookID     string `json:"bookId"`
+	Generation int64  `json:"generation,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

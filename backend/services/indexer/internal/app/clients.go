@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"onebookai/internal/servicetoken"
 	"onebookai/pkg/domain"
 )
+
+var ErrStaleBookGeneration = errors.New("stale book generation")
 
 type bookClient struct {
 	baseURL    string
@@ -27,10 +30,11 @@ func newBookClient(baseURL string, signer *servicetoken.Signer) *bookClient {
 	}
 }
 
-func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, status domain.BookStatus, errMsg string) error {
-	payload, err := json.Marshal(map[string]string{
+func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, generation int64, status domain.BookStatus, errMsg string) error {
+	payload, err := json.Marshal(map[string]any{
 		"status":       string(status),
 		"errorMessage": errMsg,
+		"generation":   generation,
 	})
 	if err != nil {
 		return err
@@ -50,6 +54,15 @@ func (c *bookClient) UpdateStatus(ctx context.Context, bookID string, status dom
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		var errResp struct {
+			Code string `json:"code"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		if strings.EqualFold(strings.TrimSpace(errResp.Code), "BOOK_STALE_GENERATION") {
+			return ErrStaleBookGeneration
+		}
+	}
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`

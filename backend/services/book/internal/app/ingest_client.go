@@ -12,7 +12,7 @@ import (
 )
 
 type ingestClient interface {
-	Enqueue(bookID string) error
+	Enqueue(bookID string, generation int64) error
 }
 
 type httpIngestClient struct {
@@ -32,8 +32,8 @@ func newIngestClient(baseURL string, signer *servicetoken.Signer) (*httpIngestCl
 	}, nil
 }
 
-func (c *httpIngestClient) Enqueue(bookID string) error {
-	payload, err := json.Marshal(map[string]string{"bookId": bookID})
+func (c *httpIngestClient) Enqueue(bookID string, generation int64) error {
+	payload, err := json.Marshal(map[string]any{"bookId": bookID, "generation": generation})
 	if err != nil {
 		return err
 	}

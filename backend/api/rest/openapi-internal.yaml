@@ -126,6 +126,12 @@ paths:
         rejected instead of querying the book index.
       security:
         - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -135,6 +141,11 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                enum: ["true"]
           content:
             application/json:
               schema:
@@ -245,7 +256,7 @@ paths:
       tags: [ingest]
       summary: Create ingest job
       description: |
-        Enqueue an ingest job into the Redis-backed queue. Retries and
+        Enqueue an ingest job into the RabbitMQ-backed queue. Retries and
         failure handling are performed by the worker.
       security:
         - internalToken: []
@@ -701,6 +712,9 @@ components:
           enum: [queued, processing, ready, failed]
         errorMessage:
           type: string
+        generation:
+          type: integer
+          format: int64
       required: [status]
     StatusResponse:
       type: object
@@ -746,6 +760,8 @@ components:
           type: string
         question:
           type: string
+        debug:
+          type: boolean
       required: [bookId, question]
     ConversationSummary:
       type: object
@@ -817,12 +833,18 @@ components:
       properties:
         bookId:
           type: string
+        generation:
+          type: integer
+          format: int64
       required: [bookId]
     IndexRequest:
       type: object
       properties:
         bookId:
           type: string
+        generation:
+          type: integer
+          format: int64
       required: [bookId]
     IngestJob:
       type: object

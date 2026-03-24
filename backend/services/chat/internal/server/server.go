@@ -105,6 +105,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeError(w, http.StatusBadRequest, "question is required")
 		return
 	}
+	idempotencyKey := util.IdempotencyKeyFromRequest(r)
 
 	// For existing conversations, resolve bookId from the stored conversation
 	// so the frontend doesn't need to track which book a conversation belongs to.
@@ -139,7 +140,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeBookError(w, err)
 		return
 	}
-	ans, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID, req.Debug && user.Role == domain.RoleAdmin)
+	ans, replayed, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID, idempotencyKey, req.Debug && user.Role == domain.RoleAdmin)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, app.ErrBookNotReady) {
@@ -153,6 +154,9 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		}
 		writeError(w, status, err.Error())
 		return
+	}
+	if replayed {
+		w.Header().Set("Idempotency-Replayed", "true")
 	}
 	writeJSON(w, http.StatusOK, ans)
 }

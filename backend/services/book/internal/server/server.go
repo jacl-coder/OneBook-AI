@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -427,7 +428,15 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request, id
 		writeError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
-	if err := s.app.UpdateStatus(id, status, req.ErrorMessage); err != nil {
+	if err := s.app.UpdateStatus(id, status, req.ErrorMessage, req.Generation); err != nil {
+		if errors.Is(err, app.ErrStaleBookGeneration) {
+			writeJSON(w, http.StatusConflict, errorResponse{
+				Error:     err.Error(),
+				Code:      "BOOK_STALE_GENERATION",
+				RequestID: strings.TrimSpace(w.Header().Get("X-Request-Id")),
+			})
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -603,6 +612,7 @@ func errorCodeForBook(status int, msg string) string {
 type statusRequest struct {
 	Status       string `json:"status"`
 	ErrorMessage string `json:"errorMessage"`
+	Generation   int64  `json:"generation,omitempty"`
 }
 
 type updateBookRequest struct {

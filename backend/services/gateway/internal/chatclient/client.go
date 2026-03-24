@@ -37,25 +37,45 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) AskQuestion(requestID, token, conversationID, bookID, question string, debug bool) (domain.Answer, error) {
+func (c *Client) AskQuestion(requestID, token, idempotencyKey, conversationID, bookID, question string, debug bool) (domain.Answer, bool, error) {
 	payload := chatRequest{ConversationID: strings.TrimSpace(conversationID), BookID: bookID, Question: question, Debug: debug}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return domain.Answer{}, err
+		return domain.Answer{}, false, err
 	}
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/chats", bytes.NewReader(data))
 	if err != nil {
-		return domain.Answer{}, err
+		return domain.Answer{}, false, err
 	}
 	addAuthHeader(req, token)
 	addRequestIDHeader(req, requestID)
 	req.Header.Set("Content-Type", "application/json")
-
-	var ans domain.Answer
-	if err := c.do(req, &ans); err != nil {
-		return domain.Answer{}, err
+	if strings.TrimSpace(idempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey))
 	}
-	return ans, nil
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return domain.Answer{}, false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+			Code  string `json:"code"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		msg := strings.TrimSpace(errResp.Error)
+		if msg == "" {
+			msg = resp.Status
+		}
+		return domain.Answer{}, false, &APIError{Status: resp.StatusCode, Message: msg, Code: strings.TrimSpace(errResp.Code)}
+	}
+	var ans domain.Answer
+	if err := json.NewDecoder(resp.Body).Decode(&ans); err != nil {
+		return domain.Answer{}, false, err
+	}
+	replayed := strings.EqualFold(strings.TrimSpace(resp.Header.Get("Idempotency-Replayed")), "true")
+	return ans, replayed, nil
 }
 
 func (c *Client) ListConversations(requestID, token string, limit int) ([]domain.Conversation, error) {

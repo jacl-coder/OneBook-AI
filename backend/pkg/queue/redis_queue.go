@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -21,13 +22,14 @@ const (
 )
 
 type JobStatus struct {
-	ID           string    `json:"id"`
-	BookID       string    `json:"bookId"`
-	Status       string    `json:"status"`
-	ErrorMessage string    `json:"errorMessage,omitempty"`
-	Attempts     int       `json:"attempts"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID           string          `json:"id"`
+	BookID       string          `json:"bookId"`
+	Status       string          `json:"status"`
+	ErrorMessage string          `json:"errorMessage,omitempty"`
+	Attempts     int             `json:"attempts"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 type RedisJobQueue struct {
@@ -129,6 +131,10 @@ func NewRedisJobQueue(cfg RedisQueueConfig) (*RedisJobQueue, error) {
 }
 
 func (q *RedisJobQueue) Enqueue(ctx context.Context, bookID string) (JobStatus, error) {
+	return q.EnqueueWithPayload(ctx, bookID, nil)
+}
+
+func (q *RedisJobQueue) EnqueueWithPayload(ctx context.Context, bookID string, payload json.RawMessage) (JobStatus, error) {
 	bookID = strings.TrimSpace(bookID)
 	if bookID == "" {
 		return JobStatus{}, errors.New("bookId required")
@@ -141,6 +147,7 @@ func (q *RedisJobQueue) Enqueue(ctx context.Context, bookID string) (JobStatus, 
 		BookID:    bookID,
 		Status:    StatusQueued,
 		Attempts:  0,
+		Payload:   append([]byte(nil), payload...),
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}

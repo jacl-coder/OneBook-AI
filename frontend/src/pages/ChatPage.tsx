@@ -32,6 +32,7 @@ import {
 } from '@/pages/chat/shared'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
 import { http } from '@/shared/lib/http/client'
+import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import { MessageMarkdown } from '@/shared/lib/ui/MessageMarkdown'
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
@@ -596,10 +597,15 @@ export function ChatPage() {
       resetAuthComposer()
     }
     try {
+      const idempotencyKey = createIdempotencyKey()
       const { data } = await http.post<ChatAnswer>('/api/chats', {
         conversationId: requestConversationID || undefined,
         bookId: selectedBookId,
         question: trimmedPrompt,
+      }, {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
       })
       if (requestId !== pendingAskIdRef.current) return
       const resolvedConversationID = data.conversation.id?.trim() || requestConversationID || threadId
