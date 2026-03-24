@@ -1,6 +1,6 @@
 port: "8085"
 # Secrets loaded from environment variables:
-# DATABASE_URL, KAFKA_BROKERS, KAFKA_CLIENT_ID, KAFKA_TOPIC_PREFIX
+# DATABASE_URL, RABBITMQ_URL
 # ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH / ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH / ONEBOOK_INTERNAL_JWT_KEY_ID / ONEBOOK_INTERNAL_JWT_VERIFY_PUBLIC_KEYS
 # OLLAMA_HOST, OLLAMA_EMBEDDING_MODEL,
 # ONEBOOK_EMBEDDING_DIM (canonical embedding dim for qdrant/chat/indexer)
@@ -8,12 +8,10 @@ port: "8085"
 logLevel: "info"
 logsDir: "backend/logs"
 bookServiceURL: "http://localhost:8082"
-kafkaBrokers:
-  - "localhost:9092"
-kafkaClientId: "onebook-indexer"
-kafkaTopicPrefix: "onebook"
-queueTopic: "onebook.indexer.jobs"
-queueGroup: "onebook-indexer-service"
+rabbitmqURL: "amqp://onebook:onebook@localhost:5672/"
+queueExchange: "onebook.jobs"
+queueName: "onebook.indexer.jobs"
+queueConsumer: "onebook-indexer-service"
 queueConcurrency: 2
 queueMaxRetries: 3
 queueRetryDelaySeconds: 2

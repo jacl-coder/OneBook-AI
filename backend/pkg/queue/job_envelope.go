@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// JobEnvelope is the payload written to Kafka.
+// JobEnvelope is the canonical payload written to the async queue.
 type JobEnvelope struct {
 	JobID        string          `json:"jobId"`
 	JobType      string          `json:"jobType"`

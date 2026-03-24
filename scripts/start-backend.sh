@@ -9,11 +9,16 @@ INGEST_PORT="${INGEST_PORT:-8084}"
 INDEXER_PORT="${INDEXER_PORT:-8085}"
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"
 STARTUP_TIMEOUT_SECONDS="${STARTUP_TIMEOUT_SECONDS:-120}"
-KAFKA_BROKERS="${KAFKA_BROKERS:-localhost:9092}"
-KAFKA_TOPIC_PREFIX="${KAFKA_TOPIC_PREFIX:-onebook}"
-INGEST_QUEUE_TOPIC="${INGEST_QUEUE_TOPIC:-${KAFKA_TOPIC_PREFIX}.ingest.jobs}"
-INDEXER_QUEUE_TOPIC="${INDEXER_QUEUE_TOPIC:-${KAFKA_TOPIC_PREFIX}.indexer.jobs}"
-export KAFKA_BROKERS KAFKA_TOPIC_PREFIX INGEST_QUEUE_TOPIC INDEXER_QUEUE_TOPIC
+RABBITMQ_URL="${RABBITMQ_URL:-amqp://onebook:onebook@localhost:5672/}"
+INGEST_QUEUE_EXCHANGE="${INGEST_QUEUE_EXCHANGE:-onebook.jobs}"
+INGEST_QUEUE_NAME="${INGEST_QUEUE_NAME:-onebook.ingest.jobs}"
+INGEST_QUEUE_CONSUMER="${INGEST_QUEUE_CONSUMER:-onebook-ingest-service}"
+INDEXER_QUEUE_EXCHANGE="${INDEXER_QUEUE_EXCHANGE:-onebook.jobs}"
+INDEXER_QUEUE_NAME="${INDEXER_QUEUE_NAME:-onebook.indexer.jobs}"
+INDEXER_QUEUE_CONSUMER="${INDEXER_QUEUE_CONSUMER:-onebook-indexer-service}"
+export RABBITMQ_URL \
+  INGEST_QUEUE_EXCHANGE INGEST_QUEUE_NAME INGEST_QUEUE_CONSUMER \
+  INDEXER_QUEUE_EXCHANGE INDEXER_QUEUE_NAME INDEXER_QUEUE_CONSUMER
 
 PIDS=()
 
@@ -41,7 +46,7 @@ clear_onebook_env() {
       DATABASE_URL|REDIS_ADDR|REDIS_PASSWORD|LOGS_DIR|ONEBOOK_EMBEDDING_DIM|EMBEDDING_BATCH_SIZE|EMBEDDING_CONCURRENCY|QDRANT_URL|QDRANT_API_KEY|QDRANT_COLLECTION|OPENSEARCH_URL|OPENSEARCH_INDEX|OPENSEARCH_USERNAME|OPENSEARCH_PASSWORD|MINIO_ENDPOINT|MINIO_ACCESS_KEY|MINIO_SECRET_KEY|MINIO_BUCKET|MINIO_USE_SSL|OLLAMA_HOST|OLLAMA_EMBEDDING_MODEL|GENERATION_PROVIDER|GENERATION_API_KEY|GENERATION_MODEL|GENERATION_BASE_URL|RERANKER_URL|RERANKER_MODEL|RERANKER_MODEL_REVISION|RERANKER_CACHE_DIR|RERANKER_SENTENCE_TRANSFORMERS_HOME|RERANKER_MAX_DOCS|RERANKER_MAX_CHARS|RERANKER_BATCH_SIZE|CORS_ALLOWED_ORIGINS|CORS_ALLOW_CREDENTIALS|AUTH_EVAL_STORAGE_DIR|AUTH_EVAL_WORKER_POLL_INTERVAL)
         unset "$var"
         ;;
-      JWT_*|ONEBOOK_*|KAFKA_*|CHAT_*|INGEST_*|INDEXER_*|AUTH_*)
+      JWT_*|ONEBOOK_*|RABBITMQ_*|CHAT_*|INGEST_*|INDEXER_*|AUTH_*)
         unset "$var"
         ;;
     esac
@@ -69,17 +74,6 @@ wait_for_service() {
     fi
   done
   echo "${name} is ready."
-}
-
-bootstrap_kafka_topic() {
-  local topic="$1"
-  docker exec onebook-kafka /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server localhost:9092 \
-    --create \
-    --if-not-exists \
-    --topic "$topic" \
-    --partitions 1 \
-    --replication-factor 1 >/dev/null
 }
 
 clear_onebook_env
@@ -152,7 +146,7 @@ for p in "$GATEWAY_PORT" "$AUTH_PORT" "$BOOK_PORT" "$CHAT_PORT" "$INGEST_PORT" "
   fuser -k "${p}/tcp" >/dev/null 2>&1 || true
 done
 
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis kafka minio minio-init swagger-ui ocr-service reranker-service qdrant opensearch
+docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis rabbitmq minio minio-init swagger-ui ocr-service reranker-service qdrant opensearch
 
 echo "Waiting for MinIO to be ready..."
 until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do
@@ -166,18 +160,11 @@ until docker exec onebook-postgres pg_isready -U onebook >/dev/null 2>&1; do
 done
 echo "Postgres is ready."
 
-echo "Waiting for Kafka to be ready..."
-until docker exec onebook-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do
+echo "Waiting for RabbitMQ to be ready..."
+until docker exec onebook-rabbitmq rabbitmq-diagnostics -q ping >/dev/null 2>&1; do
   sleep 2
 done
-echo "Kafka is ready."
-
-echo "Bootstrapping Kafka topics..."
-bootstrap_kafka_topic "$INGEST_QUEUE_TOPIC"
-bootstrap_kafka_topic "${INGEST_QUEUE_TOPIC%.jobs}.dlq"
-bootstrap_kafka_topic "$INDEXER_QUEUE_TOPIC"
-bootstrap_kafka_topic "${INDEXER_QUEUE_TOPIC%.jobs}.dlq"
-echo "Kafka topics are ready."
+echo "RabbitMQ is ready."
 
 echo "Waiting for OCR service to be ready..."
 until curl -sf http://localhost:8087/healthz >/dev/null 2>&1; do

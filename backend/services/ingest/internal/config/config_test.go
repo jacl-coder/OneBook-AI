@@ -27,7 +27,7 @@ indexerURL: "http://localhost:8085"
 internalJwtPrivateKeyPath: "secrets/internal-jwt/private.pem"
 internalJwtPublicKeyPath: "secrets/internal-jwt/public.pem"
 internalJwtKeyId: "internal-active"
-kafkaBrokers: ["localhost:9092"]
+rabbitmqURL: "amqp://onebook:onebook@localhost:5672/"
 chunkSize: 800
 chunkOverlap: 120
 `
@@ -76,7 +76,7 @@ func TestValidateConfigRejectsInvalidChunkSettings(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		KafkaBrokers:              []string{"localhost:9092"},
+		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",
 		ChunkSize:                 100,
 		ChunkOverlap:              100,
 	}
@@ -93,7 +93,7 @@ func TestValidateConfigRejectsMissingOCRCommand(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		KafkaBrokers:              []string{"localhost:9092"},
+		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",
 		ChunkSize:                 800,
 		ChunkOverlap:              120,
 		OCREnabled:                true,
@@ -112,7 +112,7 @@ func TestValidateConfigRejectsInvalidPDFThresholds(t *testing.T) {
 		IndexerURL:                "http://localhost:8085",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
-		KafkaBrokers:              []string{"localhost:9092"},
+		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",
 		ChunkSize:                 800,
 		ChunkOverlap:              120,
 		PDFMinPageScore:           1.5,

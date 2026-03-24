@@ -12,38 +12,37 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                        string   `yaml:"port"`
-	LogLevel                    string   `yaml:"logLevel"`
-	LogsDir                     string   `yaml:"logsDir"`
-	DatabaseURL                 string   `yaml:"databaseURL"`
-	BookServiceURL              string   `yaml:"bookServiceURL"`
-	IndexerURL                  string   `yaml:"indexerURL"`
-	InternalJWTPrivateKeyPath   string   `yaml:"internalJwtPrivateKeyPath"`
-	InternalJWTPublicKeyPath    string   `yaml:"internalJwtPublicKeyPath"`
-	InternalJWTVerifyPublicKeys string   `yaml:"internalJwtVerifyPublicKeys"`
-	InternalJWTKeyID            string   `yaml:"internalJwtKeyId"`
-	KafkaBrokers                []string `yaml:"kafkaBrokers"`
-	KafkaClientID               string   `yaml:"kafkaClientId"`
-	KafkaTopicPrefix            string   `yaml:"kafkaTopicPrefix"`
-	QueueTopic                  string   `yaml:"queueTopic"`
-	QueueGroup                  string   `yaml:"queueGroup"`
-	QueueConcurrency            int      `yaml:"queueConcurrency"`
-	QueueMaxRetries             int      `yaml:"queueMaxRetries"`
-	QueueRetryDelaySeconds      int      `yaml:"queueRetryDelaySeconds"`
-	ChunkSize                   int      `yaml:"chunkSize"`
-	ChunkOverlap                int      `yaml:"chunkOverlap"`
-	LexicalChunkSize            int      `yaml:"lexicalChunkSize"`
-	LexicalChunkOverlap         int      `yaml:"lexicalChunkOverlap"`
-	SemanticChunkSize           int      `yaml:"semanticChunkSize"`
-	SemanticChunkOverlap        int      `yaml:"semanticChunkOverlap"`
-	OCREnabled                  bool     `yaml:"ocrEnabled"`
-	OCRCommand                  string   `yaml:"ocrCommand"`
-	OCRDevice                   string   `yaml:"ocrDevice"`
-	OCRTimeoutSeconds           int      `yaml:"ocrTimeoutSeconds"`
-	OCRServiceURL               string   `yaml:"ocrServiceURL"`
-	PDFMinPageRunes             int      `yaml:"pdfMinPageRunes"`
-	PDFMinPageScore             float64  `yaml:"pdfMinPageScore"`
-	PDFOCRMinScoreDelta         float64  `yaml:"pdfOcrMinScoreDelta"`
+	Port                        string  `yaml:"port"`
+	LogLevel                    string  `yaml:"logLevel"`
+	LogsDir                     string  `yaml:"logsDir"`
+	DatabaseURL                 string  `yaml:"databaseURL"`
+	BookServiceURL              string  `yaml:"bookServiceURL"`
+	IndexerURL                  string  `yaml:"indexerURL"`
+	InternalJWTPrivateKeyPath   string  `yaml:"internalJwtPrivateKeyPath"`
+	InternalJWTPublicKeyPath    string  `yaml:"internalJwtPublicKeyPath"`
+	InternalJWTVerifyPublicKeys string  `yaml:"internalJwtVerifyPublicKeys"`
+	InternalJWTKeyID            string  `yaml:"internalJwtKeyId"`
+	RabbitMQURL                 string  `yaml:"rabbitmqURL"`
+	QueueExchange               string  `yaml:"queueExchange"`
+	QueueName                   string  `yaml:"queueName"`
+	QueueConsumer               string  `yaml:"queueConsumer"`
+	QueueConcurrency            int     `yaml:"queueConcurrency"`
+	QueueMaxRetries             int     `yaml:"queueMaxRetries"`
+	QueueRetryDelaySeconds      int     `yaml:"queueRetryDelaySeconds"`
+	ChunkSize                   int     `yaml:"chunkSize"`
+	ChunkOverlap                int     `yaml:"chunkOverlap"`
+	LexicalChunkSize            int     `yaml:"lexicalChunkSize"`
+	LexicalChunkOverlap         int     `yaml:"lexicalChunkOverlap"`
+	SemanticChunkSize           int     `yaml:"semanticChunkSize"`
+	SemanticChunkOverlap        int     `yaml:"semanticChunkOverlap"`
+	OCREnabled                  bool    `yaml:"ocrEnabled"`
+	OCRCommand                  string  `yaml:"ocrCommand"`
+	OCRDevice                   string  `yaml:"ocrDevice"`
+	OCRTimeoutSeconds           int     `yaml:"ocrTimeoutSeconds"`
+	OCRServiceURL               string  `yaml:"ocrServiceURL"`
+	PDFMinPageRunes             int     `yaml:"pdfMinPageRunes"`
+	PDFMinPageScore             float64 `yaml:"pdfMinPageScore"`
+	PDFOCRMinScoreDelta         float64 `yaml:"pdfOcrMinScoreDelta"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -78,20 +77,17 @@ func Load(path string) (FileConfig, error) {
 	if v := os.Getenv("ONEBOOK_INTERNAL_JWT_KEY_ID"); v != "" {
 		cfg.InternalJWTKeyID = v
 	}
-	if v := os.Getenv("KAFKA_BROKERS"); v != "" {
-		cfg.KafkaBrokers = splitCSV(v)
+	if v := os.Getenv("RABBITMQ_URL"); v != "" {
+		cfg.RabbitMQURL = v
 	}
-	if v := os.Getenv("KAFKA_CLIENT_ID"); v != "" {
-		cfg.KafkaClientID = v
+	if v := os.Getenv("INGEST_QUEUE_EXCHANGE"); v != "" {
+		cfg.QueueExchange = v
 	}
-	if v := os.Getenv("KAFKA_TOPIC_PREFIX"); v != "" {
-		cfg.KafkaTopicPrefix = v
+	if v := os.Getenv("INGEST_QUEUE_NAME"); v != "" {
+		cfg.QueueName = v
 	}
-	if v := os.Getenv("INGEST_QUEUE_TOPIC"); v != "" {
-		cfg.QueueTopic = v
-	}
-	if v := os.Getenv("INGEST_QUEUE_GROUP"); v != "" {
-		cfg.QueueGroup = v
+	if v := os.Getenv("INGEST_QUEUE_CONSUMER"); v != "" {
+		cfg.QueueConsumer = v
 	}
 	if v := os.Getenv("INGEST_QUEUE_CONCURRENCY"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -194,8 +190,8 @@ func validateConfig(cfg FileConfig) error {
 	if strings.TrimSpace(cfg.InternalJWTPrivateKeyPath) == "" || strings.TrimSpace(cfg.InternalJWTPublicKeyPath) == "" {
 		return errors.New("config: internal service auth requires ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH + ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH")
 	}
-	if len(cfg.KafkaBrokers) == 0 {
-		return errors.New("config: kafkaBrokers is required (set in config.yaml or KAFKA_BROKERS)")
+	if strings.TrimSpace(cfg.RabbitMQURL) == "" {
+		return errors.New("config: rabbitmqURL is required (set in config.yaml or RABBITMQ_URL)")
 	}
 	if cfg.ChunkSize <= 0 {
 		return errors.New("config: chunkSize must be > 0 (set in config.yaml or INGEST_CHUNK_SIZE)")

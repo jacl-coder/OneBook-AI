@@ -174,7 +174,7 @@ CORS_ALLOW_CREDENTIALS=true
 
 ## 7. 一致性与可靠性说明（当前实现）
 - refresh token 并发轮换：Redis 原子 CAS，避免并发双成功。
-- 队列失败重试：Kafka `at-least-once` 投递，任务状态与去重落 Postgres；失败会按重试次数重投，超限进入 DLQ。
+- 队列失败重试：RabbitMQ 持久化消息 + 手动 ack 提供 `at-least-once` 投递，任务状态与去重落 Postgres；失败消息低于重试上限时 `nack requeue=true`，超限或坏消息通过 RabbitMQ 原生 DLX 进入 DLQ。
 - 书籍删除采用“软删标记 + 后台异步清理 + 最终硬删”，正常列表/详情不会再返回软删记录。
 - ingest/indexer 队列按 `job_type + resource_id` 去重，重复重处理不会堆积同书多条进行中任务。
 

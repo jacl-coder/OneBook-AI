@@ -1,8 +1,8 @@
 port: "8084"
 # Secrets loaded from environment variables:
-# DATABASE_URL, KAFKA_BROKERS, KAFKA_CLIENT_ID, KAFKA_TOPIC_PREFIX
+# DATABASE_URL, RABBITMQ_URL
 # ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH / ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH / ONEBOOK_INTERNAL_JWT_KEY_ID / ONEBOOK_INTERNAL_JWT_VERIFY_PUBLIC_KEYS
-# INGEST_QUEUE_TOPIC, INGEST_QUEUE_GROUP, INGEST_QUEUE_CONCURRENCY,
+# INGEST_QUEUE_EXCHANGE, INGEST_QUEUE_NAME, INGEST_QUEUE_CONSUMER, INGEST_QUEUE_CONCURRENCY,
 # INGEST_QUEUE_MAX_RETRIES, INGEST_QUEUE_RETRY_DELAY_SECONDS
 # INGEST_CHUNK_SIZE, INGEST_CHUNK_OVERLAP
 # INGEST_OCR_ENABLED, INGEST_OCR_COMMAND, INGEST_OCR_DEVICE, INGEST_OCR_TIMEOUT_SECONDS
@@ -11,8 +11,10 @@ logLevel: "info"
 logsDir: "backend/logs"
 bookServiceURL: "http://localhost:8082"
 indexerURL: "http://localhost:8085"
-kafkaBrokers:
-  - "localhost:9092"
+rabbitmqURL: "amqp://onebook:onebook@localhost:5672/"
+queueExchange: "onebook.jobs"
+queueName: "onebook.ingest.jobs"
+queueConsumer: "onebook-ingest-service"
 chunkSize: 800
 chunkOverlap: 120
 lexicalChunkSize: 160
@@ -27,10 +29,6 @@ ocrTimeoutSeconds: 120
 pdfMinPageRunes: 80
 pdfMinPageScore: 0.45
 pdfOcrMinScoreDelta: 0.08
-kafkaClientId: "onebook-ingest"
-kafkaTopicPrefix: "onebook"
-queueTopic: "onebook.ingest.jobs"
-queueGroup: "onebook-ingest-service"
 queueConcurrency: 2
 queueMaxRetries: 3
 queueRetryDelaySeconds: 2

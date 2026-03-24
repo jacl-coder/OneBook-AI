@@ -14,13 +14,13 @@ func TestDecodeJobEnvelopeRejectsMissingJobID(t *testing.T) {
 	}
 }
 
-func TestKafkaQueueEnqueueDeduplicatesActiveResource(t *testing.T) {
+func TestRabbitMQQueueEnqueueDeduplicatesActiveResource(t *testing.T) {
 	store := newFakeJobStore()
-	queue, err := NewKafkaJobQueue(KafkaQueueConfig{
-		Brokers:      []string{"localhost:9092"},
-		ClientID:     "test-client",
-		Topic:        "onebook.ingest.jobs",
-		Group:        "onebook-ingest-service",
+	queue, err := NewRabbitMQJobQueue(RabbitMQQueueConfig{
+		URL:          "amqp://guest:guest@localhost:5672/",
+		Exchange:     "onebook.jobs",
+		QueueName:    "onebook.ingest.jobs",
+		ConsumerName: "onebook-ingest-service",
 		JobType:      "ingest",
 		ResourceType: "book",
 		MaxRetries:   3,
@@ -28,7 +28,7 @@ func TestKafkaQueueEnqueueDeduplicatesActiveResource(t *testing.T) {
 		Store:        store,
 	})
 	if err != nil {
-		t.Fatalf("NewKafkaJobQueue() error = %v", err)
+		t.Fatalf("NewRabbitMQJobQueue() error = %v", err)
 	}
 	published := 0
 	queue.publishFn = func(context.Context, string, JobEnvelope) error {
@@ -52,7 +52,7 @@ func TestKafkaQueueEnqueueDeduplicatesActiveResource(t *testing.T) {
 	}
 }
 
-func TestKafkaQueueHandleProcessingErrorRequeues(t *testing.T) {
+func TestRabbitMQQueueHandleProcessingErrorRequeues(t *testing.T) {
 	store := newFakeJobStore()
 	job, _, err := store.CreateOrGetActiveJob(context.Background(), "ingest", "book", "book-1", mustJSON(t, map[string]string{"bookId": "book-1"}))
 	if err != nil {
@@ -61,11 +61,11 @@ func TestKafkaQueueHandleProcessingErrorRequeues(t *testing.T) {
 	job.Attempts = 1
 	store.jobs[job.ID] = job
 
-	queue, err := NewKafkaJobQueue(KafkaQueueConfig{
-		Brokers:      []string{"localhost:9092"},
-		ClientID:     "test-client",
-		Topic:        "onebook.ingest.jobs",
-		Group:        "onebook-ingest-service",
+	queue, err := NewRabbitMQJobQueue(RabbitMQQueueConfig{
+		URL:          "amqp://guest:guest@localhost:5672/",
+		Exchange:     "onebook.jobs",
+		QueueName:    "onebook.ingest.jobs",
+		ConsumerName: "onebook-ingest-service",
 		JobType:      "ingest",
 		ResourceType: "book",
 		MaxRetries:   3,
@@ -73,30 +73,14 @@ func TestKafkaQueueHandleProcessingErrorRequeues(t *testing.T) {
 		Store:        store,
 	})
 	if err != nil {
-		t.Fatalf("NewKafkaJobQueue() error = %v", err)
+		t.Fatalf("NewRabbitMQJobQueue() error = %v", err)
 	}
-	var topics []string
-	queue.publishFn = func(_ context.Context, topic string, env JobEnvelope) error {
-		topics = append(topics, topic)
-		if env.Attempt != 1 {
-			t.Fatalf("requeue attempt = %d, want 1", env.Attempt)
-		}
-		return nil
-	}
-
-	err = queue.handleProcessingError(context.Background(), job, JobEnvelope{
-		JobID:        job.ID,
-		JobType:      "ingest",
-		ResourceType: "book",
-		ResourceID:   "book-1",
-		Attempt:      job.Attempts,
-		RequestedAt:  time.Now().UTC(),
-	}, context.DeadlineExceeded)
+	disposition, err := queue.handleProcessingError(context.Background(), job, context.DeadlineExceeded)
 	if err != nil {
 		t.Fatalf("handleProcessingError() error = %v", err)
 	}
-	if len(topics) != 1 || topics[0] != "onebook.ingest.jobs" {
-		t.Fatalf("topics = %#v, want main topic", topics)
+	if disposition != failureRequeue {
+		t.Fatalf("disposition = %v, want %v", disposition, failureRequeue)
 	}
 	updated := store.jobs[job.ID]
 	if updated.Status != StatusQueued {
@@ -104,7 +88,7 @@ func TestKafkaQueueHandleProcessingErrorRequeues(t *testing.T) {
 	}
 }
 
-func TestKafkaQueueHandleProcessingErrorSendsDLQ(t *testing.T) {
+func TestRabbitMQQueueHandleProcessingErrorSendsDLQ(t *testing.T) {
 	store := newFakeJobStore()
 	job, _, err := store.CreateOrGetActiveJob(context.Background(), "indexer", "book", "book-1", mustJSON(t, map[string]string{"bookId": "book-1"}))
 	if err != nil {
@@ -113,11 +97,11 @@ func TestKafkaQueueHandleProcessingErrorSendsDLQ(t *testing.T) {
 	job.Attempts = 3
 	store.jobs[job.ID] = job
 
-	queue, err := NewKafkaJobQueue(KafkaQueueConfig{
-		Brokers:      []string{"localhost:9092"},
-		ClientID:     "test-client",
-		Topic:        "onebook.indexer.jobs",
-		Group:        "onebook-indexer-service",
+	queue, err := NewRabbitMQJobQueue(RabbitMQQueueConfig{
+		URL:          "amqp://guest:guest@localhost:5672/",
+		Exchange:     "onebook.jobs",
+		QueueName:    "onebook.indexer.jobs",
+		ConsumerName: "onebook-indexer-service",
 		JobType:      "indexer",
 		ResourceType: "book",
 		MaxRetries:   3,
@@ -125,30 +109,14 @@ func TestKafkaQueueHandleProcessingErrorSendsDLQ(t *testing.T) {
 		Store:        store,
 	})
 	if err != nil {
-		t.Fatalf("NewKafkaJobQueue() error = %v", err)
+		t.Fatalf("NewRabbitMQJobQueue() error = %v", err)
 	}
-	var topic string
-	queue.publishFn = func(_ context.Context, publishTopic string, env JobEnvelope) error {
-		topic = publishTopic
-		if env.Attempt != 3 {
-			t.Fatalf("dlq attempt = %d, want 3", env.Attempt)
-		}
-		return nil
-	}
-
-	err = queue.handleProcessingError(context.Background(), job, JobEnvelope{
-		JobID:        job.ID,
-		JobType:      "indexer",
-		ResourceType: "book",
-		ResourceID:   "book-1",
-		Attempt:      job.Attempts,
-		RequestedAt:  time.Now().UTC(),
-	}, context.Canceled)
+	disposition, err := queue.handleProcessingError(context.Background(), job, context.Canceled)
 	if err != nil {
 		t.Fatalf("handleProcessingError() error = %v", err)
 	}
-	if topic != "onebook.indexer.dlq" {
-		t.Fatalf("dlq topic = %q, want %q", topic, "onebook.indexer.dlq")
+	if disposition != failureDeadLetter {
+		t.Fatalf("disposition = %v, want %v", disposition, failureDeadLetter)
 	}
 	if updated := store.jobs[job.ID]; updated.Status != StatusFailed {
 		t.Fatalf("job status = %q, want failed", updated.Status)
