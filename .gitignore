@@ -47,12 +47,7 @@ backend/services/gateway/data/
 backend/services/gateway/.cache/
 backend/services/book/data/
 data/eval-center/
-docker/postgres-data/
-docker/qdrant-data/
-docker/opensearch-data/
-docker/minio-data/
-docker/initdb/
-docker/kafka-data/
+docker/
 
 # Frontend build artifacts
 node_modules/
