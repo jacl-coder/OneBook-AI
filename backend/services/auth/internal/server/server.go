@@ -374,7 +374,6 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 		"purpose", purpose,
 		"challenge_id", challengeID,
 		"otp_code", code,
-		"request_id", util.RequestIDFromRequest(r),
 	)
 	s.audit(r, "auth.otp.send", "success")
 	writeJSON(w, http.StatusAccepted, otpSendResponse{
@@ -1155,7 +1154,6 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		"path", r.URL.Path,
 		"method", r.Method,
 		"ip", ip,
-		"request_id", util.RequestIDFromRequest(r),
 	}
 	logAttrs = append(logAttrs, attrs...)
 	if s.alerter != nil && outcome != "success" {

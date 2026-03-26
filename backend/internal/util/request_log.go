@@ -59,7 +59,6 @@ func WithRequestLog(service string, next http.Handler) http.Handler {
 
 		log := LoggerFromContext(r.Context())
 		attrs := []any{
-			"service", service,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"query", r.URL.RawQuery,
@@ -84,7 +83,6 @@ func WithRequestLog(service string, next http.Handler) http.Handler {
 		// Flag slow requests.
 		if duration >= slowRequestThreshold {
 			log.Warn("slow_request",
-				"service", service,
 				"method", r.Method,
 				"path", r.URL.Path,
 				"duration_ms", duration.Milliseconds(),

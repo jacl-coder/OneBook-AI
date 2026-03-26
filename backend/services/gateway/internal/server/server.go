@@ -1685,7 +1685,6 @@ func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 		"path", r.URL.Path,
 		"method", r.Method,
 		"ip", util.ClientIP(r, s.trustedProxies),
-		"request_id", util.RequestIDFromRequest(r),
 	}
 	logAttrs = append(logAttrs, attrs...)
 	log := util.LoggerFromContext(r.Context())
