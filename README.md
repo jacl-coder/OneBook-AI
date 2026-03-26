@@ -479,7 +479,7 @@ cd frontend && npm install && npm run dev
 
 ```bash
 # 启动依赖
-docker compose up -d postgres redis rabbitmq qdrant opensearch minio minio-init swagger-ui ocr-service reranker-service
+docker compose up -d postgres redis rabbitmq qdrant opensearch minio swagger-ui ocr-service reranker-service
 
 # 各服务启动命令（在 backend/ 目录下）
 cd backend/services/auth    && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/auth
