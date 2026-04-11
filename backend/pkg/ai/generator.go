@@ -7,3 +7,9 @@ import "context"
 type TextGenerator interface {
 	GenerateText(ctx context.Context, systemPrompt, userPrompt string) (string, error)
 }
+
+// StreamingTextGenerator emits incremental text chunks while also returning the
+// final aggregated response once generation completes.
+type StreamingTextGenerator interface {
+	GenerateTextStream(ctx context.Context, systemPrompt, userPrompt string, onChunk func(string) error) (string, error)
+}

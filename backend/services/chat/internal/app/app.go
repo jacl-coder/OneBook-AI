@@ -17,38 +17,39 @@ const defaultConversationTitle = "新对话"
 
 // Config holds runtime configuration for the core application.
 type Config struct {
-	DatabaseURL         string
-	Store               store.Store
-	GenerationProvider  string
-	GenerationBaseURL   string
-	GenerationAPIKey    string
-	GenerationModel     string
-	EmbeddingProvider   string
-	EmbeddingBaseURL    string
-	EmbeddingModel      string
-	EmbeddingDim        int
-	TopK                int
-	DenseRecallTopK     int
-	LexicalRecallTopK   int
-	DenseWeight         float64
-	LexicalWeight       float64
-	FusionTopK          int
-	HistoryLimit        int
-	QdrantURL           string
-	QdrantAPIKey        string
-	QdrantCollection    string
-	OpenSearchURL       string
-	OpenSearchIndex     string
-	OpenSearchUsername  string
-	OpenSearchPassword  string
-	RerankTopN          int
-	RetrievalMode       string
-	RerankerURL         string
-	ContextBudget       int
-	MinEvidenceCount    int
-	QueryRewriteEnabled bool
-	MultiQueryEnabled   bool
-	AbstainEnabled      bool
+	DatabaseURL              string
+	Store                    store.Store
+	GenerationProvider       string
+	GenerationBaseURL        string
+	GenerationAPIKey         string
+	GenerationModel          string
+	GenerationEnableThinking *bool
+	EmbeddingProvider        string
+	EmbeddingBaseURL         string
+	EmbeddingModel           string
+	EmbeddingDim             int
+	TopK                     int
+	DenseRecallTopK          int
+	LexicalRecallTopK        int
+	DenseWeight              float64
+	LexicalWeight            float64
+	FusionTopK               int
+	HistoryLimit             int
+	QdrantURL                string
+	QdrantAPIKey             string
+	QdrantCollection         string
+	OpenSearchURL            string
+	OpenSearchIndex          string
+	OpenSearchUsername       string
+	OpenSearchPassword       string
+	RerankTopN               int
+	RetrievalMode            string
+	RerankerURL              string
+	ContextBudget            int
+	MinEvidenceCount         int
+	QueryRewriteEnabled      bool
+	MultiQueryEnabled        bool
+	AbstainEnabled           bool
 }
 
 // App is the core application service wiring together storage and chat logic.
@@ -222,7 +223,12 @@ func buildGenerator(cfg Config) (ai.TextGenerator, error) {
 		if cfg.GenerationBaseURL == "" {
 			return nil, fmt.Errorf("generationBaseURL required for openai-compat provider")
 		}
-		return ai.NewOpenAICompatGenerator(cfg.GenerationBaseURL, cfg.GenerationAPIKey, cfg.GenerationModel), nil
+		return ai.NewOpenAICompatGenerator(
+			cfg.GenerationBaseURL,
+			cfg.GenerationAPIKey,
+			cfg.GenerationModel,
+			ai.OpenAICompatConfig{EnableThinking: cfg.GenerationEnableThinking},
+		), nil
 	default:
 		return nil, fmt.Errorf("unknown generation provider: %s", provider)
 	}
@@ -230,6 +236,37 @@ func buildGenerator(cfg Config) (ai.TextGenerator, error) {
 
 // AskQuestion performs an evidence-grounded question/answer flow bound to a book and conversation.
 func (a *App) AskQuestion(user domain.User, book domain.Book, question string, conversationID string, idempotencyKey string, includeDebug bool) (domain.Answer, bool, error) {
+	return a.askQuestion(context.Background(), user, book, question, conversationID, idempotencyKey, includeDebug, nil)
+}
+
+// AskQuestionStream performs the same question/answer flow as AskQuestion but
+// emits model output incrementally when the configured generator supports it.
+func (a *App) AskQuestionStream(
+	ctx context.Context,
+	user domain.User,
+	book domain.Book,
+	question string,
+	conversationID string,
+	idempotencyKey string,
+	includeDebug bool,
+	onChunk func(string) error,
+) (domain.Answer, bool, error) {
+	return a.askQuestion(ctx, user, book, question, conversationID, idempotencyKey, includeDebug, onChunk)
+}
+
+func (a *App) askQuestion(
+	ctx context.Context,
+	user domain.User,
+	book domain.Book,
+	question string,
+	conversationID string,
+	idempotencyKey string,
+	includeDebug bool,
+	onChunk func(string) error,
+) (domain.Answer, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if book.OwnerID != user.ID && user.Role != domain.RoleAdmin {
 		return domain.Answer{}, false, fmt.Errorf("forbidden")
 	}
@@ -250,7 +287,6 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	if err != nil {
 		return domain.Answer{}, false, err
 	}
-	ctx := context.Background()
 	var history []domain.Message
 	if a.historyLimit > 0 {
 		historyLimit := a.historyLimit * 2
@@ -273,7 +309,10 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 	)
 	switch decision.Route {
 	case queryRouteHistoryOnly:
-		answerText, citations, abstained = a.answerFromHistory(ctx, book, question, historyText, history)
+		answerText, citations, abstained, err = a.answerFromHistoryWithChunk(ctx, book, question, historyText, history, onChunk)
+		if err != nil {
+			return domain.Answer{}, false, err
+		}
 	case queryRouteOutOfScopeReject:
 		if a.abstainEnabled {
 			answerText = outOfScopeAbstainAnswer
@@ -304,9 +343,11 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 			} else {
 				userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n%s", book.Title, question, contextText, promptRequirement)
 			}
-			response, genErr := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+			response, genErr := a.generateAnswerText(ctx, systemPrompt, userPrompt, onChunk)
 			if genErr == nil {
 				answerText = strings.TrimSpace(response)
+			} else if onChunk != nil {
+				return domain.Answer{}, false, genErr
 			}
 			if strings.TrimSpace(answerText) == "" {
 				abstained = true
@@ -375,8 +416,23 @@ func (a *App) AskQuestion(user domain.User, book domain.Book, question string, c
 }
 
 func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question string, historyText string, history []domain.Message) (string, []domain.Source, bool) {
-	if strings.TrimSpace(historyText) == "" {
+	answer, citations, abstained, err := a.answerFromHistoryWithChunk(ctx, book, question, historyText, history, nil)
+	if err != nil {
 		return defaultAbstainAnswer, nil, true
+	}
+	return answer, citations, abstained
+}
+
+func (a *App) answerFromHistoryWithChunk(
+	ctx context.Context,
+	book domain.Book,
+	question string,
+	historyText string,
+	history []domain.Message,
+	onChunk func(string) error,
+) (string, []domain.Source, bool, error) {
+	if strings.TrimSpace(historyText) == "" {
+		return defaultAbstainAnswer, nil, true, nil
 	}
 	requirement := "要求：只基于当前对话历史继续回答，不要引入对话外知识；如果历史不足以支撑回答，就明确说明证据不足。"
 	systemPrompt := "你是一个延续当前会话上下文的读书助手。只使用给定对话历史，不要虚构新的事实。"
@@ -386,17 +442,39 @@ func (a *App) answerFromHistory(ctx context.Context, book domain.Book, question 
 	}
 	userPrompt := fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n%s", book.Title, historyText, question, requirement)
 	answerText := defaultAbstainAnswer
-	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+	response, err := a.generateAnswerText(ctx, systemPrompt, userPrompt, onChunk)
 	if err == nil {
 		answerText = strings.TrimSpace(response)
+	} else if onChunk != nil {
+		return "", nil, false, err
 	}
 	if strings.TrimSpace(answerText) == "" {
-		return defaultAbstainAnswer, nil, true
+		return defaultAbstainAnswer, nil, true, nil
 	}
 	if a.abstainEnabled && (strings.Contains(answerText, "证据不足") || strings.Contains(strings.ToLower(answerText), "insufficient")) {
-		return defaultAbstainAnswer, nil, true
+		return defaultAbstainAnswer, nil, true, nil
 	}
-	return answerText, latestAssistantSources(history), false
+	return answerText, latestAssistantSources(history), false, nil
+}
+
+func (a *App) generateAnswerText(ctx context.Context, systemPrompt string, userPrompt string, onChunk func(string) error) (string, error) {
+	if onChunk != nil {
+		if streamer, ok := a.generator.(ai.StreamingTextGenerator); ok {
+			return streamer.GenerateTextStream(ctx, systemPrompt, userPrompt, onChunk)
+		}
+	}
+
+	response, err := a.generator.GenerateText(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return "", err
+	}
+	response = strings.TrimSpace(response)
+	if onChunk != nil && response != "" {
+		if err := onChunk(response); err != nil {
+			return response, err
+		}
+	}
+	return response, nil
 }
 
 // ListConversations lists recent conversations for current user.

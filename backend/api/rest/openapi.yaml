@@ -794,11 +794,25 @@ paths:
               $ref: "#/components/schemas/ChatRequest"
       responses:
         "200":
-          description: OK
+          description: |
+            OK. When the client sends `Accept: text/event-stream`, the endpoint
+            responds as Server-Sent Events with `chunk`, `final`, and `error`
+            events. `final` carries the same payload as the JSON response.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Answer"
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  value: |
+                    event: chunk
+                    data: {"delta":"第一段回答"}
+
+                    event: final
+                    data: {"conversation":{"id":"conv_123","userId":"user_123","title":"示例问题","createdAt":"2026-04-11T11:00:00Z","updatedAt":"2026-04-11T11:00:02Z"},"question":"示例问题","answer":"第一段回答","citations":[],"abstained":false,"createdAt":"2026-04-11T11:00:02Z"}
         "400":
           description: Invalid input
           content:

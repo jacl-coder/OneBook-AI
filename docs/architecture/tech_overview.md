@@ -5,7 +5,7 @@
 ## 可替换与扩展点
 
 - **Embedding**：Ollama 本地模型，维度可配（`ONEBOOK_EMBEDDING_DIM`）。可替换为任何兼容 HTTP API 的 Embedding 服务。
-- **LLM**：`TextGenerator` 接口抽象，已实现 Gemini、Ollama、OpenAI 兼容三种 provider，通过 `GENERATION_PROVIDER` 切换。
+- **LLM**：`TextGenerator` 接口抽象，已实现 Gemini、Ollama、OpenAI 兼容三种 provider，通过 `GENERATION_PROVIDER` 切换；OpenAI 兼容模式支持通过 `GENERATION_ENABLE_THINKING` 控制上游思考流（适用于 DashScope/Qwen 等返回 `reasoning_content` 的模型）。
 - **Lexical Retrieval**：当前使用 OpenSearch 承载 BM25/倒排索引；接口隔离于 `pkg/retrieval`，可按需替换为兼容搜索引擎。
 - **向量存储**：当前使用 Qdrant 承载 semantic retrieval；接口隔离于 `pkg/retrieval`，可按需迁移。
 - **Reranker**：当前使用独立 Python 服务承载 cross-encoder 重排；Go 侧通过 HTTP 调用，失败自动回退到本地 fallback reranker。

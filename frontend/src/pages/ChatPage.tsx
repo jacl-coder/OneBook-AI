@@ -31,7 +31,8 @@ import {
   updateThreadAndMoveTop,
 } from '@/pages/chat/shared'
 import { ChatSidebar, type SidebarThreadItem } from '@/pages/chat/ChatSidebar'
-import { http } from '@/shared/lib/http/client'
+import { env } from '@/shared/config/env'
+import { http, refreshSession } from '@/shared/lib/http/client'
 import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import { MessageMarkdown } from '@/shared/lib/ui/MessageMarkdown'
 
@@ -221,6 +222,182 @@ function pickNextHeading(current?: string) {
   return source[Math.floor(Math.random() * source.length)]
 }
 
+type ChatRequestPayload = {
+  conversationId?: string
+  bookId: string
+  question: string
+}
+
+type ChatStreamChunkEvent = {
+  delta?: string
+}
+
+type ChatStreamErrorEvent = {
+  error?: string
+  code?: string
+}
+
+class ChatStreamRequestError extends Error {
+  code: string
+
+  constructor(message: string, code = '') {
+    super(message)
+    this.name = 'ChatStreamRequestError'
+    this.code = code
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+}
+
+async function readChatErrorResponse(response: Response): Promise<ChatStreamRequestError> {
+  const fallback = response.status >= 500 ? '请求失败，请稍后重试。' : '请求失败。'
+  const contentType = response.headers.get('Content-Type') ?? ''
+
+  if (contentType.includes('application/json')) {
+    const data = (await response.json().catch(() => null)) as
+      | { error?: string; message?: string; detail?: string; title?: string; code?: string }
+      | null
+    const message =
+      data?.error?.trim() || data?.message?.trim() || data?.detail?.trim() || data?.title?.trim() || fallback
+    return new ChatStreamRequestError(message, data?.code?.trim() ?? '')
+  }
+
+  const text = (await response.text().catch(() => '')).trim()
+  return new ChatStreamRequestError(text || fallback)
+}
+
+function parseSSEMessage(rawEvent: string): { event: string; data: string } | null {
+  const normalized = rawEvent.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
+  let event = 'message'
+  const dataLines: string[] = []
+
+  for (const line of lines) {
+    if (!line) continue
+    if (line.startsWith(':')) continue
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim() || 'message'
+      continue
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart())
+    }
+  }
+
+  if (!dataLines.length) return null
+  return { event, data: dataLines.join('\n') }
+}
+
+async function readChatStream(
+  body: ReadableStream<Uint8Array>,
+  onChunk: (delta: string) => void,
+): Promise<ChatAnswer> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalAnswer: ChatAnswer | null = null
+
+  const handleEvent = (rawEvent: string) => {
+    const parsed = parseSSEMessage(rawEvent)
+    if (!parsed) return
+
+    if (parsed.event === 'chunk') {
+      const payload = JSON.parse(parsed.data) as ChatStreamChunkEvent
+      if (typeof payload.delta === 'string' && payload.delta) {
+        onChunk(payload.delta)
+      }
+      return
+    }
+
+    if (parsed.event === 'final') {
+      finalAnswer = JSON.parse(parsed.data) as ChatAnswer
+      return
+    }
+
+    if (parsed.event === 'error') {
+      const payload = JSON.parse(parsed.data) as ChatStreamErrorEvent
+      throw new ChatStreamRequestError(payload.error?.trim() || '请求失败，请稍后重试。', payload.code?.trim() ?? '')
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+
+    const matchBoundary = () => buffer.match(/\r?\n\r?\n/)
+
+    let boundary = matchBoundary()
+    while (boundary && typeof boundary.index === 'number') {
+      const rawEvent = buffer.slice(0, boundary.index)
+      buffer = buffer.slice(boundary.index + boundary[0].length)
+      handleEvent(rawEvent)
+      boundary = matchBoundary()
+    }
+
+    if (done) {
+      break
+    }
+  }
+
+  if (buffer.trim()) {
+    handleEvent(buffer)
+  }
+
+  if (!finalAnswer) {
+    throw new ChatStreamRequestError('聊天响应提前结束。')
+  }
+
+  return finalAnswer
+}
+
+async function requestChatStream(
+  payload: ChatRequestPayload,
+  idempotencyKey: string,
+  signal: AbortSignal,
+  onChunk: (delta: string) => void,
+): Promise<ChatAnswer> {
+  const endpoint = new URL('/api/chats', env.apiBaseUrl).toString()
+
+  const makeRequest = () =>
+    fetch(endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      signal,
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    })
+
+  let response = await makeRequest()
+  if (response.status === 401) {
+    try {
+      await refreshSession()
+      response = await makeRequest()
+    } catch {
+      throw await readChatErrorResponse(response)
+    }
+  }
+
+  if (!response.ok) {
+    throw await readChatErrorResponse(response)
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (!contentType.includes('text/event-stream')) {
+    const data = (await response.json()) as ChatAnswer
+    return data
+  }
+  if (!response.body) {
+    throw new ChatStreamRequestError('聊天响应为空。')
+  }
+  return readChatStream(response.body, onChunk)
+}
+
 export function ChatPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -237,6 +414,7 @@ export function ChatPage() {
   const uploadGuestInputRef = useRef<HTMLInputElement>(null)
   const uploadAuthInputRef = useRef<HTMLInputElement>(null)
   const pendingAskIdRef = useRef(0)
+  const pendingAskAbortRef = useRef<AbortController | null>(null)
 
   const [guestPrompt, setGuestPrompt] = useState('')
   const [authPrompt, setAuthPrompt] = useState('')
@@ -272,6 +450,8 @@ export function ChatPage() {
     handleCloseSidebar,
     handleOpenSidebar,
   } = useChatSidebarState()
+
+  useEffect(() => () => pendingAskAbortRef.current?.abort(), [])
 
   const authEmailId = useId()
   const authErrorId = useId()
@@ -309,6 +489,10 @@ export function ChatPage() {
 
   const activeThreadIsSending = activeThread?.status === 'sending'
   const activeThreadHasError = activeThread?.status === 'error'
+  const lastActiveMessage = activeThread?.messages[activeThread.messages.length - 1]
+  const showAssistantTyping = Boolean(
+    activeThreadIsSending && !(lastActiveMessage?.role === 'assistant' && lastActiveMessage.text.trim()),
+  )
 
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId) ?? null,
@@ -566,11 +750,15 @@ export function ChatPage() {
       )
       return
     }
+    pendingAskAbortRef.current?.abort()
+    const abortController = new AbortController()
+    pendingAskAbortRef.current = abortController
     const now = nowTimestamp()
     const requestId = pendingAskIdRef.current + 1
     pendingAskIdRef.current = requestId
     const targetThread = threads.find((thread) => thread.id === threadId)
     const requestConversationID = targetThread?.isRemote ? threadId : routeConversationId
+    const assistantMessageId = createMessageId()
 
     setThreads((previous) =>
       updateThreadAndMoveTop(previous, threadId, (thread) => ({
@@ -589,8 +777,22 @@ export function ChatPage() {
                 text: trimmedPrompt,
                 createdAt: now,
               },
+              {
+                id: assistantMessageId,
+                role: 'assistant',
+                text: '',
+                createdAt: now,
+              },
             ]
-          : thread.messages,
+          : [
+              ...thread.messages,
+              {
+                id: assistantMessageId,
+                role: 'assistant',
+                text: '',
+                createdAt: now,
+              },
+            ],
       })),
     )
     if (appendUserMessage) {
@@ -598,14 +800,26 @@ export function ChatPage() {
     }
     try {
       const idempotencyKey = createIdempotencyKey()
-      const { data } = await http.post<ChatAnswer>('/api/chats', {
+      const data = await requestChatStream({
         conversationId: requestConversationID || undefined,
         bookId: selectedBookId,
         question: trimmedPrompt,
-      }, {
-        headers: {
-          'Idempotency-Key': idempotencyKey,
-        },
+      }, idempotencyKey, abortController.signal, (delta) => {
+        if (requestId !== pendingAskIdRef.current) return
+        setThreads((previous) =>
+          updateThreadAndMoveTop(previous, threadId, (thread) => ({
+            ...thread,
+            updatedAt: nowTimestamp(),
+            messages: thread.messages.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    text: `${message.text}${delta}`,
+                  }
+                : message,
+            ),
+          })),
+        )
       })
       if (requestId !== pendingAskIdRef.current) return
       const resolvedConversationID = data.conversation.id?.trim() || requestConversationID || threadId
@@ -622,20 +836,20 @@ export function ChatPage() {
           updatedAt: assistantMessageCreatedAt,
           status: 'idle',
           errorText: '',
-          messages: [
-            ...baseThread.messages,
-            {
-              id: createMessageId(),
-              role: 'assistant',
-              text: data.abstained ? `${data.answer}\n\n当前回答未通过证据门槛，系统已按拒答处理。` : data.answer,
-              createdAt: assistantMessageCreatedAt,
-              sources: data.citations.map((source) => ({
-                label: source.label,
-                location: source.location,
-                snippet: source.snippet,
-              })),
-            },
-          ],
+          messages: baseThread.messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  text: data.abstained ? `${data.answer}\n\n当前回答未通过证据门槛，系统已按拒答处理。` : data.answer,
+                  createdAt: assistantMessageCreatedAt,
+                  sources: data.citations.map((source) => ({
+                    label: source.label,
+                    location: source.location,
+                    snippet: source.snippet,
+                  })),
+                }
+              : message,
+          ),
         }
         const rest = previous
           .filter((_, idx) => idx !== index)
@@ -651,15 +865,21 @@ export function ChatPage() {
       }
       void loadConversationThreads()
     } catch (error) {
+      if (isAbortError(error)) return
       if (requestId !== pendingAskIdRef.current) return
       setThreads((previous) =>
         updateThreadAndMoveTop(previous, threadId, (thread) => ({
           ...thread,
           updatedAt: nowTimestamp(),
           status: 'error',
-          errorText: getApiErrorMessage(error, '请求失败，请稍后重试。'),
+          errorText: error instanceof Error ? error.message : '请求失败，请稍后重试。',
+          messages: thread.messages.filter((message) => !(message.id === assistantMessageId && !message.text.trim())),
         })),
       )
+    } finally {
+      if (pendingAskAbortRef.current === abortController) {
+        pendingAskAbortRef.current = null
+      }
     }
   }
 
@@ -1029,7 +1249,7 @@ export function ChatPage() {
                           ),
                         )}
 
-                        {activeThreadIsSending ? (
+                        {showAssistantTyping ? (
                           <article className={chatTw.assistantTypingRow}>
                             <div className={chatTw.messageAssistantBody}>
                               <div className={chatTw.assistantTypingBubble}>

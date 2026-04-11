@@ -56,6 +56,10 @@ async function refreshSessionOnce(): Promise<void> {
   return refreshRequest
 }
 
+export async function refreshSession(): Promise<void> {
+  await refreshSessionOnce()
+}
+
 http.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {

@@ -822,6 +822,10 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		writeErrorWithCode(w, r, http.StatusBadRequest, "book ID is required", "CHAT_BOOK_ID_REQUIRED")
 		return
 	}
+	if wantsSSE(r) {
+		s.streamChatAnswer(w, r, ctx, req)
+		return
+	}
 	ans, replayed, err := s.chat.AskQuestion(
 		util.RequestIDFromRequest(r),
 		ctx.AccessToken,
@@ -839,6 +843,40 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, ctx authCon
 		w.Header().Set("Idempotency-Replayed", "true")
 	}
 	writeJSON(w, http.StatusOK, ans)
+}
+
+func (s *Server) streamChatAnswer(w http.ResponseWriter, r *http.Request, ctx authContext, req chatRequest) {
+	stream, err := s.chat.StreamQuestion(
+		r.Context(),
+		util.RequestIDFromRequest(r),
+		ctx.AccessToken,
+		util.IdempotencyKeyFromRequest(r),
+		req.ConversationID,
+		req.BookID,
+		req.Question,
+		req.Debug && ctx.User.Role == domain.RoleAdmin,
+	)
+	if err != nil {
+		writeChatError(w, r, err)
+		return
+	}
+	defer stream.Body.Close()
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErrorWithCode(w, r, http.StatusInternalServerError, "streaming unsupported", "SYSTEM_STREAM_UNSUPPORTED")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	if stream.Replayed {
+		w.Header().Set("Idempotency-Replayed", "true")
+	}
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+	_, _ = io.Copy(flushWriter{ResponseWriter: w, Flusher: flusher}, stream.Body)
 }
 
 func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1531,6 +1569,23 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func wantsSSE(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("Accept"))), "text/event-stream")
+}
+
+type flushWriter struct {
+	http.ResponseWriter
+	http.Flusher
+}
+
+func (w flushWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	if err == nil {
+		w.Flusher.Flush()
+	}
+	return n, err
 }
 
 type errorDetail struct {

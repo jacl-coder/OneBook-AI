@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -140,6 +141,10 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		writeBookError(w, err)
 		return
 	}
+	if wantsSSE(r) {
+		s.streamChatAnswer(w, r, user, book, req, idempotencyKey)
+		return
+	}
 	ans, replayed, err := s.app.AskQuestion(user, book, req.Question, req.ConversationID, idempotencyKey, req.Debug && user.Role == domain.RoleAdmin)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -159,6 +164,39 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request, token strin
 		w.Header().Set("Idempotency-Replayed", "true")
 	}
 	writeJSON(w, http.StatusOK, ans)
+}
+
+func (s *Server) streamChatAnswer(w http.ResponseWriter, r *http.Request, user domain.User, book domain.Book, req chatRequest, idempotencyKey string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	prepareSSE(w)
+	ans, replayed, err := s.app.AskQuestionStream(
+		r.Context(),
+		user,
+		book,
+		req.Question,
+		req.ConversationID,
+		idempotencyKey,
+		req.Debug && user.Role == domain.RoleAdmin,
+		func(chunk string) error {
+			return writeSSEEvent(w, flusher, "chunk", map[string]string{"delta": chunk})
+		},
+	)
+	if err != nil {
+		_ = writeSSEEvent(w, flusher, "error", errorResponse{
+			Error:     err.Error(),
+			Code:      "CHAT_STREAM_FAILED",
+			RequestID: util.RequestIDFromRequest(r),
+		})
+		return
+	}
+	if replayed {
+		w.Header().Set("Idempotency-Replayed", "true")
+	}
+	_ = writeSSEEvent(w, flusher, "final", ans)
 }
 
 func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request, _ string, user domain.User) {
@@ -243,6 +281,29 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func wantsSSE(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("Accept"))), "text/event-stream")
+}
+
+func prepareSSE(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+}
+
+func writeSSEEvent(w io.Writer, flusher http.Flusher, event string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 type errorResponse struct {
