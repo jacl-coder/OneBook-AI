@@ -33,7 +33,7 @@ func WithCORS(next http.Handler) http.Handler {
 				_, allowed = corsCfg.allowedOrigins[origin]
 			}
 			if allowed {
-				if corsCfg.allowAll {
+				if corsCfg.allowAll && !corsCfg.allowCredentials {
 					w.Header().Set("Access-Control-Allow-Origin", "*")
 				} else {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
