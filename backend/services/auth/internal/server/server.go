@@ -563,7 +563,7 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 	if err := s.app.ResetPasswordByEmail(email, req.NewPassword); err != nil {
 		s.audit(r, "auth.password.reset.complete", "fail", "reason", err.Error())
 		switch {
-		case errors.Is(err, app.ErrEmailRequired), errors.Is(err, app.ErrNewPasswordRequired), isPasswordPolicyError(err):
+		case errors.Is(err, app.ErrEmailRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrNewPasswordMustDiffer), isPasswordPolicyError(err):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, app.ErrInvalidCredentials), errors.Is(err, app.ErrUserDisabled):
 			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
@@ -711,7 +711,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 	if err := s.app.ChangePassword(user.ID, req.CurrentPassword, req.NewPassword); err != nil {
 		s.audit(r, "auth.password.change", "fail", "user_id", user.ID, "reason", err.Error())
 		switch {
-		case errors.Is(err, app.ErrCurrentPasswordRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrInvalidCredentials), isPasswordPolicyError(err):
+		case errors.Is(err, app.ErrCurrentPasswordRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrNewPasswordMustDiffer), errors.Is(err, app.ErrInvalidCredentials), isPasswordPolicyError(err):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
 			util.LoggerFromContext(r.Context()).Error("auth.password.change_error", "err", err)
@@ -1243,6 +1243,8 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_CURRENT_PASSWORD_REQUIRED"
 	case message == app.ErrNewPasswordRequired.Error():
 		return "AUTH_NEW_PASSWORD_REQUIRED"
+	case message == app.ErrNewPasswordMustDiffer.Error():
+		return "AUTH_NEW_PASSWORD_MUST_DIFFER"
 	case message == "invalid role":
 		return "ADMIN_INVALID_ROLE"
 	case message == "invalid status":

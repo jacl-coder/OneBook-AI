@@ -54,7 +54,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
         "400":
-          description: Invalid input
+          description: Invalid input, including password-policy violations or reusing the current password
           content:
             application/json:
               schema:
@@ -138,7 +138,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginMethodsResponse"
         "400":
-          description: Invalid input
+          description: Invalid input, including password-policy violations or reusing the current password
           content:
             application/json:
               schema:

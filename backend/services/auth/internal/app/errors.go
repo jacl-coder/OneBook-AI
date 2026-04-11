@@ -21,4 +21,5 @@ var (
 	ErrPasswordNotSet          = errors.New("password not set")
 	ErrCurrentPasswordRequired = errors.New("current password required")
 	ErrNewPasswordRequired     = errors.New("new password required")
+	ErrNewPasswordMustDiffer   = errors.New("new password must differ from current password")
 )

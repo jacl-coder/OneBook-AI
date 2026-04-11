@@ -386,13 +386,13 @@ func (a *App) ChangePassword(userID, currentPassword, newPassword string) error 
 		if strings.TrimSpace(currentPassword) == "" {
 			return ErrCurrentPasswordRequired
 		}
-		if !auth.CheckPassword(currentPassword, user.PasswordHash) {
-			return ErrInvalidCredentials
+			if !auth.CheckPassword(currentPassword, user.PasswordHash) {
+				return ErrInvalidCredentials
+			}
+			if currentPassword == newPassword {
+				return ErrNewPasswordMustDiffer
+			}
 		}
-		if currentPassword == newPassword {
-			return fmt.Errorf("new password must differ from current password")
-		}
-	}
 	passwordHash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -428,12 +428,12 @@ func (a *App) ResetPasswordByEmail(email, newPassword string) error {
 	if !ok {
 		return ErrInvalidCredentials
 	}
-	if user.Status == domain.StatusDisabled {
-		return ErrUserDisabled
-	}
-	if hasPassword(user.PasswordHash) && auth.CheckPassword(newPassword, user.PasswordHash) {
-		return fmt.Errorf("new password must differ from current password")
-	}
+		if user.Status == domain.StatusDisabled {
+			return ErrUserDisabled
+		}
+		if hasPassword(user.PasswordHash) && auth.CheckPassword(newPassword, user.PasswordHash) {
+			return ErrNewPasswordMustDiffer
+		}
 	passwordHash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
