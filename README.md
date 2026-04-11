@@ -490,6 +490,22 @@ cd backend/services/indexer && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
+如果宿主机已安装 NVIDIA 驱动和 `nvidia-container-toolkit`，`scripts/start-backend.sh` 会自动叠加 `docker-compose.gpu.yml`，让 `ocr-service` 使用官方支持的 CUDA 12.6 GPU 轮子并以 `gpu:0` 运行；否则保留 CPU 配置。
+
+Ubuntu / Debian 上可先执行：
+
+```bash
+sudo ./scripts/setup-nvidia-container-toolkit.sh
+```
+
+完成后用以下命令验证 Docker 已能使用 GPU：
+
+```bash
+docker info --format '{{json .Runtimes}}'
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
+```
+
+
 > 本地开发的 OpenSearch 使用 `docker/opensearch/opensearch.yml` 显式关闭 security plugin，默认通过 `http://localhost:9200` 提供明文 HTTP 接口，后端无需额外用户名/密码。
 
 ### 9.4 单服务热重启

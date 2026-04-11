@@ -46,11 +46,26 @@ app = FastAPI(title="OneBook OCR Service", version="1.0.0", default_response_cla
 _ocr: PaddleOCR | None = None
 
 
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_ocr() -> PaddleOCR:
     global _ocr
     if _ocr is None:
-        logger.info("Initialising PaddleOCR (first call, may download models)…")
+        device = os.getenv("OCR_DEVICE", "cpu").strip() or "cpu"
+        enable_hpi = env_bool("OCR_ENABLE_HPI")
+        logger.info(
+            "Initialising PaddleOCR (first call, may download models)… device=%s enable_hpi=%s",
+            device,
+            enable_hpi,
+        )
         _ocr = PaddleOCR(
+            device=device,
+            enable_hpi=enable_hpi,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,

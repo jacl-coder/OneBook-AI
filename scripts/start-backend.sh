@@ -76,6 +76,30 @@ wait_for_service() {
   echo "${name} is ready."
 }
 
+configure_ocr_runtime() {
+  COMPOSE_ARGS=(-f "$ROOT_DIR/docker-compose.yml")
+
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "NVIDIA GPU not detected on host; OCR service will run on CPU."
+    return
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker not found; OCR GPU auto-detection skipped."
+    return
+  fi
+
+  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then
+    echo "NVIDIA GPU runtime detected; enabling OCR GPU override."
+    COMPOSE_ARGS+=(-f "$ROOT_DIR/docker-compose.gpu.yml")
+    return
+  fi
+
+  echo "NVIDIA GPU detected, but Docker is not configured for GPU containers."
+  echo "OCR service will run on CPU."
+  echo "To enable GPU support, run: sudo ./scripts/setup-nvidia-container-toolkit.sh"
+}
+
 clear_onebook_env
 
 if [ -f "$ROOT_DIR/.env" ]; then
@@ -141,12 +165,14 @@ trap cleanup EXIT INT TERM
 
 "$ROOT_DIR/scripts/ollama-embedding.sh"
 
+configure_ocr_runtime
+
 # Kill any leftover listeners on backend service ports to ensure idempotent startup.
 for p in "$GATEWAY_PORT" "$AUTH_PORT" "$BOOK_PORT" "$CHAT_PORT" "$INGEST_PORT" "$INDEXER_PORT"; do
   fuser -k "${p}/tcp" >/dev/null 2>&1 || true
 done
 
-docker compose -f "$ROOT_DIR/docker-compose.yml" up -d postgres redis rabbitmq minio swagger-ui ocr-service reranker-service qdrant opensearch
+docker compose "${COMPOSE_ARGS[@]}" up -d postgres redis rabbitmq minio swagger-ui ocr-service reranker-service qdrant opensearch
 
 echo "Waiting for MinIO to be ready..."
 until curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; do

@@ -77,12 +77,18 @@ services:
     build:
       context: ./services/ocr
       dockerfile: Dockerfile
+      args:
+        OCR_PADDLE_PACKAGE: ${OCR_PADDLE_PACKAGE:-paddlepaddle==3.0.0}
+        OCR_PADDLE_INDEX: ${OCR_PADDLE_INDEX:-https://www.paddlepaddle.org.cn/packages/stable/cpu/}
     container_name: onebook-ocr
     environment:
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
       OCR_PORT: "8087"
+      OCR_DEVICE: ${OCR_DEVICE:-cpu}
+      OCR_ENABLE_HPI: ${OCR_ENABLE_HPI:-false}
     ports:
       - "8087:8087"
+    shm_size: "8gb"
     volumes:
       # Cache downloaded models across restarts
       - onebook-ocr-models:/root/.paddlex
