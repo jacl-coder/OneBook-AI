@@ -6,13 +6,13 @@ import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
 import appleLogo from '@/assets/brand/provider/apple-logo.svg'
 import microsoftLogo from '@/assets/brand/provider/microsoft-logo.svg'
+import emailIconSvg from '@/assets/icons/email.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
 import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
 import {
   CHAT_ICON_SPRITE_URL,
   EMAIL_PATTERN,
-  type AuthModalMode,
   type BookSummary,
   type ChatAnswer,
   type ChatThread,
@@ -37,6 +37,8 @@ import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import { MessageMarkdown } from '@/shared/lib/ui/MessageMarkdown'
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
+
+type AuthEntryMode = 'email' | 'phone'
 
 const chatUiSansStyle = {
   fontFamily:
@@ -420,7 +422,7 @@ export function ChatPage() {
   const [authPrompt, setAuthPrompt] = useState('')
   const [heading, setHeading] = useState(() => pickNextHeading())
   const [isAuthOpen, setIsAuthOpen] = useState(false)
-  const [authMode, setAuthMode] = useState<AuthModalMode>('login')
+  const [authEntryMode, setAuthEntryMode] = useState<AuthEntryMode>('email')
   const [authEmail, setAuthEmail] = useState('')
   const [isAuthFocused, setIsAuthFocused] = useState(false)
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
@@ -676,7 +678,7 @@ export function ChatPage() {
 
   function closeAuthModal() {
     setIsAuthOpen(false)
-    setAuthMode('login')
+    setAuthEntryMode('email')
     setAuthEmail('')
     setIsAuthFocused(false)
     setIsAuthSubmitting(false)
@@ -900,13 +902,27 @@ export function ChatPage() {
     void askAssistant(activeThread.id, activeThread.lastUserPrompt, false)
   }
 
-  const openAuthModal = (mode: AuthModalMode = 'login') => {
-    setAuthMode(mode)
+  const openAuthModal = () => {
     setIsAuthOpen(true)
   }
 
-  const validateAuthEmail = (value: string) => {
+  const switchAuthEntryMode = (nextMode: AuthEntryMode) => {
+    if (authEntryMode === nextMode) return
+    setAuthEntryMode(nextMode)
+    setAuthEmail('')
+    setAuthErrorText('')
+    requestAnimationFrame(() => authInputRef.current?.focus())
+  }
+
+  const validateAuthIdentifier = (value: string) => {
     const text = value.trim()
+    if (authEntryMode === 'phone') {
+      if (!text) return '手机号码为必填项。'
+      const digits = text.replace(/\D/g, '')
+      const normalized = digits.startsWith('86') && digits.length === 13 ? digits.slice(2) : digits
+      if (!/^1\d{10}$/.test(normalized)) return '请输入有效的中国大陆手机号。'
+      return ''
+    }
     if (!text) return '电子邮件地址为必填项。'
     if (!EMAIL_PATTERN.test(text)) return '电子邮件地址无效。'
     return ''
@@ -916,7 +932,7 @@ export function ChatPage() {
     event.preventDefault()
     if (isAuthSubmitting) return
 
-    const error = validateAuthEmail(authEmail)
+    const error = validateAuthIdentifier(authEmail)
     if (error) {
       setAuthErrorText(error)
       authInputRef.current?.focus()
@@ -927,8 +943,7 @@ export function ChatPage() {
     setIsAuthSubmitting(true)
     await new Promise((resolve) => setTimeout(resolve, 280))
     closeAuthModal()
-    const targetPath = authMode === 'register' ? '/create-account/password' : '/log-in/password'
-    navigate(`${targetPath}?email=${encodeURIComponent(authEmail.trim())}`)
+    navigate(`/log-in-or-create-account?identifier=${encodeURIComponent(authEmail.trim())}`)
   }
 
   const handleCreateConversation = useCallback(() => {
@@ -1320,10 +1335,10 @@ export function ChatPage() {
         </div>
 
         <div className={chatTw.headerActionRow}>
-          <button type="button" className={chatTw.guestLoginButton} onClick={() => openAuthModal('login')}>
+          <button type="button" className={chatTw.guestLoginButton} onClick={openAuthModal}>
             <div className={chatTw.inlineCenter}>登录</div>
           </button>
-          <button type="button" className={chatTw.guestRegisterButton} onClick={() => openAuthModal('register')}>
+          <button type="button" className={chatTw.guestRegisterButton} onClick={openAuthModal}>
             <div className={chatTw.inlineCenter}>免费注册</div>
           </button>
           <button type="button" className={chatTw.guestProfileButton} aria-label="打开“个人资料”菜单">
@@ -1514,7 +1529,7 @@ export function ChatPage() {
 
                   <form className={chatTw.authModalForm} onSubmit={handleAuthSubmit} noValidate>
                     <div className={chatTw.authProviderGroup} role="group" aria-label="选择登录选项">
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in')}>
+                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={googleLogo} alt="" aria-hidden="true" />
@@ -1522,7 +1537,7 @@ export function ChatPage() {
                           <span>继续使用 Google 登录</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in')}>
+                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={appleLogo} alt="" aria-hidden="true" />
@@ -1530,7 +1545,7 @@ export function ChatPage() {
                           <span>继续使用 Apple 登录</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in')}>
+                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={microsoftLogo} alt="" aria-hidden="true" />
@@ -1538,12 +1553,16 @@ export function ChatPage() {
                           <span>继续使用 Microsoft 登录</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in')}>
+                      <button
+                        type="button"
+                        className={chatTw.authProviderBtn}
+                        onClick={() => switchAuthEntryMode(authEntryMode === 'email' ? 'phone' : 'email')}
+                      >
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
-                            <img src={phoneIconSvg} alt="" aria-hidden="true" />
+                            <img src={authEntryMode === 'email' ? phoneIconSvg : emailIconSvg} alt="" aria-hidden="true" />
                           </span>
-                          <span>继续使用手机登录</span>
+                          <span>{authEntryMode === 'email' ? '继续使用手机登录' : '继续使用邮箱登录'}</span>
                         </span>
                       </button>
                     </div>
@@ -1566,12 +1585,13 @@ export function ChatPage() {
                           ref={authInputRef}
                           className={chatTw.authEmailInput}
                           id={authEmailId}
-                          name="email"
-                          type="email"
-                          autoComplete="email"
-                          placeholder="电子邮件地址"
+                          name={authEntryMode === 'phone' ? 'phone' : 'email'}
+                          type={authEntryMode === 'phone' ? 'tel' : 'email'}
+                          inputMode={authEntryMode === 'phone' ? 'tel' : 'email'}
+                          autoComplete={authEntryMode === 'phone' ? 'tel' : 'email'}
+                          placeholder={authEntryMode === 'phone' ? '手机号码' : '电子邮件地址'}
                           value={authEmail}
-                          aria-label="电子邮件地址"
+                          aria-label={authEntryMode === 'phone' ? '手机号码' : '电子邮件地址'}
                           aria-describedby={isAuthInvalid ? authErrorId : undefined}
                           aria-invalid={isAuthInvalid || undefined}
                           disabled={isAuthSubmitting}

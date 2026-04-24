@@ -4,39 +4,44 @@ import { http } from '@/shared/lib/http/client'
 import type { AuthUser } from '@/features/auth/store/session'
 
 type AuthRequest = {
-  email: string
+  identifier: string
   password: string
 }
 
 type LoginMethodsRequest = {
-  email: string
+  identifier: string
 }
 
-export type OtpPurpose = 'signup_password' | 'signup_otp' | 'login_otp' | 'reset_password'
+export type OtpPurpose = 'signup' | 'login' | 'password_reset'
+
+export type VerificationChannel = 'email' | 'phone'
 
 type OtpSendRequest = {
-  email: string
+  channel: VerificationChannel
+  identifier: string
   purpose: OtpPurpose
 }
 
 type OtpVerifyRequest = {
   challengeId: string
-  email: string
+  channel: VerificationChannel
+  identifier: string
   purpose: OtpPurpose
-  code: string
-  password?: string
-}
-
-type PasswordResetVerifyRequest = {
-  challengeId: string
-  email: string
   code: string
 }
 
 type PasswordResetCompleteRequest = {
-  email: string
-  resetToken: string
+  channel: VerificationChannel
+  identifier: string
+  verificationToken: string
   newPassword: string
+}
+
+type SignupCompleteRequest = {
+  channel: VerificationChannel
+  identifier: string
+  verificationToken: string
+  password: string
 }
 
 type BackendUser = AuthUser & {
@@ -52,16 +57,26 @@ export type OtpSendResponse = {
   challengeId: string
   expiresInSeconds: number
   resendAfterSeconds: number
+  maskedIdentifier?: string
   maskedEmail?: string
 }
 
 export type LoginMethodsResponse = {
+  exists: boolean
   passwordLogin: boolean
 }
 
 export type PasswordResetVerifyResponse = {
+  verificationToken: string
   resetToken: string
   expiresInSeconds: number
+}
+
+export type VerificationVerifyResponse = {
+  user?: BackendUser
+  verificationToken?: string
+  resetToken?: string
+  expiresInSeconds?: number
 }
 
 type ErrorResponse = {
@@ -91,7 +106,7 @@ export function getApiErrorCode(error: unknown): string {
 }
 
 export async function login(payload: AuthRequest): Promise<AuthResponse> {
-  const { data } = await http.post<AuthResponse>('/api/auth/login', payload)
+  const { data } = await http.post<AuthResponse>('/api/auth/login/password', payload)
   return data
 }
 
@@ -105,20 +120,25 @@ export async function signup(payload: AuthRequest): Promise<AuthResponse> {
   return data
 }
 
-export async function sendOtp(payload: OtpSendRequest): Promise<OtpSendResponse> {
-  const { data } = await http.post<OtpSendResponse>('/api/auth/otp/send', payload)
+export async function completeSignup(payload: SignupCompleteRequest): Promise<AuthResponse> {
+  const { data } = await http.post<AuthResponse>('/api/auth/signup/complete', payload)
   return data
 }
 
-export async function verifyOtp(payload: OtpVerifyRequest): Promise<AuthResponse> {
-  const { data } = await http.post<AuthResponse>('/api/auth/otp/verify', payload)
+export async function sendOtp(payload: OtpSendRequest): Promise<OtpSendResponse> {
+  const { data } = await http.post<OtpSendResponse>('/api/auth/verification/send', payload)
+  return data
+}
+
+export async function verifyOtp(payload: OtpVerifyRequest): Promise<VerificationVerifyResponse> {
+  const { data } = await http.post<VerificationVerifyResponse>('/api/auth/verification/verify', payload)
   return data
 }
 
 export async function verifyPasswordReset(
-  payload: PasswordResetVerifyRequest,
+  payload: OtpVerifyRequest,
 ): Promise<PasswordResetVerifyResponse> {
-  const { data } = await http.post<PasswordResetVerifyResponse>('/api/auth/password/reset/verify', payload)
+  const { data } = await http.post<PasswordResetVerifyResponse>('/api/auth/verification/verify', payload)
   return data
 }
 

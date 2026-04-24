@@ -16,14 +16,7 @@ export const router = createBrowserRouter([
     element: <AdminAwayGuard />,
     children: [
       {
-        path: '/log-in',
-        lazy: async () => {
-          const module = await import('@/pages/LoginPage')
-          return { Component: module.LoginPage }
-        },
-      },
-      {
-        path: '/create-account',
+        path: '/log-in-or-create-account',
         lazy: async () => {
           const module = await import('@/pages/LoginPage')
           return { Component: module.LoginPage }

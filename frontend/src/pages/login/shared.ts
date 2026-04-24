@@ -5,7 +5,6 @@ export const AUTH_EMAIL_STORAGE_KEY = 'auth:email'
 export const AUTH_ERROR_MESSAGE_STORAGE_KEY = 'auth:error-message'
 export const AUTH_OTP_CHALLENGE_STORAGE_KEY = 'auth:otp:challenge-id'
 export const AUTH_OTP_PURPOSE_STORAGE_KEY = 'auth:otp:purpose'
-export const AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY = 'auth:otp:pending-password'
 export const AUTH_OTP_EMAIL_STORAGE_KEY = 'auth:otp:email'
 export const AUTH_RESET_TOKEN_STORAGE_KEY = 'auth:reset:token'
 export const DEFAULT_AUTH_ERROR_MESSAGE = 'Invalid client. Please start over.'
@@ -15,7 +14,6 @@ export type AuthNavigationState = {
   errorMessage?: string
   challengeId?: string
   purpose?: OtpPurpose
-  pendingPassword?: string
   otpEmail?: string
   resetToken?: string
 }
@@ -38,10 +36,9 @@ export function normalizeText(value: unknown) {
 
 export function normalizeOtpPurpose(value: unknown): OtpPurpose | '' {
   const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'signup_password') return 'signup_password'
-  if (normalized === 'signup_otp') return 'signup_otp'
-  if (normalized === 'login_otp') return 'login_otp'
-  if (normalized === 'reset_password') return 'reset_password'
+  if (normalized === 'signup' || normalized === 'signup_password' || normalized === 'signup_otp') return 'signup'
+  if (normalized === 'login' || normalized === 'login_otp') return 'login'
+  if (normalized === 'password_reset' || normalized === 'reset_password') return 'password_reset'
   return ''
 }
 

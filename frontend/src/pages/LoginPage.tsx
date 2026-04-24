@@ -6,20 +6,21 @@ import googleIconSvg from '@/assets/brand/provider/google-logo.svg'
 import appleIconSvg from '@/assets/brand/provider/apple-logo.svg'
 import microsoftIconSvg from '@/assets/brand/provider/microsoft-logo.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
+import emailIconSvg from '@/assets/icons/email.svg'
 import errorIconSvg from '@/assets/icons/error-circle.svg'
 import eyeIconSvg from '@/assets/icons/eye.svg'
 import eyeOffIconSvg from '@/assets/icons/eye-off.svg'
 import successCheckmarkCircleSvg from '@/assets/icons/success-checkmark-circle.svg'
 
 import {
+  completeSignup,
   completePasswordReset,
   getApiErrorCode,
   getApiErrorMessage,
-  loginMethods,
   login,
+  loginMethods,
   sendOtp,
   type OtpPurpose,
-  verifyPasswordReset,
   verifyOtp,
 } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
@@ -28,7 +29,6 @@ import {
   AUTH_ERROR_MESSAGE_STORAGE_KEY,
   AUTH_OTP_CHALLENGE_STORAGE_KEY,
   AUTH_OTP_EMAIL_STORAGE_KEY,
-  AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY,
   AUTH_OTP_PURPOSE_STORAGE_KEY,
   AUTH_RESET_TOKEN_STORAGE_KEY,
   DEFAULT_AUTH_ERROR_MESSAGE,
@@ -43,6 +43,10 @@ import {
 } from '@/pages/login/shared'
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
+
+const AUTH_ENTRY_PATH = '/log-in-or-create-account'
+
+type EntryMode = 'email' | 'phone'
 
 type FloatingInputOptions = {
   isActive: boolean
@@ -176,18 +180,21 @@ export function LoginPage() {
 
   const step = getStep(location.pathname)
   const logoLinkTarget = '/chat'
-  const isCreateAccountEntry = step === 'entry' && location.pathname === '/create-account'
   const isCreateAccountPassword = step === 'password' && location.pathname === '/create-account/password'
   const locationState = (location.state as AuthNavigationState | null) ?? null
-  const locationSearchEmail = normalizeText(new URLSearchParams(location.search).get('email'))
-  const locationStateEmail = normalizeText(locationState?.email) || locationSearchEmail
+  const locationSearchParams = new URLSearchParams(location.search)
+  const locationSearchEmail =
+    normalizeText(locationSearchParams.get('identifier')) || normalizeText(locationSearchParams.get('email'))
+  const locationStateEmail =
+    step === 'entry' ? locationSearchEmail : normalizeText(locationState?.email) || locationSearchEmail
   const locationStateErrorMessage = normalizeText(locationState?.errorMessage)
   const locationStateChallengeId = normalizeText(locationState?.challengeId)
   const locationStatePurpose = normalizeOtpPurpose(locationState?.purpose)
-  const locationStatePendingPassword = normalizeText(locationState?.pendingPassword)
   const locationStateOtpEmail = normalizeText(locationState?.otpEmail)
   const locationStateResetToken = normalizeText(locationState?.resetToken)
-  const [stepEmail, setStepEmail] = useState(() => locationStateEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY))
+  const [stepEmail, setStepEmail] = useState(() =>
+    locationStateEmail || (step === 'entry' ? '' : readSessionValue(AUTH_EMAIL_STORAGE_KEY)),
+  )
   const [authErrorMessage, setAuthErrorMessage] = useState(() => {
     const initialError = locationStateErrorMessage || readSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY)
     return initialError || DEFAULT_AUTH_ERROR_MESSAGE
@@ -197,9 +204,6 @@ export function LoginPage() {
   )
   const [otpPurpose, setOtpPurpose] = useState<OtpPurpose | ''>(
     () => locationStatePurpose || normalizeOtpPurpose(readSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY)),
-  )
-  const [otpPendingPassword, setOtpPendingPassword] = useState(
-    () => locationStatePendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY),
   )
   const [otpEmail, setOtpEmail] = useState(
     () => locationStateOtpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY),
@@ -226,6 +230,8 @@ export function LoginPage() {
   const verifyErrorId = useId()
 
   const [email, setEmail] = useState(stepEmail)
+  const [phone, setPhone] = useState('')
+  const [entryMode, setEntryMode] = useState<EntryMode>('email')
   const [isEmailFocused, setIsEmailFocused] = useState(false)
   const [isEntrySubmitting, setIsEntrySubmitting] = useState(false)
   const [emailErrorText, setEmailErrorText] = useState('')
@@ -259,7 +265,15 @@ export function LoginPage() {
   useEffect(() => {
     if (step === 'entry') {
       schedule(() => {
-        setEmail(stepEmail)
+        if (stepEmail && getIdentifierChannel(stepEmail) === 'phone') {
+          setEntryMode('phone')
+          setPhone(stepEmail)
+          setEmail('')
+        } else {
+          setEntryMode('email')
+          setEmail(stepEmail)
+          setPhone('')
+        }
         setEmailErrorText('')
         setIsEmailFocused(false)
         setIsEntrySubmitting(false)
@@ -301,9 +315,15 @@ export function LoginPage() {
     })
   }, [step, stepEmail])
 
-  const hasEmailValue = email.trim().length > 0
+  const entryValue = entryMode === 'phone' ? phone : email
+  const hasEmailValue = entryValue.trim().length > 0
   const isEmailInvalid = emailErrorText.length > 0
   const isEmailActive = isEmailFocused || hasEmailValue
+  const entryInputLabel = entryMode === 'phone' ? '手机号码' : '电子邮件地址'
+  const entryInputName = entryMode === 'phone' ? 'phone' : 'email'
+  const entryInputType = entryMode === 'phone' ? 'tel' : 'email'
+  const entryAutoComplete = entryMode === 'phone' ? 'tel' : 'email'
+  const entryInputMode = entryMode === 'phone' ? 'tel' : 'email'
 
   const hasPasswordValue = password.trim().length > 0
   const isPasswordInvalid = passwordErrorText.length > 0
@@ -334,8 +354,8 @@ export function LoginPage() {
   const isConfirmPasswordInvalid = confirmPasswordErrorText.length > 0
   const isConfirmPasswordActive = isConfirmPasswordFocused || hasConfirmPasswordValue
   const verifyDescribedBy = verifyErrorText ? `${verifySubtitleId} ${verifyErrorId}` : verifySubtitleId
-  const passwordContinuePath =
-    otpPurpose === 'signup_password' || otpPurpose === 'signup_otp' ? '/create-account/password' : '/log-in/password'
+  const passwordContinuePath = otpPurpose === 'signup' ? '/create-account/password' : '/log-in/password'
+  const hasOtpChallenge = Boolean(otpChallengeId)
 
   const newPasswordInputClasses = getFloatingInputClasses({
     isActive: isNewPasswordActive,
@@ -367,23 +387,21 @@ export function LoginPage() {
 
   const getAuthState = (
     emailValue: string,
-    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'pendingPassword' | 'otpEmail' | 'resetToken'>>,
+    extras?: Partial<Pick<AuthNavigationState, 'challengeId' | 'purpose' | 'otpEmail' | 'resetToken'>>,
   ): AuthNavigationState => {
     const normalizedEmail = normalizeText(emailValue)
     const state: AuthNavigationState = {}
     if (normalizedEmail) state.email = normalizedEmail
     if (extras?.challengeId) state.challengeId = normalizeText(extras.challengeId)
     if (extras?.purpose) state.purpose = normalizeOtpPurpose(extras.purpose) || undefined
-    if (extras?.pendingPassword) state.pendingPassword = normalizeText(extras.pendingPassword)
     if (extras?.otpEmail) state.otpEmail = normalizeText(extras.otpEmail)
     if (extras?.resetToken) state.resetToken = normalizeText(extras.resetToken)
     return state
   }
 
-  const syncOtpContext = (payload: { challengeId: string; purpose: OtpPurpose; pendingPassword?: string; otpEmail?: string }) => {
+  const syncOtpContext = (payload: { challengeId: string; purpose: OtpPurpose; otpEmail?: string }) => {
     const challengeId = normalizeText(payload.challengeId)
     const purpose = payload.purpose
-    const pendingPassword = normalizeText(payload.pendingPassword)
     const normalizedOtpEmail = normalizeText(payload.otpEmail || stepEmail)
 
     setOtpChallengeId(challengeId)
@@ -395,24 +413,15 @@ export function LoginPage() {
     setOtpEmail(normalizedOtpEmail)
     writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, normalizedOtpEmail)
 
-    if (purpose === 'signup_password' && pendingPassword) {
-      setOtpPendingPassword(pendingPassword)
-      writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, pendingPassword)
-      return { challengeId, purpose, pendingPassword, otpEmail: normalizedOtpEmail }
-    }
-    setOtpPendingPassword('')
-    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
-    return { challengeId, purpose, pendingPassword: '', otpEmail: normalizedOtpEmail }
+    return { challengeId, purpose, otpEmail: normalizedOtpEmail }
   }
 
   const clearOtpContext = () => {
     setOtpChallengeId('')
     setOtpPurpose('')
-    setOtpPendingPassword('')
     setOtpEmail('')
     writeSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY, '')
     writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, '')
-    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, '')
     writeSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY, '')
   }
 
@@ -427,6 +436,14 @@ export function LoginPage() {
     syncResetToken('')
   }
 
+  const getVerificationErrorMessage = (error: unknown, fallback: string) => {
+    const code = getApiErrorCode(error)
+    if (otpPurpose === 'login' && code === 'AUTH_INVALID_CREDENTIALS') {
+      return '该账号尚未注册，请先注册。'
+    }
+    return getApiErrorMessage(error, fallback)
+  }
+
   const syncEmail = (emailValue: string) => {
     const normalizedEmail = normalizeText(emailValue)
     setStepEmail(normalizedEmail)
@@ -435,10 +452,10 @@ export function LoginPage() {
   }
 
   useEffect(() => {
-    const nextEmail = locationStateEmail || stepEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY)
+    const nextEmail = step === 'entry' ? locationStateEmail : locationStateEmail || stepEmail || readSessionValue(AUTH_EMAIL_STORAGE_KEY)
     if (nextEmail !== stepEmail) schedule(() => setStepEmail(nextEmail))
     writeSessionValue(AUTH_EMAIL_STORAGE_KEY, nextEmail)
-  }, [location.key, locationStateEmail, stepEmail])
+  }, [location.key, locationStateEmail, step, stepEmail])
 
   useEffect(() => {
     const nextChallengeId = locationStateChallengeId || otpChallengeId || readSessionValue(AUTH_OTP_CHALLENGE_STORAGE_KEY)
@@ -449,11 +466,6 @@ export function LoginPage() {
       locationStatePurpose || otpPurpose || normalizeOtpPurpose(readSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY))
     if (nextPurpose !== otpPurpose) schedule(() => setOtpPurpose(nextPurpose))
     writeSessionValue(AUTH_OTP_PURPOSE_STORAGE_KEY, nextPurpose)
-
-    const nextPendingPassword =
-      locationStatePendingPassword || otpPendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY)
-    if (nextPendingPassword !== otpPendingPassword) schedule(() => setOtpPendingPassword(nextPendingPassword))
-    writeSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY, nextPendingPassword)
 
     const nextOtpEmail = locationStateOtpEmail || otpEmail || readSessionValue(AUTH_OTP_EMAIL_STORAGE_KEY)
     if (nextOtpEmail !== otpEmail) schedule(() => setOtpEmail(nextOtpEmail))
@@ -466,12 +478,10 @@ export function LoginPage() {
     location.key,
     locationStateChallengeId,
     locationStatePurpose,
-    locationStatePendingPassword,
     locationStateOtpEmail,
     locationStateResetToken,
     otpChallengeId,
     otpPurpose,
-    otpPendingPassword,
     otpEmail,
     resetToken,
   ])
@@ -496,6 +506,24 @@ export function LoginPage() {
     return ''
   }
 
+  const validatePhone = (value: string) => {
+    const text = value.trim()
+    if (!text) return '请输入手机号码。'
+    const digits = text.replace(/\D/g, '')
+    const normalized = digits.startsWith('86') && digits.length === 13 ? digits.slice(2) : digits
+    if (!/^1\d{10}$/.test(normalized)) return '请输入有效的中国大陆手机号。'
+    return ''
+  }
+
+  const getIdentifierChannel = (value: string): 'email' | 'phone' => (value.includes('@') ? 'email' : 'phone')
+
+  const switchEntryMode = (nextMode: EntryMode) => {
+    if (entryMode === nextMode) return
+    setEntryMode(nextMode)
+    setEmailErrorText('')
+    schedule(() => entryInputRef.current?.focus())
+  }
+
   const validatePasswordPolicy = (value: string) => {
     const text = value.trim()
     if (!text) return 'Password is required.'
@@ -511,19 +539,22 @@ export function LoginPage() {
     return ''
   }
 
-  const requestOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
+  const requestOtpChallenge = async (purpose: OtpPurpose, sourceEmail = stepEmail) => {
     const normalizedEmail = sourceEmail.trim()
-    const otpChallenge = await sendOtp({ email: normalizedEmail, purpose })
+    const otpChallenge = await sendOtp({
+      channel: getIdentifierChannel(normalizedEmail),
+      identifier: normalizedEmail,
+      purpose,
+    })
     const otpContext = syncOtpContext({
       challengeId: otpChallenge.challengeId,
       purpose,
-      pendingPassword,
       otpEmail: normalizedEmail,
     })
     return { normalizedEmail, otpContext }
   }
 
-  const getReusableOtpContext = (purpose: OtpPurpose, sourceEmail = stepEmail, pendingPassword = '') => {
+  const getReusableOtpContext = (purpose: OtpPurpose, sourceEmail = stepEmail) => {
     const normalizedEmail = normalizeText(sourceEmail).toLowerCase()
     if (!normalizedEmail) return null
 
@@ -535,79 +566,66 @@ export function LoginPage() {
       return null
     }
 
-    const existingPendingPassword =
-      normalizeText(otpPendingPassword || readSessionValue(AUTH_OTP_PENDING_PASSWORD_STORAGE_KEY)) || pendingPassword.trim()
     const otpContext = syncOtpContext({
       challengeId,
       purpose,
-      pendingPassword: purpose === 'signup_password' ? existingPendingPassword : '',
       otpEmail: normalizedEmail,
     })
     return { normalizedEmail, otpContext }
   }
 
-  const ensureOtpChallenge = async (purpose: OtpPurpose, pendingPassword = '', sourceEmail = stepEmail) => {
-    const reused = getReusableOtpContext(purpose, sourceEmail, pendingPassword)
+  const ensureOtpChallenge = async (purpose: OtpPurpose, sourceEmail = stepEmail) => {
+    const reused = getReusableOtpContext(purpose, sourceEmail)
     if (reused) return reused
-    return requestOtpChallenge(purpose, pendingPassword, sourceEmail)
+    return requestOtpChallenge(purpose, sourceEmail)
   }
 
   const handleEntrySubmit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isEntrySubmitting) return
 
-    const error = validateEmail(email)
+    const rawIdentifier = entryMode === 'phone' ? phone : email
+    const error = entryMode === 'phone' ? validatePhone(rawIdentifier) : validateEmail(rawIdentifier)
     if (error) {
       setEmailErrorText(error)
       entryInputRef.current?.focus()
       return
     }
 
-    const normalizedEmail = email.trim()
+    const normalizedEmail = rawIdentifier.trim()
     setEmailErrorText('')
     setIsEntrySubmitting(true)
     try {
       await new Promise((resolve) => setTimeout(resolve, 250))
       const nextEmail = syncEmail(normalizedEmail)
 
-      if (isCreateAccountEntry) {
-        clearOtpContext()
-        clearResetToken()
-        navigate('/create-account/password', {
-          state: getAuthState(nextEmail),
-        })
-        return
-      }
-
-      let passwordLogin = true
+      let methods
       try {
-        const methods = await loginMethods({ email: nextEmail })
-        passwordLogin = methods.passwordLogin
-      } catch {
-        navigate('/log-in/password', {
-          state: getAuthState(nextEmail),
-        })
-        return
-      }
-
-      if (passwordLogin) {
-        clearOtpContext()
-        clearResetToken()
-        navigate('/log-in/password', {
-          state: getAuthState(nextEmail),
-        })
-        return
-      }
-
-      try {
-        const { otpContext } = await ensureOtpChallenge('login_otp', '', nextEmail)
-        navigate('/email-verification', {
-          state: getAuthState(nextEmail, otpContext),
-        })
+        methods = await loginMethods({ identifier: nextEmail })
       } catch (error) {
-        setEmailErrorText(getApiErrorMessage(error, 'Failed to send verification code. Please try again.'))
+        setEmailErrorText(getApiErrorMessage(error, 'Unable to continue. Please try again.'))
         entryInputRef.current?.focus()
+        return
       }
+
+      clearOtpContext()
+      clearResetToken()
+      if (methods.passwordLogin) {
+        navigate('/log-in/password', {
+          state: getAuthState(nextEmail),
+        })
+        return
+      }
+
+      const purpose: OtpPurpose = methods.exists ? 'login' : 'signup'
+      const otpContext = syncOtpContext({
+        challengeId: '',
+        purpose,
+        otpEmail: nextEmail,
+      })
+      navigate('/email-verification', {
+        state: getAuthState(nextEmail, otpContext),
+      })
     } finally {
       setIsEntrySubmitting(false)
     }
@@ -619,7 +637,7 @@ export function LoginPage() {
 
     if (!stepEmail.trim()) {
       setPasswordErrorText('Please enter your email first.')
-      navigate('/log-in', { state: getAuthState('') })
+      navigate(AUTH_ENTRY_PATH, { state: getAuthState('') })
       return
     }
     if (isCreateAccountPassword) {
@@ -640,15 +658,33 @@ export function LoginPage() {
     setIsPasswordSubmitting(true)
     try {
       if (isCreateAccountPassword) {
-        const { normalizedEmail, otpContext } = await ensureOtpChallenge('signup_password', password.trim())
-        setPassword('')
-        navigate('/email-verification', {
-          state: getAuthState(normalizedEmail, otpContext),
+        const activeVerificationToken = normalizeText(resetToken || readSessionValue(AUTH_RESET_TOKEN_STORAGE_KEY))
+        if (!activeVerificationToken) {
+          setPasswordErrorText('注册验证已过期，请重新验证。')
+          return
+        }
+        const auth = await completeSignup({
+          channel: getIdentifierChannel(stepEmail.trim()),
+          identifier: stepEmail.trim(),
+          verificationToken: activeVerificationToken,
+          password: password.trim(),
         })
+        clearOtpContext()
+        clearResetToken()
+        setPassword('')
+        setSession({
+          user: {
+            id: auth.user.id,
+            email: auth.user.email,
+            role: auth.user.role,
+            status: auth.user.status,
+          },
+        })
+        navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
         return
       }
 
-      const auth = await login({ email: stepEmail.trim(), password: password.trim() })
+      const auth = await login({ identifier: stepEmail.trim(), password: password.trim() })
       clearOtpContext()
       clearResetToken()
       setSession({
@@ -664,7 +700,7 @@ export function LoginPage() {
       const code = getApiErrorCode(error)
       if (!isCreateAccountPassword && code === 'AUTH_PASSWORD_NOT_SET') {
         try {
-          const { normalizedEmail, otpContext } = await ensureOtpChallenge('login_otp')
+          const { normalizedEmail, otpContext } = await ensureOtpChallenge('login')
           navigate('/email-verification', {
             state: getAuthState(normalizedEmail, otpContext),
           })
@@ -697,7 +733,7 @@ export function LoginPage() {
     setVerifyErrorText('')
     setIsOtpSending(true)
     try {
-      const { otpContext } = await requestOtpChallenge(otpPurpose, otpPendingPassword)
+      const { otpContext } = await requestOtpChallenge(otpPurpose)
       navigate('/email-verification', {
         replace: true,
         state: getAuthState(stepEmail, otpContext),
@@ -706,36 +742,40 @@ export function LoginPage() {
       setOtp(['', '', '', '', '', ''])
       otpRefs.current[0]?.focus()
     } catch (error) {
-      setVerifyErrorText(getApiErrorMessage(error, 'Failed to resend verification code. Please try again.'))
+      setVerifyErrorText(getVerificationErrorMessage(error, 'Failed to resend verification code. Please try again.'))
     } finally {
       setIsOtpSending(false)
     }
   }
 
-  const handlePasswordlessOtpAction = async () => {
+  const handlePasswordlessOtpAction = () => {
     if (isPasswordSubmitting || isOtpSending) return
 
     const normalizedEmail = stepEmail.trim()
     if (!normalizedEmail) {
       setPasswordErrorText('Please enter your email first.')
-      navigate('/log-in', { state: getAuthState('') })
+      navigate(AUTH_ENTRY_PATH, { state: getAuthState('') })
       return
     }
 
-    const purpose: OtpPurpose = isCreateAccountPassword ? 'signup_otp' : 'login_otp'
+    const purpose: OtpPurpose = isCreateAccountPassword ? 'signup' : 'login'
     setPasswordErrorText('')
-    setIsOtpSending(true)
-    try {
-      const { otpContext } = await ensureOtpChallenge(purpose, '', normalizedEmail)
+    const reused = getReusableOtpContext(purpose, normalizedEmail)
+    if (reused) {
       navigate('/email-verification', {
-        state: getAuthState(normalizedEmail, otpContext),
+        state: getAuthState(normalizedEmail, reused.otpContext),
       })
-    } catch (error) {
-      setPasswordErrorText(getApiErrorMessage(error, 'Failed to send verification code. Please try again.'))
-      passwordInputRef.current?.focus()
-    } finally {
-      setIsOtpSending(false)
+      return
     }
+
+    const otpContext = syncOtpContext({
+      challengeId: '',
+      purpose,
+      otpEmail: normalizedEmail,
+    })
+    navigate('/email-verification', {
+      state: getAuthState(normalizedEmail, otpContext),
+    })
   }
 
   const updateOtpAt = (index: number, rawValue: string) => {
@@ -774,7 +814,7 @@ export function LoginPage() {
       return
     }
     if (!otpChallengeId || !otpPurpose) {
-      setVerifyErrorText('Verification session expired. Please restart login or sign up.')
+      setVerifyErrorText('Please send a verification code first.')
       return
     }
     if (code.length !== 6) {
@@ -782,28 +822,28 @@ export function LoginPage() {
       return
     }
 
-    const passwordForSignupPassword = otpPurpose === 'signup_password' ? otpPendingPassword.trim() : ''
-    if (otpPurpose === 'signup_password' && !passwordForSignupPassword) {
-      setVerifyErrorText('Sign-up session expired. Please set password again.')
-      return
-    }
-
-    if (otpPurpose === 'reset_password') {
+    if (otpPurpose === 'password_reset' || otpPurpose === 'signup') {
       setVerifyErrorText('')
       setIsVerifySubmitting(true)
       try {
-        const result = await verifyPasswordReset({
+        const result = await verifyOtp({
           challengeId: otpChallengeId,
-          email: normalizedEmail,
+          channel: getIdentifierChannel(normalizedEmail),
+          identifier: normalizedEmail,
+          purpose: otpPurpose,
           code,
         })
+        const verificationToken = normalizeText(result.verificationToken || result.resetToken)
+        if (!verificationToken) {
+          throw new Error('missing verification token')
+        }
         clearOtpContext()
-        const token = syncResetToken(result.resetToken)
-        navigate('/reset-password/new-password', {
+        const token = syncResetToken(verificationToken)
+        navigate(otpPurpose === 'signup' ? '/create-account/password' : '/reset-password/new-password', {
           state: getAuthState(normalizedEmail, { resetToken: token }),
         })
       } catch (error) {
-        setVerifyErrorText(getApiErrorMessage(error, 'Verification failed. Please try again.'))
+        setVerifyErrorText(getVerificationErrorMessage(error, 'Verification failed. Please try again.'))
       } finally {
         setIsVerifySubmitting(false)
       }
@@ -816,11 +856,14 @@ export function LoginPage() {
     try {
       const auth = await verifyOtp({
         challengeId: otpChallengeId,
-        email: normalizedEmail,
+        channel: getIdentifierChannel(normalizedEmail),
+        identifier: normalizedEmail,
         purpose: otpPurpose,
         code,
-        password: passwordForSignupPassword || undefined,
       })
+      if (!auth.user) {
+        throw new Error('missing authenticated user')
+      }
       clearOtpContext()
       clearResetToken()
       setSession({
@@ -833,7 +876,7 @@ export function LoginPage() {
       })
       navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
     } catch (error) {
-      setVerifyErrorText(getApiErrorMessage(error, 'Verification failed. Please try again.'))
+      setVerifyErrorText(getVerificationErrorMessage(error, 'Verification failed. Please try again.'))
     } finally {
       setIsVerifySubmitting(false)
     }
@@ -871,7 +914,7 @@ export function LoginPage() {
 
     const normalizedEmail = stepEmail.trim()
     if (!normalizedEmail) {
-      navigate('/log-in', {
+      navigate(AUTH_ENTRY_PATH, {
         state: {
           ...getAuthState(''),
           errorMessage: 'Please enter your email first.',
@@ -883,7 +926,7 @@ export function LoginPage() {
     setIsResetSubmitting(true)
     try {
       clearResetToken()
-      const { otpContext } = await requestOtpChallenge('reset_password', '', normalizedEmail)
+      const { otpContext } = await requestOtpChallenge('password_reset', normalizedEmail)
       navigate('/email-verification', {
         state: getAuthState(normalizedEmail, otpContext),
       })
@@ -956,8 +999,9 @@ export function LoginPage() {
     setIsResetNewSubmitting(true)
     try {
       await completePasswordReset({
-        email: normalizedEmail,
-        resetToken: activeResetToken,
+        channel: getIdentifierChannel(normalizedEmail),
+        identifier: normalizedEmail,
+        verificationToken: activeResetToken,
         newPassword: nextPassword,
       })
       clearResetToken()
@@ -993,11 +1037,20 @@ export function LoginPage() {
         </span>
         <span>继续使用 Microsoft 登录</span>
       </button>
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+      <button
+        type="button"
+        className={cx(loginTw.socialButton, focusRingClass)}
+        onClick={() => switchEntryMode(entryMode === 'email' ? 'phone' : 'email')}
+      >
         <span className={loginTw.socialIcon}>
-          <img src={phoneIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
+          <img
+            src={entryMode === 'email' ? phoneIconSvg : emailIconSvg}
+            alt=""
+            aria-hidden="true"
+            className={loginTw.socialIconImg}
+          />
         </span>
-        <span>继续使用手机登录</span>
+        <span>{entryMode === 'email' ? '继续使用手机登录' : '继续使用邮箱登录'}</span>
       </button>
     </div>
   )
@@ -1016,7 +1069,7 @@ export function LoginPage() {
                   <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
                 <h1 className={loginTw.heading}>
-                  <span className={loginTw.headingText}>{isCreateAccountEntry ? '创建帐户' : '欢迎回来'}</span>
+                  <span className={loginTw.headingText}>登录或注册</span>
                 </h1>
               </div>
 
@@ -1037,18 +1090,19 @@ export function LoginPage() {
                         <div className={emailInputClasses.wrap}>
                           <label className={emailInputClasses.label} htmlFor={emailId} id={emailLabelId}>
                             <div className={emailInputClasses.labelPos}>
-                              <div className={emailInputClasses.labelText}>电子邮件地址</div>
+                              <div className={emailInputClasses.labelText}>{entryInputLabel}</div>
                             </div>
                           </label>
                           <input
                             ref={entryInputRef}
                             className={emailInputClasses.input}
                             id={emailId}
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            placeholder="电子邮件地址"
-                            value={email}
+                            name={entryInputName}
+                            type={entryInputType}
+                            inputMode={entryInputMode}
+                            autoComplete={entryAutoComplete}
+                            placeholder={entryInputLabel}
+                            value={entryValue}
                             aria-labelledby={emailLabelId}
                             aria-describedby={isEmailInvalid ? emailErrorId : undefined}
                             aria-invalid={isEmailInvalid || undefined}
@@ -1056,7 +1110,11 @@ export function LoginPage() {
                             onFocus={() => setIsEmailFocused(true)}
                             onBlur={() => setIsEmailFocused(false)}
                             onChange={(e) => {
-                              setEmail(e.target.value)
+                              if (entryMode === 'phone') {
+                                setPhone(e.target.value)
+                              } else {
+                                setEmail(e.target.value)
+                              }
                               if (isEmailInvalid) setEmailErrorText('')
                             }}
                           />
@@ -1083,19 +1141,6 @@ export function LoginPage() {
                     <button type="submit" className={cx(loginTw.primaryBtn, focusRingClass)} disabled={isEntrySubmitting}>
                       继续
                     </button>
-                    {isCreateAccountEntry ? (
-                      <span className={loginTw.textPrimary}>
-                        已经有帐户？请
-                        <Link to="/log-in" state={getAuthState(email)} className={loginTw.hintLink}>
-                          登录
-                        </Link>
-                      </span>
-                    ) : (
-                      <span className={loginTw.textPrimary}>
-                        还没有帐户？请
-                        <Link to="/create-account" className={loginTw.hintLink}>注册</Link>
-                      </span>
-                    )}
                   </div>
                 </form>
               </fieldset>
@@ -1129,7 +1174,7 @@ export function LoginPage() {
                         <div className={readonlyEmailInputClasses.wrap}>
                           <label className={readonlyEmailInputClasses.label} htmlFor="readonly-email" id={readonlyEmailLabelId}>
                             <div className={readonlyEmailInputClasses.labelPos}>
-                              <div className={readonlyEmailInputClasses.labelText}>电子邮件地址</div>
+                              <div className={readonlyEmailInputClasses.labelText}>邮箱或手机号</div>
                             </div>
                           </label>
                           <input
@@ -1138,16 +1183,16 @@ export function LoginPage() {
                             type="text"
                             value={stepEmail}
                             readOnly
-                            placeholder="电子邮件地址"
+                            placeholder="邮箱或手机号"
                             aria-labelledby={readonlyEmailLabelId}
                           />
                           <div className={loginTw.inputEndDecoration}>
                             <div className={loginTw.noWrap}>
                               <Link
-                                to="/log-in"
+                                to={AUTH_ENTRY_PATH}
                                 state={getAuthState(stepEmail)}
                                 className={loginTw.editLink}
-                                aria-label="编辑电子邮件"
+                                aria-label="编辑邮箱或手机号"
                               >
                                 编辑
                               </Link>
@@ -1228,39 +1273,28 @@ export function LoginPage() {
                     </div>
 
                     {!isCreateAccountPassword ? (
-                      <span className={loginTw.textPrimary}>
-                        还没有帐户？请
-                        <Link to="/create-account" className={loginTw.hintLink}>注册</Link>
-                      </span>
+                      <>
+                        <div className={loginTw.divider}>
+                          <div className={loginTw.dividerLine} />
+                          <div className={loginTw.dividerName}>或</div>
+                          <div className={loginTw.dividerLine} />
+                        </div>
+
+                        <div className={loginTw.stack}>
+                          <div className={loginTw.buttonRow}>
+                            <button
+                              type="button"
+                              className={cx(loginTw.outlineBtn, focusRingClass)}
+                              disabled={isPasswordSubmitting || isOtpSending}
+                              onClick={handlePasswordlessOtpAction}
+                            >
+                              使用一次性验证码登录
+                            </button>
+                          </div>
+                        </div>
+                      </>
                     ) : null}
 
-                    <div className={loginTw.divider}>
-                      <div className={loginTw.dividerLine} />
-                      <div className={loginTw.dividerName}>或</div>
-                      <div className={loginTw.dividerLine} />
-                    </div>
-
-                    <div className={loginTw.stack}>
-                      <div className={loginTw.buttonRow}>
-                        <button
-                          type="button"
-                          className={cx(loginTw.outlineBtn, focusRingClass)}
-                          disabled={isPasswordSubmitting || isOtpSending}
-                          onClick={handlePasswordlessOtpAction}
-                        >
-                          {isCreateAccountPassword ? '使用一次性验证码注册' : '使用一次性验证码登录'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {isCreateAccountPassword ? (
-                      <span className={loginTw.textPrimary}>
-                        已经有帐户了？请
-                        <Link to="/log-in" state={getAuthState(stepEmail)} className={loginTw.hintLink}>
-                          登录
-                        </Link>
-                      </span>
-                    ) : null}
                   </div>
                 </form>
               </fieldset>
@@ -1274,11 +1308,13 @@ export function LoginPage() {
                   <img src={onebookWordmark} alt="OneBook AI" className={loginTw.wordmarkImg} />
                 </Link>
                 <h1 className={loginTw.heading}>
-                  <span className={loginTw.headingText}>检查您的收件箱</span>
+                  <span className={loginTw.headingText}>输入验证码</span>
                 </h1>
                 <div className={loginTw.subtitle}>
                   <span className={loginTw.textSecondary} id={verifySubtitleId}>
-                    输入我们刚刚向 {stepEmail || '你的邮箱'} 发送的验证码
+                    {hasOtpChallenge
+                      ? `输入我们刚刚向 ${stepEmail || '你的邮箱或手机号'} 发送的验证码`
+                      : `点击发送验证码，我们会向 ${stepEmail || '你的邮箱或手机号'} 发送验证码`}
                   </span>
                 </div>
               </div>
@@ -1336,7 +1372,7 @@ export function LoginPage() {
                   <div className={loginTw.sectionCtas}>
                     <div className={loginTw.buttonRow}>
                       <button type="button" className={cx(loginTw.outlineBtn, focusRingClass)} disabled={isVerifySubmitting || isOtpSending} onClick={resendEmail}>
-                        重新发送电子邮件
+                        {hasOtpChallenge ? '重新发送验证码' : '发送验证码'}
                       </button>
                     </div>
                     <div className={loginTw.buttonRow}>
@@ -1361,7 +1397,7 @@ export function LoginPage() {
                 </h1>
                 <div className={loginTw.subtitle}>
                   <span className={loginTw.textSecondary}>
-                    点击“继续”以重置 {stepEmail || '你的邮箱'} 的密码
+                    点击“继续”以重置 {stepEmail || '你的邮箱或手机号'} 的密码
                   </span>
                 </div>
               </div>
@@ -1384,7 +1420,7 @@ export function LoginPage() {
                         <button
                           type="button"
                           className={cx(loginTw.transparentBtn, focusRingClass)}
-                          onClick={() => navigate('/log-in', { state: getAuthState(stepEmail) })}
+                          onClick={() => navigate(AUTH_ENTRY_PATH, { state: getAuthState(stepEmail) })}
                         >
                           返回登录
                         </button>
@@ -1569,7 +1605,7 @@ export function LoginPage() {
                   <div className={loginTw.sectionFields} />
                   <div className={loginTw.sectionCtas}>
                     <div className={loginTw.buttonRow}>
-                      <Link to="/log-in/password" className={cx(loginTw.primaryBtn, focusRingClass)}>
+                      <Link to={AUTH_ENTRY_PATH} className={cx(loginTw.primaryBtn, focusRingClass)}>
                         登录
                       </Link>
                     </div>
@@ -1605,7 +1641,7 @@ export function LoginPage() {
                   data-dd-action-name="Try again"
                   onClick={() => {
                     writeSessionValue(AUTH_ERROR_MESSAGE_STORAGE_KEY, '')
-                    navigate('/log-in', { replace: true })
+                    navigate(AUTH_ENTRY_PATH, { replace: true })
                   }}
                 >
                   重试

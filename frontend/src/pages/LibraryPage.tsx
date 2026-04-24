@@ -521,7 +521,7 @@ export function LibraryPage() {
           <h1 className="text-[20px] font-medium">请先登录后进入书库管理</h1>
           <p className="mt-2 text-[14px] text-[#666]">登录后可上传、查看、下载与删除书籍。</p>
           <div className="mt-5 flex items-center justify-center gap-2">
-            <Link to="/log-in" className={libraryTw.actionBtn}>
+            <Link to="/log-in-or-create-account" className={libraryTw.actionBtn}>
               去登录
             </Link>
             <Link to="/chat" className={libraryTw.actionBtn}>

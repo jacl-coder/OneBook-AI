@@ -189,7 +189,7 @@ const footerColumns = [
     title: 'Workspace',
     links: [
       { label: 'Chat', href: '/chat' },
-      { label: 'Login', href: '/log-in' },
+      { label: 'Login', href: '/log-in-or-create-account' },
     ],
   },
   {
@@ -743,7 +743,7 @@ export function HomePage() {
                   </div>
 
                   <div className={homeTw.purchaseBtnGroup}>
-                    <Link to="/log-in" className={cx(homeTw.purchaseBtn, homeTw.purchaseBtnDark)}>
+                    <Link to="/log-in-or-create-account" className={cx(homeTw.purchaseBtn, homeTw.purchaseBtnDark)}>
                       <i className={cx('fa fa-key', homeTw.purchaseBtnIcon)} aria-hidden="true" />
                       <span>Login</span>
                     </Link>

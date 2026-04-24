@@ -17,7 +17,7 @@ export function AdminRouteGuard() {
           <h1 className="text-[20px] font-medium">请先登录后进入后台管理</h1>
           <p className="mt-2 text-[14px] text-[#666]">管理员登录后可查看用户、书籍、审计日志与系统概览。</p>
           <div className="mt-5 flex items-center justify-center gap-2">
-            <Link className="inline-flex h-8 items-center rounded-[9999px] border border-[rgba(0,0,0,0.12)] px-[12px] text-[12px]" to="/log-in">
+            <Link className="inline-flex h-8 items-center rounded-[9999px] border border-[rgba(0,0,0,0.12)] px-[12px] text-[12px]" to="/log-in-or-create-account">
               去登录
             </Link>
             <Link className="inline-flex h-8 items-center rounded-[9999px] border border-[rgba(0,0,0,0.12)] px-[12px] text-[12px]" to="/chat">
