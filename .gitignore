@@ -62,3 +62,5 @@ package-lock.json
 !frontend/package-lock.json
 
 毕业设计/
+
+.playwright-cli/

@@ -120,15 +120,26 @@ func (a *App) SignUp(email, password string) (domain.User, string, string, error
 	if email == "" || password == "" {
 		return domain.User{}, "", "", ErrEmailAndPasswordRequired
 	}
+	return a.SignUpWithVerifiedIdentity(domain.IdentityEmail, email, password)
+}
+
+func (a *App) SignUpWithVerifiedIdentity(identityType domain.IdentityType, identifier, password string) (domain.User, string, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" || password == "" {
+		return domain.User{}, "", "", ErrEmailAndPasswordRequired
+	}
+	if !isSupportedIdentityType(identityType) {
+		return domain.User{}, "", "", ErrUnsupportedIdentityType
+	}
 	if err := auth.ValidatePassword(password); err != nil {
 		return domain.User{}, "", "", err
 	}
-	exists, err := a.store.HasUserEmail(email)
+	exists, err := a.store.HasUserIdentity(identityType, identifier)
 	if err != nil {
-		return domain.User{}, "", "", fmt.Errorf("check email: %w", err)
+		return domain.User{}, "", "", fmt.Errorf("check identity: %w", err)
 	}
 	if exists {
-		return domain.User{}, "", "", ErrEmailAlreadyExists
+		return domain.User{}, "", "", ErrIdentifierAlreadyExists
 	}
 	role := domain.RoleUser
 	count, err := a.store.UserCount()
@@ -142,8 +153,11 @@ func (a *App) SignUp(email, password string) (domain.User, string, string, error
 	if count == 0 {
 		role = domain.RoleAdmin
 	}
-	user, err := a.createUser(email, passwordHash, role)
+	user, err := a.createUserWithIdentity(identityType, identifier, passwordHash, role)
 	if err != nil {
+		if strings.Contains(err.Error(), "identity already exists") {
+			return domain.User{}, "", "", ErrIdentifierAlreadyExists
+		}
 		return domain.User{}, "", "", err
 	}
 	return a.issueUserTokens(user)
@@ -155,12 +169,23 @@ func (a *App) SignUpPasswordless(email string) (domain.User, string, string, err
 	if email == "" {
 		return domain.User{}, "", "", ErrEmailRequired
 	}
-	exists, err := a.store.HasUserEmail(email)
+	return a.SignUpPasswordlessWithVerifiedIdentity(domain.IdentityEmail, email)
+}
+
+func (a *App) SignUpPasswordlessWithVerifiedIdentity(identityType domain.IdentityType, identifier string) (domain.User, string, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return domain.User{}, "", "", ErrIdentifierRequired
+	}
+	if !isSupportedIdentityType(identityType) {
+		return domain.User{}, "", "", ErrUnsupportedIdentityType
+	}
+	exists, err := a.store.HasUserIdentity(identityType, identifier)
 	if err != nil {
-		return domain.User{}, "", "", fmt.Errorf("check email: %w", err)
+		return domain.User{}, "", "", fmt.Errorf("check identity: %w", err)
 	}
 	if exists {
-		return domain.User{}, "", "", ErrEmailAlreadyExists
+		return domain.User{}, "", "", ErrIdentifierAlreadyExists
 	}
 	role := domain.RoleUser
 	count, err := a.store.UserCount()
@@ -170,8 +195,11 @@ func (a *App) SignUpPasswordless(email string) (domain.User, string, string, err
 	if count == 0 {
 		role = domain.RoleAdmin
 	}
-	user, err := a.createUser(email, "", role)
+	user, err := a.createUserWithIdentity(identityType, identifier, "", role)
 	if err != nil {
+		if strings.Contains(err.Error(), "identity already exists") {
+			return domain.User{}, "", "", ErrIdentifierAlreadyExists
+		}
 		return domain.User{}, "", "", err
 	}
 	return a.issueUserTokens(user)
@@ -180,7 +208,15 @@ func (a *App) SignUpPasswordless(email string) (domain.User, string, string, err
 // Login validates credentials and issues a session token.
 func (a *App) Login(email, password string) (domain.User, string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	user, ok, err := a.store.GetUserByEmail(email)
+	return a.LoginWithPasswordByIdentity(domain.IdentityEmail, email, password)
+}
+
+func (a *App) LoginWithPasswordByIdentity(identityType domain.IdentityType, identifier, password string) (domain.User, string, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if !isSupportedIdentityType(identityType) {
+		return domain.User{}, "", "", ErrInvalidCredentials
+	}
+	user, ok, err := a.store.GetUserByIdentity(identityType, identifier)
 	if err != nil {
 		return domain.User{}, "", "", fmt.Errorf("fetch user: %w", err)
 	}
@@ -202,7 +238,15 @@ func (a *App) Login(email, password string) (domain.User, string, string, error)
 // LoginByEmail issues a session token for an existing account.
 func (a *App) LoginByEmail(email string) (domain.User, string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	user, ok, err := a.store.GetUserByEmail(email)
+	return a.LoginByIdentity(domain.IdentityEmail, email)
+}
+
+func (a *App) LoginByIdentity(identityType domain.IdentityType, identifier string) (domain.User, string, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if !isSupportedIdentityType(identityType) {
+		return domain.User{}, "", "", ErrInvalidCredentials
+	}
+	user, ok, err := a.store.GetUserByIdentity(identityType, identifier)
 	if err != nil {
 		return domain.User{}, "", "", fmt.Errorf("fetch user: %w", err)
 	}
@@ -294,7 +338,18 @@ func (a *App) HasUserEmail(email string) (bool, error) {
 	if email == "" {
 		return false, ErrEmailRequired
 	}
-	return a.store.HasUserEmail(email)
+	return a.store.HasUserIdentity(domain.IdentityEmail, email)
+}
+
+func (a *App) HasUserIdentity(identityType domain.IdentityType, identifier string) (bool, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return false, ErrIdentifierRequired
+	}
+	if !isSupportedIdentityType(identityType) {
+		return false, ErrUnsupportedIdentityType
+	}
+	return a.store.HasUserIdentity(identityType, identifier)
 }
 
 // CanLoginWithPassword reports whether an email should go to password login.
@@ -304,7 +359,18 @@ func (a *App) CanLoginWithPassword(email string) (bool, error) {
 	if email == "" {
 		return false, ErrEmailRequired
 	}
-	user, ok, err := a.store.GetUserByEmail(email)
+	return a.CanLoginWithPasswordIdentity(domain.IdentityEmail, email)
+}
+
+func (a *App) CanLoginWithPasswordIdentity(identityType domain.IdentityType, identifier string) (bool, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return false, ErrIdentifierRequired
+	}
+	if !isSupportedIdentityType(identityType) {
+		return false, ErrUnsupportedIdentityType
+	}
+	user, ok, err := a.store.GetUserByIdentity(identityType, identifier)
 	if err != nil {
 		return false, fmt.Errorf("fetch user: %w", err)
 	}
@@ -356,10 +422,23 @@ func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, err
 	if ok && existing.ID != user.ID {
 		return domain.User{}, ErrEmailAlreadyExists
 	}
+	now := time.Now().UTC()
 	user.Email = email
-	user.UpdatedAt = time.Now().UTC()
+	user.UpdatedAt = now
 	if err := a.store.SaveUser(user); err != nil {
 		return domain.User{}, fmt.Errorf("update user: %w", err)
+	}
+	if err := a.store.SaveUserIdentity(domain.UserIdentity{
+		ID:         util.NewID(),
+		UserID:     user.ID,
+		Type:       domain.IdentityEmail,
+		Identifier: email,
+		VerifiedAt: &now,
+		IsPrimary:  true,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}); err != nil {
+		return domain.User{}, fmt.Errorf("update email identity: %w", err)
 	}
 	return user, nil
 }
@@ -386,13 +465,13 @@ func (a *App) ChangePassword(userID, currentPassword, newPassword string) error 
 		if strings.TrimSpace(currentPassword) == "" {
 			return ErrCurrentPasswordRequired
 		}
-			if !auth.CheckPassword(currentPassword, user.PasswordHash) {
-				return ErrInvalidCredentials
-			}
-			if currentPassword == newPassword {
-				return ErrNewPasswordMustDiffer
-			}
+		if !auth.CheckPassword(currentPassword, user.PasswordHash) {
+			return ErrInvalidCredentials
 		}
+		if currentPassword == newPassword {
+			return ErrNewPasswordMustDiffer
+		}
+	}
 	passwordHash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -415,25 +494,36 @@ func (a *App) ResetPasswordByEmail(email, newPassword string) error {
 	if email == "" {
 		return ErrEmailRequired
 	}
+	return a.ResetPasswordByIdentity(domain.IdentityEmail, email, newPassword)
+}
+
+func (a *App) ResetPasswordByIdentity(identityType domain.IdentityType, identifier, newPassword string) error {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ErrIdentifierRequired
+	}
+	if !isSupportedIdentityType(identityType) {
+		return ErrUnsupportedIdentityType
+	}
 	if strings.TrimSpace(newPassword) == "" {
 		return ErrNewPasswordRequired
 	}
 	if err := auth.ValidatePassword(newPassword); err != nil {
 		return err
 	}
-	user, ok, err := a.store.GetUserByEmail(email)
+	user, ok, err := a.store.GetUserByIdentity(identityType, identifier)
 	if err != nil {
 		return fmt.Errorf("fetch user: %w", err)
 	}
 	if !ok {
 		return ErrInvalidCredentials
 	}
-		if user.Status == domain.StatusDisabled {
-			return ErrUserDisabled
-		}
-		if hasPassword(user.PasswordHash) && auth.CheckPassword(newPassword, user.PasswordHash) {
-			return ErrNewPasswordMustDiffer
-		}
+	if user.Status == domain.StatusDisabled {
+		return ErrUserDisabled
+	}
+	if hasPassword(user.PasswordHash) && auth.CheckPassword(newPassword, user.PasswordHash) {
+		return ErrNewPasswordMustDiffer
+	}
 	passwordHash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -572,6 +662,41 @@ func (a *App) createUser(email, passwordHash string, role domain.UserRole) (doma
 		return domain.User{}, fmt.Errorf("save user: %w", err)
 	}
 	return user, nil
+}
+
+func (a *App) createUserWithIdentity(identityType domain.IdentityType, identifier, passwordHash string, role domain.UserRole) (domain.User, error) {
+	now := time.Now().UTC()
+	displayEmail := ""
+	if identityType == domain.IdentityEmail || identityType == domain.IdentityPhone {
+		displayEmail = identifier
+	}
+	user := domain.User{
+		ID:           util.NewID(),
+		Email:        displayEmail,
+		PasswordHash: passwordHash,
+		Role:         role,
+		Status:       domain.StatusActive,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	identity := domain.UserIdentity{
+		ID:         util.NewID(),
+		UserID:     user.ID,
+		Type:       identityType,
+		Identifier: identifier,
+		VerifiedAt: &now,
+		IsPrimary:  true,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := a.store.SaveUserWithIdentity(user, identity); err != nil {
+		return domain.User{}, fmt.Errorf("save user identity: %w", err)
+	}
+	return user, nil
+}
+
+func isSupportedIdentityType(identityType domain.IdentityType) bool {
+	return identityType == domain.IdentityEmail || identityType == domain.IdentityPhone
 }
 
 func hasPassword(passwordHash string) bool {

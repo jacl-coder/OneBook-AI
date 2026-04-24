@@ -40,17 +40,21 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) SignUp(requestID, email, password string) (domain.User, string, string, error) {
-	payload := map[string]string{"email": email, "password": password}
+func (c *Client) SignUpComplete(requestID, channel, identifier, verificationToken, password string) (domain.User, string, string, error) {
+	payload := map[string]string{"channel": channel, "identifier": identifier, "verificationToken": verificationToken, "password": password}
 	var resp authResponse
-	if err := c.doJSON(http.MethodPost, "/auth/signup", requestID, "", payload, &resp); err != nil {
+	if err := c.doJSON(http.MethodPost, "/auth/signup/complete", requestID, "", payload, &resp); err != nil {
 		return domain.User{}, "", "", err
 	}
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
-func (c *Client) Login(requestID, email, password string) (domain.User, string, string, error) {
-	payload := map[string]string{"email": email, "password": password}
+func (c *Client) SignUp(requestID, email, password string) (domain.User, string, string, error) {
+	return c.SignUpComplete(requestID, "email", email, "", password)
+}
+
+func (c *Client) Login(requestID, identifier, password string) (domain.User, string, string, error) {
+	payload := map[string]string{"identifier": identifier, "password": password}
 	var resp authResponse
 	if err := c.doJSON(http.MethodPost, "/auth/login", requestID, "", payload, &resp); err != nil {
 		return domain.User{}, "", "", err
@@ -58,20 +62,39 @@ func (c *Client) Login(requestID, email, password string) (domain.User, string, 
 	return resp.User, resp.Token, resp.RefreshToken, nil
 }
 
-func (c *Client) LoginMethods(requestID, email string) (bool, error) {
-	payload := map[string]string{"email": email}
+func (c *Client) LoginMethods(requestID, identifier string) (LoginMethodsResponse, error) {
+	payload := map[string]string{"identifier": identifier}
 	var resp LoginMethodsResponse
 	if err := c.doJSON(http.MethodPost, "/auth/login/methods", requestID, "", payload, &resp); err != nil {
-		return false, err
+		return LoginMethodsResponse{}, err
 	}
-	return resp.PasswordLogin, nil
+	return resp, nil
 }
 
-func (c *Client) OTPSend(requestID, email, purpose string) (OTPSendResponse, error) {
-	payload := map[string]string{"email": email, "purpose": purpose}
-	var resp OTPSendResponse
-	if err := c.doJSON(http.MethodPost, "/auth/otp/send", requestID, "", payload, &resp); err != nil {
-		return OTPSendResponse{}, err
+func (c *Client) VerificationSend(requestID, channel, identifier, purpose string) (VerificationSendResponse, error) {
+	payload := map[string]string{"channel": channel, "identifier": identifier, "purpose": purpose}
+	var resp VerificationSendResponse
+	if err := c.doJSON(http.MethodPost, "/auth/verification/send", requestID, "", payload, &resp); err != nil {
+		return VerificationSendResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) OTPSend(requestID, email, purpose string) (VerificationSendResponse, error) {
+	return c.VerificationSend(requestID, "email", email, purpose)
+}
+
+func (c *Client) VerificationVerify(requestID, challengeID, channel, identifier, purpose, code string) (VerificationVerifyResponse, error) {
+	payload := map[string]string{
+		"challengeId": challengeID,
+		"channel":     channel,
+		"identifier":  identifier,
+		"purpose":     purpose,
+		"code":        code,
+	}
+	var resp VerificationVerifyResponse
+	if err := c.doJSON(http.MethodPost, "/auth/verification/verify", requestID, "", payload, &resp); err != nil {
+		return VerificationVerifyResponse{}, err
 	}
 	return resp, nil
 }
@@ -111,6 +134,16 @@ func (c *Client) PasswordResetComplete(requestID, email, resetToken, newPassword
 		"email":       email,
 		"resetToken":  resetToken,
 		"newPassword": newPassword,
+	}
+	return c.doJSON(http.MethodPost, "/auth/password/reset/complete", requestID, "", payload, nil)
+}
+
+func (c *Client) PasswordResetCompleteWithIdentifier(requestID, channel, identifier, verificationToken, newPassword string) error {
+	payload := map[string]string{
+		"channel":           channel,
+		"identifier":        identifier,
+		"verificationToken": verificationToken,
+		"newPassword":       newPassword,
 	}
 	return c.doJSON(http.MethodPost, "/auth/password/reset/complete", requestID, "", payload, nil)
 }
@@ -679,20 +712,34 @@ type authResponse struct {
 	User         domain.User `json:"user"`
 }
 
-type OTPSendResponse struct {
+type VerificationSendResponse struct {
 	ChallengeID        string `json:"challengeId"`
 	ExpiresInSeconds   int    `json:"expiresInSeconds"`
 	ResendAfterSeconds int    `json:"resendAfterSeconds"`
+	MaskedIdentifier   string `json:"maskedIdentifier,omitempty"`
 	MaskedEmail        string `json:"maskedEmail,omitempty"`
 }
 
+type OTPSendResponse = VerificationSendResponse
+
+type VerificationVerifyResponse struct {
+	VerificationToken string      `json:"verificationToken"`
+	ResetToken        string      `json:"resetToken,omitempty"`
+	ExpiresInSeconds  int         `json:"expiresInSeconds"`
+	Token             string      `json:"token,omitempty"`
+	RefreshToken      string      `json:"refreshToken,omitempty"`
+	User              domain.User `json:"user,omitempty"`
+}
+
 type LoginMethodsResponse struct {
+	Exists        bool `json:"exists"`
 	PasswordLogin bool `json:"passwordLogin"`
 }
 
 type PasswordResetVerifyResponse struct {
-	ResetToken       string `json:"resetToken"`
-	ExpiresInSeconds int    `json:"expiresInSeconds"`
+	VerificationToken string `json:"verificationToken"`
+	ResetToken        string `json:"resetToken"`
+	ExpiresInSeconds  int    `json:"expiresInSeconds"`
 }
 
 type listUsersResponse struct {

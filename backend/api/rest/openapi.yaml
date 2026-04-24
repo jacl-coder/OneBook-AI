@@ -33,19 +33,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
-  /api/auth/signup:
+  /api/auth/signup/complete:
     post:
       tags: [auth]
-      summary: Sign up
+      summary: Complete sign up
       description: |
-        Password sign-up endpoint. On success, gateway sets HttpOnly
+        Completes sign-up after `/api/auth/verification/verify` returns a
+        sign-up `verificationToken`. On success, gateway sets HttpOnly
         `onebook_access` + `onebook_refresh` cookies.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AuthRequest"
+              $ref: "#/components/schemas/SignupCompleteRequest"
       responses:
         "201":
           description: Created
@@ -71,14 +72,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/auth/login:
+  /api/auth/login/password:
     post:
       tags: [auth]
       summary: Login
       description: |
-        Password login entrypoint. If the account has no password configured,
+        Password login entrypoint for email or China mainland phone number.
+        If the account has no password configured,
         service returns `AUTH_PASSWORD_NOT_SET` and client should continue with
-        OTP login flow at `/api/auth/otp/send` + `/api/auth/otp/verify`.
+        verification login flow at `/api/auth/verification/send` +
+        `/api/auth/verification/verify`.
         On success, gateway sets HttpOnly `onebook_access` + `onebook_refresh` cookies.
       requestBody:
         required: true
@@ -120,10 +123,11 @@ paths:
   /api/auth/login/methods:
     post:
       tags: [auth]
-      summary: Resolve login method by email
+      summary: Resolve login method by identifier
       description: |
-        Returns whether password login should be used for the given email.
-        When `passwordLogin=false`, client should continue with OTP flow.
+        Returns whether password login should be used for the given email or phone.
+        When `exists=false`, client should continue with sign-up verification.
+        When `exists=true` and `passwordLogin=false`, client should continue with login OTP verification.
       requestBody:
         required: true
         content:
@@ -155,14 +159,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/auth/otp/send:
+  /api/auth/verification/send:
     post:
       tags: [auth]
       summary: Send one-time verification code
       description: |
-        Sends a one-time code to email for OTP auth flows.
-        For `signup_password`, client should collect password first, then send
-        OTP, then call `/api/auth/otp/verify` with both code and password.
+        Sends a one-time code to email or China mainland phone for signup,
+        login, or password reset.
       requestBody:
         required: true
         content:
@@ -182,8 +185,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid login identifier for `purpose=login`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Verification delivery provider failed
           content:
             application/json:
               schema:
@@ -194,16 +209,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/auth/otp/verify:
+  /api/auth/verification/verify:
     post:
       tags: [auth]
       summary: Verify one-time code
       description: |
-        Verifies OTP code and completes login/registration.
-        Successful verification returns user payload.
-        For forgot-password flow, use `/api/auth/password/reset/verify`.
-        For signup/login OTP purposes, gateway sets HttpOnly
-        `onebook_access` + `onebook_refresh` cookies.
+        Verifies one-time code. Login verification returns user payload and
+        sets HttpOnly cookies. Signup and password reset verification return
+        a short-lived `verificationToken` for the next step.
       requestBody:
         required: true
         content:
@@ -216,7 +229,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthResponse"
+              $ref: "#/components/schemas/VerificationVerifyResponse"
         "400":
           description: Invalid input or invalid OTP challenge/code
           content:
@@ -246,7 +259,7 @@ paths:
       tags: [auth]
       summary: Verify reset-password code
       description: |
-        Verifies the one-time email code for password reset and returns a
+        Legacy alias. Verifies the one-time code for password reset and returns a
         short-lived reset token for the next step.
       requestBody:
         required: true
@@ -291,7 +304,7 @@ paths:
       summary: Complete password reset
       description: |
         Sets a new password using a valid reset token returned by
-        `/api/auth/password/reset/verify`.
+        `/api/auth/verification/verify`.
       requestBody:
         required: true
         content:
@@ -1802,14 +1815,27 @@ components:
     AuthRequest:
       type: object
       properties:
-        email:
+        identifier:
           type: string
-          format: email
+          description: Email or China mainland phone number.
         password:
           type: string
           description: At least 12 chars and must include upper/lower/digit/special.
           minLength: 12
-      required: [email, password]
+      required: [identifier, password]
+    SignupCompleteRequest:
+      type: object
+      properties:
+        channel:
+          $ref: "#/components/schemas/VerificationChannel"
+        identifier:
+          type: string
+        verificationToken:
+          type: string
+        password:
+          type: string
+          minLength: 12
+      required: [channel, identifier, verificationToken, password]
     AuthResponse:
       type: object
       properties:
@@ -1819,37 +1845,44 @@ components:
     LoginMethodsRequest:
       type: object
       properties:
-        email:
+        identifier:
           type: string
-          format: email
-      required: [email]
+          description: Email or China mainland phone number.
+      required: [identifier]
     LoginMethodsResponse:
       type: object
       properties:
+        exists:
+          type: boolean
+          description: Whether a verified identity already exists for the identifier.
         passwordLogin:
           type: boolean
           description: |
             Whether the client should continue with password login flow.
             false means continue with OTP flow.
-      required: [passwordLogin]
+      required: [exists, passwordLogin]
     OtpPurpose:
       type: string
-      enum: [signup_password, signup_otp, login_otp, reset_password]
+      enum: [signup, login, password_reset]
       description: |
         OTP flow purpose:
-        - signup_password: password registration (set password first, then OTP)
-        - signup_otp: passwordless registration
-        - login_otp: OTP login
-        - reset_password: forgot-password verification
+        - signup: verify identifier before password registration
+        - login: OTP login
+        - password_reset: forgot-password verification
+    VerificationChannel:
+      type: string
+      enum: [email, phone]
     OtpSendRequest:
       type: object
       properties:
-        email:
+        channel:
+          $ref: "#/components/schemas/VerificationChannel"
+        identifier:
           type: string
-          format: email
+          description: Email or China mainland phone number.
         purpose:
           $ref: "#/components/schemas/OtpPurpose"
-      required: [email, purpose]
+      required: [channel, identifier, purpose]
     OtpSendResponse:
       type: object
       properties:
@@ -1863,61 +1896,81 @@ components:
           minimum: 0
         maskedEmail:
           type: string
+        maskedIdentifier:
+          type: string
       required: [challengeId, expiresInSeconds, resendAfterSeconds]
     OtpVerifyRequest:
       type: object
       properties:
         challengeId:
           type: string
-        email:
+        channel:
+          $ref: "#/components/schemas/VerificationChannel"
+        identifier:
           type: string
-          format: email
         purpose:
           $ref: "#/components/schemas/OtpPurpose"
         code:
           type: string
           minLength: 4
           maxLength: 8
-        password:
+      required: [challengeId, channel, identifier, purpose, code]
+    VerificationVerifyResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        verificationToken:
           type: string
-          description: Required when purpose is `signup_password`.
-          minLength: 12
-      required: [challengeId, email, purpose, code]
+        resetToken:
+          type: string
+          deprecated: true
+        expiresInSeconds:
+          type: integer
+          minimum: 1
     PasswordResetVerifyRequest:
       type: object
       properties:
         challengeId:
           type: string
-        email:
+        channel:
+          $ref: "#/components/schemas/VerificationChannel"
+        identifier:
           type: string
-          format: email
         code:
           type: string
           minLength: 4
           maxLength: 8
-      required: [challengeId, email, code]
+      required: [challengeId, channel, identifier, code]
     PasswordResetVerifyResponse:
       type: object
       properties:
         resetToken:
           type: string
+          deprecated: true
+        verificationToken:
+          type: string
         expiresInSeconds:
           type: integer
           minimum: 1
-      required: [resetToken, expiresInSeconds]
+      required: [verificationToken, expiresInSeconds]
     PasswordResetCompleteRequest:
       type: object
       properties:
-        email:
+        channel:
+          $ref: "#/components/schemas/VerificationChannel"
+        identifier:
           type: string
-          format: email
+        verificationToken:
+          type: string
         resetToken:
           type: string
+          deprecated: true
         newPassword:
           type: string
           description: At least 12 chars and must include upper/lower/digit/special.
           minLength: 12
-      required: [email, resetToken, newPassword]
+      required: [channel, identifier, verificationToken, newPassword]
     JWK:
       type: object
       properties:

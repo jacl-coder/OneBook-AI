@@ -13,28 +13,40 @@ import (
 
 // FileConfig represents configuration loaded from YAML.
 type FileConfig struct {
-	Port                       string   `yaml:"port"`
-	DatabaseURL                string   `yaml:"databaseURL"`
-	RedisAddr                  string   `yaml:"redisAddr"`
-	RedisPassword              string   `yaml:"redisPassword"`
-	TrustedProxyCIDRs          []string `yaml:"trustedProxyCidrs"`
-	SessionTTL                 string   `yaml:"sessionTTL"`
-	RefreshTTL                 string   `yaml:"refreshTTL"`
-	LogLevel                   string   `yaml:"logLevel"`
-	LogsDir                    string   `yaml:"logsDir"`
-	JWTPrivateKeyPath          string   `yaml:"jwtPrivateKeyPath"`
-	JWTPublicKeyPath           string   `yaml:"jwtPublicKeyPath"`
-	JWTKeyID                   string   `yaml:"jwtKeyId"`
-	JWTVerifyPublicKeys        string   `yaml:"jwtVerifyPublicKeys"`
-	JWTIssuer                  string   `yaml:"jwtIssuer"`
-	JWTAudience                string   `yaml:"jwtAudience"`
-	JWTLeeway                  string   `yaml:"jwtLeeway"`
-	EvalStorageDir             string   `yaml:"evalStorageDir"`
-	EvalWorkerPollInterval     string   `yaml:"evalWorkerPollInterval"`
-	SignupRateLimitPerMinute   int      `yaml:"signupRateLimitPerMinute"`
-	LoginRateLimitPerMinute    int      `yaml:"loginRateLimitPerMinute"`
-	RefreshRateLimitPerMinute  int      `yaml:"refreshRateLimitPerMinute"`
-	PasswordRateLimitPerMinute int      `yaml:"passwordRateLimitPerMinute"`
+	Port                           string   `yaml:"port"`
+	DatabaseURL                    string   `yaml:"databaseURL"`
+	RedisAddr                      string   `yaml:"redisAddr"`
+	RedisPassword                  string   `yaml:"redisPassword"`
+	TrustedProxyCIDRs              []string `yaml:"trustedProxyCidrs"`
+	SessionTTL                     string   `yaml:"sessionTTL"`
+	RefreshTTL                     string   `yaml:"refreshTTL"`
+	LogLevel                       string   `yaml:"logLevel"`
+	LogsDir                        string   `yaml:"logsDir"`
+	JWTPrivateKeyPath              string   `yaml:"jwtPrivateKeyPath"`
+	JWTPublicKeyPath               string   `yaml:"jwtPublicKeyPath"`
+	JWTKeyID                       string   `yaml:"jwtKeyId"`
+	JWTVerifyPublicKeys            string   `yaml:"jwtVerifyPublicKeys"`
+	JWTIssuer                      string   `yaml:"jwtIssuer"`
+	JWTAudience                    string   `yaml:"jwtAudience"`
+	JWTLeeway                      string   `yaml:"jwtLeeway"`
+	EvalStorageDir                 string   `yaml:"evalStorageDir"`
+	EvalWorkerPollInterval         string   `yaml:"evalWorkerPollInterval"`
+	SignupRateLimitPerMinute       int      `yaml:"signupRateLimitPerMinute"`
+	LoginRateLimitPerMinute        int      `yaml:"loginRateLimitPerMinute"`
+	RefreshRateLimitPerMinute      int      `yaml:"refreshRateLimitPerMinute"`
+	PasswordRateLimitPerMinute     int      `yaml:"passwordRateLimitPerMinute"`
+	EmailProvider                  string   `yaml:"emailProvider"`
+	SMSProvider                    string   `yaml:"smsProvider"`
+	ResendAPIKey                   string   `yaml:"resendApiKey"`
+	ResendFrom                     string   `yaml:"resendFrom"`
+	AliyunAccessKeyID              string   `yaml:"aliyunAccessKeyId"`
+	AliyunAccessKeySecret          string   `yaml:"aliyunAccessKeySecret"`
+	AliyunSMSSignName              string   `yaml:"aliyunSmsSignName"`
+	AliyunSMSSignupLoginTemplate   string   `yaml:"aliyunSmsSignupLoginTemplate"`
+	AliyunSMSPasswordResetTemplate string   `yaml:"aliyunSmsPasswordResetTemplate"`
+	AliyunSMSChangePhoneTemplate   string   `yaml:"aliyunSmsChangePhoneTemplate"`
+	AliyunSMSBindPhoneTemplate     string   `yaml:"aliyunSmsBindPhoneTemplate"`
+	AliyunSMSVerifyBindingTemplate string   `yaml:"aliyunSmsVerifyBindingTemplate"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -112,6 +124,42 @@ func Load(path string) (FileConfig, error) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.PasswordRateLimitPerMinute = n
 		}
+	}
+	if v := os.Getenv("AUTH_EMAIL_PROVIDER"); v != "" {
+		cfg.EmailProvider = v
+	}
+	if v := os.Getenv("AUTH_SMS_PROVIDER"); v != "" {
+		cfg.SMSProvider = v
+	}
+	if v := os.Getenv("RESEND_API_KEY"); v != "" {
+		cfg.ResendAPIKey = v
+	}
+	if v := os.Getenv("RESEND_FROM"); v != "" {
+		cfg.ResendFrom = v
+	}
+	if v := os.Getenv("ALIYUN_ACCESS_KEY_ID"); v != "" {
+		cfg.AliyunAccessKeyID = v
+	}
+	if v := os.Getenv("ALIYUN_ACCESS_KEY_SECRET"); v != "" {
+		cfg.AliyunAccessKeySecret = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_SIGN_NAME"); v != "" {
+		cfg.AliyunSMSSignName = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_SIGNUP_LOGIN_TEMPLATE_CODE"); v != "" {
+		cfg.AliyunSMSSignupLoginTemplate = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_PASSWORD_RESET_TEMPLATE_CODE"); v != "" {
+		cfg.AliyunSMSPasswordResetTemplate = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_CHANGE_PHONE_TEMPLATE_CODE"); v != "" {
+		cfg.AliyunSMSChangePhoneTemplate = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_BIND_PHONE_TEMPLATE_CODE"); v != "" {
+		cfg.AliyunSMSBindPhoneTemplate = v
+	}
+	if v := os.Getenv("ALIYUN_SMS_VERIFY_BINDING_TEMPLATE_CODE"); v != "" {
+		cfg.AliyunSMSVerifyBindingTemplate = v
 	}
 	if v := os.Getenv("AUTH_TRUSTED_PROXY_CIDRS"); v != "" {
 		cfg.TrustedProxyCIDRs = splitCSV(v)

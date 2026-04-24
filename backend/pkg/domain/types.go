@@ -36,6 +36,13 @@ const (
 	StatusDisabled UserStatus = "disabled"
 )
 
+type IdentityType string
+
+const (
+	IdentityEmail IdentityType = "email"
+	IdentityPhone IdentityType = "phone"
+)
+
 type Book struct {
 	ID                   string     `json:"id"`
 	OwnerID              string     `json:"ownerId"`
@@ -67,6 +74,17 @@ type User struct {
 	Status       UserStatus `json:"status"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
+type UserIdentity struct {
+	ID         string       `json:"id"`
+	UserID     string       `json:"userId"`
+	Type       IdentityType `json:"type"`
+	Identifier string       `json:"identifier"`
+	VerifiedAt *time.Time   `json:"verifiedAt,omitempty"`
+	IsPrimary  bool         `json:"isPrimary"`
+	CreatedAt  time.Time    `json:"createdAt"`
+	UpdatedAt  time.Time    `json:"updatedAt"`
 }
 
 type Message struct {

@@ -9,12 +9,23 @@ import (
 // GORM models used for persistence.
 type UserModel struct {
 	ID           string `gorm:"primaryKey"`
-	Email        string `gorm:"uniqueIndex;not null"`
+	Email        string `gorm:"not null;default:'';index"`
 	PasswordHash string `gorm:"not null"`
 	Role         string `gorm:"not null"`
 	Status       string
 	CreatedAt    time.Time `gorm:"not null"`
 	UpdatedAt    time.Time
+}
+
+type UserIdentityModel struct {
+	ID         string     `gorm:"primaryKey"`
+	UserID     string     `gorm:"not null;index"`
+	Type       string     `gorm:"not null;uniqueIndex:idx_user_identity_type_identifier,priority:1"`
+	Identifier string     `gorm:"not null;uniqueIndex:idx_user_identity_type_identifier,priority:2"`
+	VerifiedAt *time.Time `gorm:"index"`
+	IsPrimary  bool       `gorm:"not null;default:false;index"`
+	CreatedAt  time.Time  `gorm:"not null"`
+	UpdatedAt  time.Time  `gorm:"not null"`
 }
 
 type BookModel struct {

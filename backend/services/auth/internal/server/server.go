@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,14 +21,26 @@ import (
 
 // Config wires required dependencies for the HTTP server.
 type Config struct {
-	App                        *app.App
-	RedisAddr                  string
-	RedisPassword              string
-	TrustedProxyCIDRs          []string
-	SignupRateLimitPerMinute   int
-	LoginRateLimitPerMinute    int
-	RefreshRateLimitPerMinute  int
-	PasswordRateLimitPerMinute int
+	App                            *app.App
+	RedisAddr                      string
+	RedisPassword                  string
+	TrustedProxyCIDRs              []string
+	SignupRateLimitPerMinute       int
+	LoginRateLimitPerMinute        int
+	RefreshRateLimitPerMinute      int
+	PasswordRateLimitPerMinute     int
+	EmailProvider                  string
+	SMSProvider                    string
+	ResendAPIKey                   string
+	ResendFrom                     string
+	AliyunAccessKeyID              string
+	AliyunAccessKeySecret          string
+	AliyunSMSSignName              string
+	AliyunSMSSignupLoginTemplate   string
+	AliyunSMSPasswordResetTemplate string
+	AliyunSMSChangePhoneTemplate   string
+	AliyunSMSBindPhoneTemplate     string
+	AliyunSMSVerifyBindingTemplate string
 }
 
 // Server exposes HTTP endpoints for the auth service.
@@ -41,6 +54,7 @@ type Server struct {
 	passwordLimiter *ratelimit.FixedWindowLimiter
 	trustedProxies  *util.TrustedProxies
 	alerter         *security.AuditAlerter
+	sender          verificationSender
 }
 
 // New constructs the server with routes configured.
@@ -94,6 +108,23 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init otp store: %w", err)
 	}
+	sender, err := newVerificationSender(senderConfig{
+		EmailProvider:                  cfg.EmailProvider,
+		SMSProvider:                    cfg.SMSProvider,
+		ResendAPIKey:                   cfg.ResendAPIKey,
+		ResendFrom:                     cfg.ResendFrom,
+		AliyunAccessKeyID:              cfg.AliyunAccessKeyID,
+		AliyunAccessKeySecret:          cfg.AliyunAccessKeySecret,
+		AliyunSMSSignName:              cfg.AliyunSMSSignName,
+		AliyunSMSSignupLoginTemplate:   cfg.AliyunSMSSignupLoginTemplate,
+		AliyunSMSPasswordResetTemplate: cfg.AliyunSMSPasswordResetTemplate,
+		AliyunSMSChangePhoneTemplate:   cfg.AliyunSMSChangePhoneTemplate,
+		AliyunSMSBindPhoneTemplate:     cfg.AliyunSMSBindPhoneTemplate,
+		AliyunSMSVerifyBindingTemplate: cfg.AliyunSMSVerifyBindingTemplate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init verification sender: %w", err)
+	}
 	s := &Server{
 		app:             cfg.App,
 		otp:             otpStore,
@@ -104,6 +135,7 @@ func New(cfg Config) (*Server, error) {
 		passwordLimiter: passwordLimiter,
 		trustedProxies:  trustedProxies,
 		alerter:         security.NewAuditAlerter(cfg.RedisAddr, cfg.RedisPassword, "onebook:auth:alerts"),
+		sender:          sender,
 	}
 	s.routes()
 	return s, nil
@@ -118,11 +150,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 
 	// auth
-	s.mux.HandleFunc("/auth/signup", s.handleSignup)
+	s.mux.HandleFunc("/auth/signup", s.handleSignupComplete)
+	s.mux.HandleFunc("/auth/signup/complete", s.handleSignupComplete)
 	s.mux.HandleFunc("/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/auth/login/password", s.handleLogin)
 	s.mux.HandleFunc("/auth/login/methods", s.handleLoginMethods)
-	s.mux.HandleFunc("/auth/otp/send", s.handleOTPSend)
-	s.mux.HandleFunc("/auth/otp/verify", s.handleOTPVerify)
+	s.mux.HandleFunc("/auth/verification/send", s.handleVerificationSend)
+	s.mux.HandleFunc("/auth/verification/verify", s.handleVerificationVerify)
+	s.mux.HandleFunc("/auth/otp/send", s.handleVerificationSend)
+	s.mux.HandleFunc("/auth/otp/verify", s.handleVerificationVerify)
 	s.mux.HandleFunc("/auth/password/reset/verify", s.handlePasswordResetVerify)
 	s.mux.HandleFunc("/auth/password/reset/complete", s.handlePasswordResetComplete)
 	s.mux.HandleFunc("/auth/refresh", s.handleRefresh)
@@ -193,7 +229,7 @@ func (s *Server) authorize(r *http.Request) (domain.User, bool) {
 }
 
 // auth handlers
-func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSignupComplete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -202,20 +238,31 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "auth.signup", "rate_limited")
 		return
 	}
-	var req authRequest
+	var req signupCompleteRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "auth.signup", "fail", "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, accessToken, refreshToken, err := s.app.SignUp(req.Email, req.Password)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
+	if err != nil {
+		s.audit(r, "auth.signup", "fail", "reason", "invalid_identifier")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.otp.ValidateVerificationToken(req.VerificationToken, channel, identifier, verificationPurposeSignup); err != nil {
+		s.audit(r, "auth.signup", "fail", "reason", "verification_token_invalid")
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	user, accessToken, refreshToken, err := s.app.SignUpWithVerifiedIdentity(channel, identifier, req.Password)
 	if err != nil {
 		switch {
-		case errors.Is(err, app.ErrEmailAndPasswordRequired):
+		case errors.Is(err, app.ErrEmailAndPasswordRequired), errors.Is(err, app.ErrIdentifierRequired):
 			s.audit(r, "auth.signup", "fail", "reason", "missing_fields")
 			writeError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, app.ErrEmailAlreadyExists):
-			s.audit(r, "auth.signup", "fail", "reason", "email_exists")
+		case errors.Is(err, app.ErrEmailAlreadyExists), errors.Is(err, app.ErrIdentifierAlreadyExists):
+			s.audit(r, "auth.signup", "fail", "reason", "identity_exists")
 			writeError(w, http.StatusBadRequest, err.Error())
 		case isPasswordPolicyError(err):
 			s.audit(r, "auth.signup", "fail", "reason", "invalid_password")
@@ -226,6 +273,9 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
 		return
+	}
+	if err := s.otp.ConsumeVerificationToken(req.VerificationToken); err != nil {
+		util.LoggerFromContext(r.Context()).Warn("auth.signup.consume_token_error", "err", err)
 	}
 	s.audit(r, "auth.signup", "success", "user_id", user.ID)
 	writeJSON(w, http.StatusCreated, authResponse{
@@ -250,7 +300,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, accessToken, refreshToken, err := s.app.Login(req.Email, req.Password)
+	channel, identifier, normErr := normalizeVerificationIdentifier(req.Channel, req.identifier())
+	if normErr != nil {
+		s.audit(r, "auth.login", "fail", "reason", "invalid_identifier")
+		writeError(w, http.StatusBadRequest, normErr.Error())
+		return
+	}
+	user, accessToken, refreshToken, err := s.app.LoginWithPasswordByIdentity(channel, identifier, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrPasswordNotSet):
@@ -288,18 +344,25 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	email, err := normalizeEmail(req.Email)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
 	if err != nil {
-		s.audit(r, "auth.login.methods", "fail", "reason", "invalid_email")
+		s.audit(r, "auth.login.methods", "fail", "reason", "invalid_identifier")
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), string(channel), identifier}, "|")
 	if !s.allowRateKey(w, s.loginLimiter, key, "too many login method checks") {
 		s.audit(r, "auth.login.methods", "rate_limited")
 		return
 	}
-	passwordLogin, err := s.app.CanLoginWithPassword(email)
+	exists, err := s.app.HasUserIdentity(channel, identifier)
+	if err != nil {
+		util.LoggerFromContext(r.Context()).Error("auth.login.methods_error", "err", err)
+		s.audit(r, "auth.login.methods", "fail", "reason", "internal_error")
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	passwordLogin, err := s.app.CanLoginWithPasswordIdentity(channel, identifier)
 	if err != nil {
 		util.LoggerFromContext(r.Context()).Error("auth.login.methods_error", "err", err)
 		s.audit(r, "auth.login.methods", "fail", "reason", "internal_error")
@@ -307,52 +370,57 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "auth.login.methods", "success")
-	writeJSON(w, http.StatusOK, loginMethodsResponse{PasswordLogin: passwordLogin})
+	writeJSON(w, http.StatusOK, loginMethodsResponse{Exists: exists, PasswordLogin: passwordLogin})
 }
 
-func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVerificationSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
 	}
-	var req otpSendRequest
+	var req verificationSendRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	email, err := normalizeEmail(req.Email)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
 	if err != nil {
-		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_email")
+		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_identifier")
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	purpose := strings.TrimSpace(strings.ToLower(req.Purpose))
-	if !isValidOTPPurpose(purpose) {
+	purpose := normalizeVerificationPurpose(req.Purpose)
+	if !isValidVerificationPurpose(purpose) {
 		s.audit(r, "auth.otp.send", "fail", "reason", "invalid_purpose")
 		writeError(w, http.StatusBadRequest, errOTPPurposeInvalid.Error())
 		return
 	}
-	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), string(channel), identifier, purpose}, "|")
 	if !s.allowRateKey(w, s.signupLimiter, key, errOTPSendRateLimited.Error()) {
 		s.audit(r, "auth.otp.send", "rate_limited")
 		return
 	}
-	if purpose == otpPurposeSignupPassword || purpose == otpPurposeSignupOTP {
-		exists, err := s.app.HasUserEmail(email)
+	if purpose == verificationPurposeSignup || purpose == verificationPurposeLogin {
+		exists, err := s.app.HasUserIdentity(channel, identifier)
 		if err != nil {
 			util.LoggerFromContext(r.Context()).Error("auth.otp.send_error", "err", err)
 			s.audit(r, "auth.otp.send", "fail", "reason", "internal_error")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if exists {
-			s.audit(r, "auth.otp.send", "fail", "reason", "email_exists")
-			writeError(w, http.StatusBadRequest, app.ErrEmailAlreadyExists.Error())
+		if purpose == verificationPurposeSignup && exists {
+			s.audit(r, "auth.otp.send", "fail", "reason", "identity_exists")
+			writeError(w, http.StatusBadRequest, app.ErrIdentifierAlreadyExists.Error())
+			return
+		}
+		if purpose == verificationPurposeLogin && !exists {
+			s.audit(r, "auth.otp.send", "fail", "reason", "identity_missing")
+			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
 			return
 		}
 	}
-	challengeID, code, expiresIn, resendAfter, err := s.otp.CreateChallenge(email, purpose)
+	challengeID, code, expiresIn, resendAfter, err := s.otp.CreateChallenge(channel, identifier, purpose)
 	if err != nil {
 		switch {
 		case errors.Is(err, errOTPSendRateLimited):
@@ -368,61 +436,63 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	util.LoggerFromContext(r.Context()).Info(
-		"auth_otp_sent",
-		"email", maskEmail(email),
-		"purpose", purpose,
-		"challenge_id", challengeID,
-		"otp_code", code,
-	)
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	if err := s.sender.SendVerification(ctx, verificationMessage{
+		Channel:     channel,
+		Identifier:  identifier,
+		Purpose:     purpose,
+		Code:        code,
+		ExpiresIn:   expiresIn,
+		ResendAfter: resendAfter,
+	}); err != nil {
+		util.LoggerFromContext(r.Context()).Error("auth.otp.send_delivery_error", "err", err)
+		if cleanupErr := s.otp.DeleteChallenge(challengeID, channel, identifier, purpose); cleanupErr != nil {
+			util.LoggerFromContext(r.Context()).Error("auth.otp.send_cleanup_error", "err", cleanupErr)
+		}
+		s.audit(r, "auth.otp.send", "fail", "reason", "delivery_error")
+		writeError(w, http.StatusBadGateway, "failed to send verification code")
+		return
+	}
 	s.audit(r, "auth.otp.send", "success")
-	writeJSON(w, http.StatusAccepted, otpSendResponse{
+	writeJSON(w, http.StatusAccepted, verificationSendResponse{
 		ChallengeID:        challengeID,
 		ExpiresInSeconds:   expiresIn,
 		ResendAfterSeconds: resendAfter,
-		MaskedEmail:        maskEmail(email),
+		MaskedIdentifier:   maskIdentifier(channel, identifier),
+		MaskedEmail:        maskIdentifier(channel, identifier),
 	})
 }
 
-func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVerificationVerify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
 	}
-	var req otpVerifyRequest
+	var req verificationVerifyRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_json")
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	email, err := normalizeEmail(req.Email)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
 	if err != nil {
-		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_email")
+		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_identifier")
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	purpose := strings.TrimSpace(strings.ToLower(req.Purpose))
-	if !isValidOTPPurpose(purpose) {
+	purpose := normalizeVerificationPurpose(req.Purpose)
+	if !isValidVerificationPurpose(purpose) {
 		s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_purpose")
 		writeError(w, http.StatusBadRequest, errOTPPurposeInvalid.Error())
 		return
 	}
-	if purpose == otpPurposeResetPassword {
-		s.audit(r, "auth.otp.verify", "fail", "reason", "unsupported_purpose")
-		writeError(w, http.StatusBadRequest, "use password reset verification endpoint")
-		return
-	}
-	if purpose == otpPurposeSignupPassword && strings.TrimSpace(req.Password) == "" {
-		s.audit(r, "auth.otp.verify", "fail", "reason", "missing_password")
-		writeError(w, http.StatusBadRequest, "password is required for password sign-up")
-		return
-	}
-	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), string(channel), identifier, purpose}, "|")
 	if !s.allowRateKey(w, s.loginLimiter, key, errOTPVerifyRateLimited.Error()) {
 		s.audit(r, "auth.otp.verify", "rate_limited")
 		return
 	}
-	if err := s.otp.VerifyChallenge(req.ChallengeID, email, purpose, req.Code); err != nil {
+	if err := s.otp.VerifyChallenge(req.ChallengeID, channel, identifier, purpose, req.Code); err != nil {
 		switch {
 		case errors.Is(err, errOTPChallengeInvalid):
 			s.audit(r, "auth.otp.verify", "fail", "reason", "challenge_invalid")
@@ -443,10 +513,26 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	user, accessToken, refreshToken, err := s.completeOTPFlow(purpose, email, req.Password)
+	if purpose == verificationPurposeSignup || purpose == verificationPurposePasswordReset {
+		token, expiresInSeconds, err := s.otp.CreateVerificationToken(channel, identifier, purpose)
+		if err != nil {
+			util.LoggerFromContext(r.Context()).Error("auth.verification.token_error", "err", err)
+			s.audit(r, "auth.otp.verify", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		s.audit(r, "auth.otp.verify", "success", "purpose", purpose)
+		writeJSON(w, http.StatusOK, verificationVerifyResponse{
+			VerificationToken: token,
+			ResetToken:        token,
+			ExpiresInSeconds:  expiresInSeconds,
+		})
+		return
+	}
+	user, accessToken, refreshToken, err := s.app.LoginByIdentity(channel, identifier)
 	if err != nil {
 		switch {
-		case errors.Is(err, app.ErrEmailAlreadyExists), errors.Is(err, app.ErrEmailAndPasswordRequired), errors.Is(err, app.ErrEmailRequired), isPasswordPolicyError(err):
+		case errors.Is(err, app.ErrEmailAlreadyExists), errors.Is(err, app.ErrIdentifierAlreadyExists), errors.Is(err, app.ErrEmailAndPasswordRequired), errors.Is(err, app.ErrEmailRequired), isPasswordPolicyError(err):
 			s.audit(r, "auth.otp.verify", "fail", "reason", "invalid_request")
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, app.ErrUserDisabled), errors.Is(err, app.ErrInvalidCredentials):
@@ -478,18 +564,18 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	email, err := normalizeEmail(req.Email)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
 	if err != nil {
-		s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_email")
+		s.audit(r, "auth.password.reset.verify", "fail", "reason", "invalid_identifier")
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), email}, "|")
+	key := strings.Join([]string{r.URL.Path, util.ClientIP(r, s.trustedProxies), string(channel), identifier}, "|")
 	if !s.allowRateKey(w, s.loginLimiter, key, errPasswordResetVerifyRateLimited.Error()) {
 		s.audit(r, "auth.password.reset.verify", "rate_limited")
 		return
 	}
-	if err := s.otp.VerifyChallenge(req.ChallengeID, email, otpPurposeResetPassword, req.Code); err != nil {
+	if err := s.otp.VerifyChallenge(req.ChallengeID, channel, identifier, verificationPurposePasswordReset, req.Code); err != nil {
 		switch {
 		case errors.Is(err, errOTPChallengeInvalid):
 			s.audit(r, "auth.password.reset.verify", "fail", "reason", "challenge_invalid")
@@ -510,7 +596,7 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	resetToken, expiresInSeconds, err := s.otp.CreateResetToken(email)
+	resetToken, expiresInSeconds, err := s.otp.CreateVerificationToken(channel, identifier, verificationPurposePasswordReset)
 	if err != nil {
 		util.LoggerFromContext(r.Context()).Error("auth.password.reset.token_error", "err", err)
 		s.audit(r, "auth.password.reset.verify", "fail", "reason", "internal_error")
@@ -519,8 +605,9 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 	}
 	s.audit(r, "auth.password.reset.verify", "success")
 	writeJSON(w, http.StatusOK, passwordResetVerifyResponse{
-		ResetToken:       resetToken,
-		ExpiresInSeconds: expiresInSeconds,
+		VerificationToken: resetToken,
+		ResetToken:        resetToken,
+		ExpiresInSeconds:  expiresInSeconds,
 	})
 }
 
@@ -539,18 +626,22 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	email, err := normalizeEmail(req.Email)
+	channel, identifier, err := normalizeVerificationIdentifier(req.Channel, req.identifier())
 	if err != nil {
-		s.audit(r, "auth.password.reset.complete", "fail", "reason", "invalid_email")
+		s.audit(r, "auth.password.reset.complete", "fail", "reason", "invalid_identifier")
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.otp.ValidateResetToken(req.ResetToken, email); err != nil {
+	token := strings.TrimSpace(req.VerificationToken)
+	if token == "" {
+		token = strings.TrimSpace(req.ResetToken)
+	}
+	if err := s.otp.ValidateVerificationToken(token, channel, identifier, verificationPurposePasswordReset); err != nil {
 		switch {
-		case errors.Is(err, errResetTokenRequired):
+		case errors.Is(err, errVerificationTokenRequired):
 			s.audit(r, "auth.password.reset.complete", "fail", "reason", "token_required")
 			writeError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, errResetTokenInvalid):
+		case errors.Is(err, errVerificationTokenInvalid):
 			s.audit(r, "auth.password.reset.complete", "fail", "reason", "token_invalid")
 			writeError(w, http.StatusUnauthorized, err.Error())
 		default:
@@ -560,7 +651,7 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
-	if err := s.app.ResetPasswordByEmail(email, req.NewPassword); err != nil {
+	if err := s.app.ResetPasswordByIdentity(channel, identifier, req.NewPassword); err != nil {
 		s.audit(r, "auth.password.reset.complete", "fail", "reason", err.Error())
 		switch {
 		case errors.Is(err, app.ErrEmailRequired), errors.Is(err, app.ErrNewPasswordRequired), errors.Is(err, app.ErrNewPasswordMustDiffer), isPasswordPolicyError(err):
@@ -573,7 +664,7 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
-	if err := s.otp.ConsumeResetToken(req.ResetToken); err != nil {
+	if err := s.otp.ConsumeVerificationToken(token); err != nil {
 		util.LoggerFromContext(r.Context()).Warn("auth.password.reset.consume_token_error", "err", err)
 	}
 	s.audit(r, "auth.password.reset.complete", "success")
@@ -951,53 +1042,131 @@ func methodNotAllowed(w http.ResponseWriter) {
 }
 
 type authRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
+	Password   string `json:"password"`
+}
+
+func (r authRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
 }
 
 type loginMethodsRequest struct {
-	Email string `json:"email"`
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
+}
+
+func (r loginMethodsRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
 }
 
 type loginMethodsResponse struct {
+	Exists        bool `json:"exists"`
 	PasswordLogin bool `json:"passwordLogin"`
 }
 
-type otpSendRequest struct {
-	Email   string `json:"email"`
-	Purpose string `json:"purpose"`
+type verificationSendRequest struct {
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
+	Purpose    string `json:"purpose"`
 }
 
-type otpSendResponse struct {
+func (r verificationSendRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
+}
+
+type verificationSendResponse struct {
 	ChallengeID        string `json:"challengeId"`
 	ExpiresInSeconds   int    `json:"expiresInSeconds"`
 	ResendAfterSeconds int    `json:"resendAfterSeconds"`
+	MaskedIdentifier   string `json:"maskedIdentifier,omitempty"`
 	MaskedEmail        string `json:"maskedEmail,omitempty"`
 }
 
-type otpVerifyRequest struct {
+type verificationVerifyRequest struct {
 	ChallengeID string `json:"challengeId"`
 	Email       string `json:"email"`
+	Identifier  string `json:"identifier"`
+	Channel     string `json:"channel"`
 	Purpose     string `json:"purpose"`
 	Code        string `json:"code"`
-	Password    string `json:"password,omitempty"`
+}
+
+func (r verificationVerifyRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
+}
+
+type verificationVerifyResponse struct {
+	VerificationToken string `json:"verificationToken"`
+	ResetToken        string `json:"resetToken,omitempty"`
+	ExpiresInSeconds  int    `json:"expiresInSeconds"`
 }
 
 type passwordResetVerifyRequest struct {
 	ChallengeID string `json:"challengeId"`
 	Email       string `json:"email"`
+	Identifier  string `json:"identifier"`
+	Channel     string `json:"channel"`
 	Code        string `json:"code"`
 }
 
+func (r passwordResetVerifyRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
+}
+
 type passwordResetVerifyResponse struct {
-	ResetToken       string `json:"resetToken"`
-	ExpiresInSeconds int    `json:"expiresInSeconds"`
+	VerificationToken string `json:"verificationToken"`
+	ResetToken        string `json:"resetToken"`
+	ExpiresInSeconds  int    `json:"expiresInSeconds"`
 }
 
 type passwordResetCompleteRequest struct {
-	Email       string `json:"email"`
-	ResetToken  string `json:"resetToken"`
-	NewPassword string `json:"newPassword"`
+	Email             string `json:"email"`
+	Identifier        string `json:"identifier"`
+	Channel           string `json:"channel"`
+	VerificationToken string `json:"verificationToken"`
+	ResetToken        string `json:"resetToken"`
+	NewPassword       string `json:"newPassword"`
+}
+
+func (r passwordResetCompleteRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
+}
+
+type signupCompleteRequest struct {
+	Email             string `json:"email"`
+	Identifier        string `json:"identifier"`
+	Channel           string `json:"channel"`
+	VerificationToken string `json:"verificationToken"`
+	Password          string `json:"password"`
+}
+
+func (r signupCompleteRequest) identifier() string {
+	if strings.TrimSpace(r.Identifier) != "" {
+		return r.Identifier
+	}
+	return r.Email
 }
 
 type authResponse struct {
@@ -1133,19 +1302,6 @@ func (s *Server) allowRateKey(w http.ResponseWriter, limiter *ratelimit.FixedWin
 	return false
 }
 
-func (s *Server) completeOTPFlow(purpose, email, password string) (domain.User, string, string, error) {
-	switch purpose {
-	case otpPurposeSignupPassword:
-		return s.app.SignUp(email, password)
-	case otpPurposeSignupOTP:
-		return s.app.SignUpPasswordless(email)
-	case otpPurposeLoginOTP:
-		return s.app.LoginByEmail(email)
-	default:
-		return domain.User{}, "", "", errOTPPurposeInvalid
-	}
-}
-
 func (s *Server) audit(r *http.Request, event, outcome string, attrs ...any) {
 	ip := util.ClientIP(r, s.trustedProxies)
 	logAttrs := []any{
@@ -1211,7 +1367,7 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_INVALID_REFRESH_TOKEN"
 	case strings.Contains(message, "email and password required"):
 		return "AUTH_INVALID_REQUEST"
-	case strings.Contains(message, "email already exists"):
+	case strings.Contains(message, "email already exists"), strings.Contains(message, "identifier already exists"):
 		return "AUTH_EMAIL_ALREADY_EXISTS"
 	case message == app.ErrPasswordNotSet.Error():
 		return "AUTH_PASSWORD_NOT_SET"
@@ -1233,11 +1389,11 @@ func errorCodeForAuth(status int, msg string) string {
 		return "AUTH_INVALID_REQUEST"
 	case message == errOTPCodeRequired.Error(), message == errOTPChallengeRequired.Error():
 		return "AUTH_INVALID_REQUEST"
-	case message == errResetTokenRequired.Error():
+	case message == errVerificationTokenRequired.Error():
 		return "AUTH_PASSWORD_RESET_TOKEN_REQUIRED"
-	case message == errResetTokenInvalid.Error():
+	case message == errVerificationTokenInvalid.Error():
 		return "AUTH_PASSWORD_RESET_TOKEN_INVALID"
-	case message == "email required", message == "email is required":
+	case message == "email required", message == "email is required", message == "identifier required", message == "identifier is required":
 		return "AUTH_EMAIL_REQUIRED"
 	case message == app.ErrCurrentPasswordRequired.Error():
 		return "AUTH_CURRENT_PASSWORD_REQUIRED"

@@ -13,6 +13,9 @@ var (
 
 	ErrEmailAndPasswordRequired = errors.New("email and password required")
 	ErrEmailAlreadyExists       = errors.New("email already exists")
+	ErrIdentifierRequired       = errors.New("identifier required")
+	ErrIdentifierAlreadyExists  = errors.New("identifier already exists")
+	ErrUnsupportedIdentityType  = errors.New("unsupported identity type")
 
 	ErrRefreshTokenRequired = errors.New("refresh token required")
 	ErrInvalidRefreshToken  = errors.New("invalid refresh token")

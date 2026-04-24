@@ -13,13 +13,13 @@
 - 账号完整流程（登录/注册/验证码/修改密码）请参考：`docs/backend/auth_account_flow.md`
 
 ### 2.1 登录态
-- 注册：`POST /api/auth/signup`
-- 登录：`POST /api/auth/login`
-- 发送 OTP：`POST /api/auth/otp/send`
-- 校验 OTP：`POST /api/auth/otp/verify`
-- 忘记密码验证码校验：`POST /api/auth/password/reset/verify`
+- 发送验证码：`POST /api/auth/verification/send`
+- 校验验证码：`POST /api/auth/verification/verify`
+- 完成注册：`POST /api/auth/signup/complete`
+- 密码登录：`POST /api/auth/login/password`
 - 忘记密码完成重置：`POST /api/auth/password/reset/complete`
-- 登录/注册/OTP 校验成功响应包含 `user`。
+- 登录验证码、密码登录、注册完成成功响应包含 `user`。
+- 注册和忘记密码验证码校验成功响应包含短期 `verificationToken`。
 - Gateway 同时下发 HttpOnly 会话 Cookie：
   - `onebook_access`（短期）
   - `onebook_refresh`（长期）

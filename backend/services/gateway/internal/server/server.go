@@ -178,11 +178,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 
 	// auth
-	s.mux.HandleFunc("/api/auth/signup", s.handleSignup)
+	s.mux.HandleFunc("/api/auth/signup", s.handleSignupComplete)
+	s.mux.HandleFunc("/api/auth/signup/complete", s.handleSignupComplete)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/auth/login/password", s.handleLogin)
 	s.mux.HandleFunc("/api/auth/login/methods", s.handleLoginMethods)
-	s.mux.HandleFunc("/api/auth/otp/send", s.handleOTPSend)
-	s.mux.HandleFunc("/api/auth/otp/verify", s.handleOTPVerify)
+	s.mux.HandleFunc("/api/auth/verification/send", s.handleVerificationSend)
+	s.mux.HandleFunc("/api/auth/verification/verify", s.handleVerificationVerify)
+	s.mux.HandleFunc("/api/auth/otp/send", s.handleVerificationSend)
+	s.mux.HandleFunc("/api/auth/otp/verify", s.handleVerificationVerify)
 	s.mux.HandleFunc("/api/auth/password/reset/verify", s.handlePasswordResetVerify)
 	s.mux.HandleFunc("/api/auth/password/reset/complete", s.handlePasswordResetComplete)
 	s.mux.HandleFunc("/api/auth/refresh", s.handleRefresh)
@@ -341,7 +345,7 @@ func (s *Server) refreshViaCookie(w http.ResponseWriter, r *http.Request, refres
 }
 
 // auth handlers
-func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSignupComplete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
 		return
@@ -350,13 +354,21 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.signup", "rate_limited")
 		return
 	}
-	var req authRequest
+	var req signupCompleteRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.signup", "fail", "reason", "invalid_json")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.SignUp(util.RequestIDFromRequest(r), req.Email, req.Password)
+	if strings.TrimSpace(req.Identifier) == "" && strings.TrimSpace(req.Email) != "" {
+		req.Identifier = req.Email
+	}
+	if strings.TrimSpace(req.Identifier) == "" || strings.TrimSpace(req.VerificationToken) == "" || strings.TrimSpace(req.Password) == "" {
+		s.audit(r, "gateway.signup", "fail", "reason", "missing_fields")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "identifier, verification token, and password are required", "AUTH_INVALID_REQUEST")
+		return
+	}
+	user, accessToken, refreshToken, err := s.auth.SignUpComplete(util.RequestIDFromRequest(r), req.Channel, req.Identifier, req.VerificationToken, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.signup", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -385,7 +397,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.Login(util.RequestIDFromRequest(r), req.Email, req.Password)
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	user, accessToken, refreshToken, err := s.auth.Login(util.RequestIDFromRequest(r), identifier, req.Password)
 	if err != nil {
 		s.audit(r, "gateway.login", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -414,22 +430,26 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.Email) == "" {
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	if identifier == "" {
 		s.audit(r, "gateway.login.methods", "fail", "reason", "missing_email")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "identifier is required", "AUTH_EMAIL_REQUIRED")
 		return
 	}
-	passwordLogin, err := s.auth.LoginMethods(util.RequestIDFromRequest(r), req.Email)
+	methods, err := s.auth.LoginMethods(util.RequestIDFromRequest(r), identifier)
 	if err != nil {
 		s.audit(r, "gateway.login.methods", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
 	}
 	s.audit(r, "gateway.login.methods", "success")
-	writeJSON(w, http.StatusOK, loginMethodsResponse{PasswordLogin: passwordLogin})
+	writeJSON(w, http.StatusOK, loginMethodsResponse{Exists: methods.Exists, PasswordLogin: methods.PasswordLogin})
 }
 
-func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVerificationSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
 		return
@@ -438,18 +458,22 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.otp.send", "rate_limited")
 		return
 	}
-	var req otpSendRequest
+	var req verificationSendRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.otp.send", "fail", "reason", "invalid_json")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" {
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	if identifier == "" || strings.TrimSpace(req.Purpose) == "" {
 		s.audit(r, "gateway.otp.send", "fail", "reason", "missing_fields")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "email and verification purpose are required", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "identifier and verification purpose are required", "AUTH_INVALID_REQUEST")
 		return
 	}
-	resp, err := s.auth.OTPSend(util.RequestIDFromRequest(r), req.Email, req.Purpose)
+	resp, err := s.auth.VerificationSend(util.RequestIDFromRequest(r), req.Channel, identifier, req.Purpose)
 	if err != nil {
 		s.audit(r, "gateway.otp.send", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -459,7 +483,7 @@ func (s *Server) handleOTPSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, resp)
 }
 
-func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVerificationVerify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, r)
 		return
@@ -468,36 +492,36 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "gateway.otp.verify", "rate_limited")
 		return
 	}
-	var req otpVerifyRequest
+	var req verificationVerifyRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		s.audit(r, "gateway.otp.verify", "fail", "reason", "invalid_json")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.ChallengeID) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Purpose) == "" || strings.TrimSpace(req.Code) == "" {
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	if strings.TrimSpace(req.ChallengeID) == "" || identifier == "" || strings.TrimSpace(req.Purpose) == "" || strings.TrimSpace(req.Code) == "" {
 		s.audit(r, "gateway.otp.verify", "fail", "reason", "missing_fields")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "verification request is incomplete", "AUTH_INVALID_REQUEST")
 		return
 	}
-	user, accessToken, refreshToken, err := s.auth.OTPVerify(
-		util.RequestIDFromRequest(r),
-		req.ChallengeID,
-		req.Email,
-		req.Purpose,
-		req.Code,
-		req.Password,
-	)
+	result, err := s.auth.VerificationVerify(util.RequestIDFromRequest(r), req.ChallengeID, req.Channel, identifier, req.Purpose, req.Code)
 	if err != nil {
 		s.audit(r, "gateway.otp.verify", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
 	}
-	s.audit(r, "gateway.otp.verify", "success", "user_id", user.ID, "purpose", req.Purpose)
-	s.setAccessCookie(w, accessToken)
-	s.setRefreshCookie(w, refreshToken)
-	writeJSON(w, http.StatusOK, authResponse{
-		User: user,
-	})
+	if result.User.ID != "" {
+		s.setAccessCookie(w, result.Token)
+		s.setRefreshCookie(w, result.RefreshToken)
+		s.audit(r, "gateway.otp.verify", "success", "user_id", result.User.ID, "purpose", req.Purpose)
+		writeJSON(w, http.StatusOK, authResponse{User: result.User})
+		return
+	}
+	s.audit(r, "gateway.otp.verify", "success", "purpose", req.Purpose)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Request) {
@@ -515,12 +539,16 @@ func (s *Server) handlePasswordResetVerify(w http.ResponseWriter, r *http.Reques
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.ChallengeID) == "" || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Code) == "" {
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	if strings.TrimSpace(req.ChallengeID) == "" || identifier == "" || strings.TrimSpace(req.Code) == "" {
 		s.audit(r, "gateway.password.reset.verify", "fail", "reason", "missing_fields")
 		writeErrorWithCode(w, r, http.StatusBadRequest, "verification request is incomplete", "AUTH_INVALID_REQUEST")
 		return
 	}
-	resp, err := s.auth.PasswordResetVerify(util.RequestIDFromRequest(r), req.ChallengeID, req.Email, req.Code)
+	resp, err := s.auth.PasswordResetVerify(util.RequestIDFromRequest(r), req.ChallengeID, identifier, req.Code)
 	if err != nil {
 		s.audit(r, "gateway.password.reset.verify", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
@@ -545,12 +573,20 @@ func (s *Server) handlePasswordResetComplete(w http.ResponseWriter, r *http.Requ
 		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.ResetToken) == "" || strings.TrimSpace(req.NewPassword) == "" {
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Email)
+	}
+	token := strings.TrimSpace(req.VerificationToken)
+	if token == "" {
+		token = strings.TrimSpace(req.ResetToken)
+	}
+	if identifier == "" || token == "" || strings.TrimSpace(req.NewPassword) == "" {
 		s.audit(r, "gateway.password.reset.complete", "fail", "reason", "missing_fields")
-		writeErrorWithCode(w, r, http.StatusBadRequest, "email, reset token, and new password are required", "AUTH_INVALID_REQUEST")
+		writeErrorWithCode(w, r, http.StatusBadRequest, "identifier, verification token, and new password are required", "AUTH_INVALID_REQUEST")
 		return
 	}
-	if err := s.auth.PasswordResetComplete(util.RequestIDFromRequest(r), req.Email, req.ResetToken, req.NewPassword); err != nil {
+	if err := s.auth.PasswordResetCompleteWithIdentifier(util.RequestIDFromRequest(r), req.Channel, identifier, token, req.NewPassword); err != nil {
 		s.audit(r, "gateway.password.reset.complete", "fail", "reason", err.Error())
 		writeAuthError(w, r, err)
 		return
@@ -1430,45 +1466,66 @@ type chatRequest struct {
 }
 
 type authRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
+	Password   string `json:"password"`
 }
 
 type loginMethodsRequest struct {
-	Email string `json:"email"`
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
 }
 
 type loginMethodsResponse struct {
+	Exists        bool `json:"exists"`
 	PasswordLogin bool `json:"passwordLogin"`
 }
 
-type otpSendRequest struct {
-	Email   string `json:"email"`
-	Purpose string `json:"purpose"`
+type verificationSendRequest struct {
+	Email      string `json:"email"`
+	Identifier string `json:"identifier"`
+	Channel    string `json:"channel"`
+	Purpose    string `json:"purpose"`
 }
 
-type otpVerifyRequest struct {
+type verificationVerifyRequest struct {
 	ChallengeID string `json:"challengeId"`
 	Email       string `json:"email"`
+	Identifier  string `json:"identifier"`
+	Channel     string `json:"channel"`
 	Purpose     string `json:"purpose"`
 	Code        string `json:"code"`
-	Password    string `json:"password,omitempty"`
 }
 
 type passwordResetVerifyRequest struct {
 	ChallengeID string `json:"challengeId"`
 	Email       string `json:"email"`
+	Identifier  string `json:"identifier"`
+	Channel     string `json:"channel"`
 	Code        string `json:"code"`
 }
 
 type passwordResetCompleteRequest struct {
-	Email       string `json:"email"`
-	ResetToken  string `json:"resetToken"`
-	NewPassword string `json:"newPassword"`
+	Email             string `json:"email"`
+	Identifier        string `json:"identifier"`
+	Channel           string `json:"channel"`
+	VerificationToken string `json:"verificationToken"`
+	ResetToken        string `json:"resetToken"`
+	NewPassword       string `json:"newPassword"`
 }
 
 type authResponse struct {
 	User domain.User `json:"user"`
+}
+
+type signupCompleteRequest struct {
+	Email             string `json:"email"`
+	Identifier        string `json:"identifier"`
+	Channel           string `json:"channel"`
+	VerificationToken string `json:"verificationToken"`
+	Password          string `json:"password"`
 }
 
 type updateMeRequest struct {

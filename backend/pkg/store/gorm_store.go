@@ -45,8 +45,20 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := cleanupLegacyVectorArtifacts(tx); err != nil {
 			return err
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
+		if err := tx.Exec(`DROP INDEX IF EXISTS idx_user_models_email;`).Error; err != nil {
+			return fmt.Errorf("drop legacy user email unique index: %w", err)
+		}
+		if err := tx.Exec(`ALTER TABLE IF EXISTS user_models DROP CONSTRAINT IF EXISTS uni_user_models_email;`).Error; err != nil {
+			return fmt.Errorf("drop legacy user email unique constraint: %w", err)
+		}
+		if err := tx.Exec(`DROP INDEX IF EXISTS uni_user_models_email;`).Error; err != nil {
+			return fmt.Errorf("drop legacy user email unique constraint index: %w", err)
+		}
+		if err := tx.AutoMigrate(&UserModel{}, &UserIdentityModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
+		}
+		if err := backfillUserEmailIdentities(tx); err != nil {
+			return err
 		}
 		if err := tx.Exec(`
 			UPDATE chunk_models
@@ -166,6 +178,27 @@ func cleanupLegacyVectorArtifacts(tx *gorm.DB) error {
 	return nil
 }
 
+func backfillUserEmailIdentities(tx *gorm.DB) error {
+	if err := tx.Exec(`
+		INSERT INTO user_identity_models (id, user_id, type, identifier, verified_at, is_primary, created_at, updated_at)
+		SELECT
+			'id_' || md5(id || ':email:' || lower(trim(email))),
+			id,
+			'email',
+			lower(trim(email)),
+			COALESCE(NULLIF(updated_at, '0001-01-01 00:00:00+00'::timestamptz), now()),
+			true,
+			COALESCE(NULLIF(created_at, '0001-01-01 00:00:00+00'::timestamptz), now()),
+			COALESCE(NULLIF(updated_at, '0001-01-01 00:00:00+00'::timestamptz), now())
+		FROM user_models
+		WHERE trim(email) <> ''
+		ON CONFLICT (type, identifier) DO NOTHING;
+	`).Error; err != nil {
+		return fmt.Errorf("backfill user email identities: %w", err)
+	}
+	return nil
+}
+
 func withMigrationLock(db *gorm.DB, fn func(*gorm.DB) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -201,10 +234,50 @@ func (s *GormStore) SaveUser(u domain.User) error {
 	}).Create(&model).Error
 }
 
+func (s *GormStore) SaveUserWithIdentity(u domain.User, identity domain.UserIdentity) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		model := userToModel(u)
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"email", "password_hash", "role", "status", "updated_at"}),
+		}).Create(&model).Error; err != nil {
+			return err
+		}
+		identityModel := userIdentityToModel(identity)
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "type"}, {Name: "identifier"}},
+			DoNothing: true,
+		}).Create(&identityModel)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("identity already exists")
+		}
+		return nil
+	})
+}
+
+func (s *GormStore) SaveUserIdentity(identity domain.UserIdentity) error {
+	model := userIdentityToModel(identity)
+	return s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "type"}, {Name: "identifier"}},
+		DoUpdates: clause.AssignmentColumns([]string{"user_id", "verified_at", "is_primary", "updated_at"}),
+	}).Create(&model).Error
+}
+
 // HasUserEmail checks if email exists.
 func (s *GormStore) HasUserEmail(email string) (bool, error) {
 	var count int64
-	if err := s.db.Model(&UserModel{}).Where("email = ?", email).Count(&count).Error; err != nil {
+	if err := s.db.Model(&UserIdentityModel{}).Where("type = ? AND identifier = ?", string(domain.IdentityEmail), email).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *GormStore) HasUserIdentity(identityType domain.IdentityType, identifier string) (bool, error) {
+	var count int64
+	if err := s.db.Model(&UserIdentityModel{}).Where("type = ? AND identifier = ?", string(identityType), identifier).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -212,8 +285,16 @@ func (s *GormStore) HasUserEmail(email string) (bool, error) {
 
 // GetUserByEmail looks up a user by email.
 func (s *GormStore) GetUserByEmail(email string) (domain.User, bool, error) {
+	return s.GetUserByIdentity(domain.IdentityEmail, email)
+}
+
+func (s *GormStore) GetUserByIdentity(identityType domain.IdentityType, identifier string) (domain.User, bool, error) {
 	var model UserModel
-	if err := s.db.Where("email = ?", email).First(&model).Error; err != nil {
+	err := s.db.
+		Joins("JOIN user_identity_models ON user_identity_models.user_id = user_models.id").
+		Where("user_identity_models.type = ? AND user_identity_models.identifier = ?", string(identityType), identifier).
+		First(&model).Error
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return domain.User{}, false, nil
 		}
@@ -1428,6 +1509,32 @@ func userFromModel(m UserModel) domain.User {
 		Status:       status,
 		CreatedAt:    m.CreatedAt,
 		UpdatedAt:    m.UpdatedAt,
+	}
+}
+
+func userIdentityToModel(identity domain.UserIdentity) UserIdentityModel {
+	return UserIdentityModel{
+		ID:         identity.ID,
+		UserID:     identity.UserID,
+		Type:       string(identity.Type),
+		Identifier: identity.Identifier,
+		VerifiedAt: identity.VerifiedAt,
+		IsPrimary:  identity.IsPrimary,
+		CreatedAt:  identity.CreatedAt,
+		UpdatedAt:  identity.UpdatedAt,
+	}
+}
+
+func userIdentityFromModel(m UserIdentityModel) domain.UserIdentity {
+	return domain.UserIdentity{
+		ID:         m.ID,
+		UserID:     m.UserID,
+		Type:       domain.IdentityType(m.Type),
+		Identifier: m.Identifier,
+		VerifiedAt: m.VerifiedAt,
+		IsPrimary:  m.IsPrimary,
+		CreatedAt:  m.CreatedAt,
+		UpdatedAt:  m.UpdatedAt,
 	}
 }
 

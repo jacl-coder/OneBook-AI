@@ -68,14 +68,26 @@ func main() {
 	}
 
 	httpServer, err := server.New(server.Config{
-		App:                        appCore,
-		RedisAddr:                  cfg.RedisAddr,
-		RedisPassword:              cfg.RedisPassword,
-		TrustedProxyCIDRs:          cfg.TrustedProxyCIDRs,
-		SignupRateLimitPerMinute:   cfg.SignupRateLimitPerMinute,
-		LoginRateLimitPerMinute:    cfg.LoginRateLimitPerMinute,
-		RefreshRateLimitPerMinute:  cfg.RefreshRateLimitPerMinute,
-		PasswordRateLimitPerMinute: cfg.PasswordRateLimitPerMinute,
+		App:                            appCore,
+		RedisAddr:                      cfg.RedisAddr,
+		RedisPassword:                  cfg.RedisPassword,
+		TrustedProxyCIDRs:              cfg.TrustedProxyCIDRs,
+		SignupRateLimitPerMinute:       cfg.SignupRateLimitPerMinute,
+		LoginRateLimitPerMinute:        cfg.LoginRateLimitPerMinute,
+		RefreshRateLimitPerMinute:      cfg.RefreshRateLimitPerMinute,
+		PasswordRateLimitPerMinute:     cfg.PasswordRateLimitPerMinute,
+		EmailProvider:                  cfg.EmailProvider,
+		SMSProvider:                    cfg.SMSProvider,
+		ResendAPIKey:                   cfg.ResendAPIKey,
+		ResendFrom:                     cfg.ResendFrom,
+		AliyunAccessKeyID:              cfg.AliyunAccessKeyID,
+		AliyunAccessKeySecret:          cfg.AliyunAccessKeySecret,
+		AliyunSMSSignName:              cfg.AliyunSMSSignName,
+		AliyunSMSSignupLoginTemplate:   cfg.AliyunSMSSignupLoginTemplate,
+		AliyunSMSPasswordResetTemplate: cfg.AliyunSMSPasswordResetTemplate,
+		AliyunSMSChangePhoneTemplate:   cfg.AliyunSMSChangePhoneTemplate,
+		AliyunSMSBindPhoneTemplate:     cfg.AliyunSMSBindPhoneTemplate,
+		AliyunSMSVerifyBindingTemplate: cfg.AliyunSMSVerifyBindingTemplate,
 	})
 	if err != nil {
 		util.Fatal("failed to init auth server", "err", err)
