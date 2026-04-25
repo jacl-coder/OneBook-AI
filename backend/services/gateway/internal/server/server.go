@@ -19,6 +19,7 @@ import (
 	"onebookai/services/gateway/internal/authclient"
 	"onebookai/services/gateway/internal/bookclient"
 	"onebookai/services/gateway/internal/chatclient"
+	"onebookai/services/gateway/internal/oauth"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -66,6 +67,7 @@ type Config struct {
 	OAuthGoogleRedirectURL     string
 	OAuthStateRedisPrefix      string
 	OAuthAppBaseURL            string
+	OAuthProviders             map[string]oauth.Provider
 }
 
 // Server exposes HTTP endpoints for the backend.
@@ -138,6 +140,14 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse trustedProxyCIDRs: %w", err)
 	}
+	oauthProviders := cfg.OAuthProviders
+	if oauthProviders == nil {
+		oauthProviders = oauth.NewProviders(oauth.Config{
+			GoogleClientID:     cfg.OAuthGoogleClientID,
+			GoogleClientSecret: cfg.OAuthGoogleClientSecret,
+			GoogleRedirectURL:  cfg.OAuthGoogleRedirectURL,
+		})
+	}
 	s := &Server{
 		auth:             cfg.Auth,
 		books:            cfg.Book,
@@ -171,13 +181,8 @@ func New(cfg Config) (*Server, error) {
 		refreshLimiter:    refreshLimiter,
 		passwordLimiter:   passwordLimiter,
 		trustedProxies:    trustedProxies,
-		oauth: oauthConfig{
-			GoogleClientID:     strings.TrimSpace(cfg.OAuthGoogleClientID),
-			GoogleClientSecret: strings.TrimSpace(cfg.OAuthGoogleClientSecret),
-			GoogleRedirectURL:  strings.TrimSpace(cfg.OAuthGoogleRedirectURL),
-			AppBaseURL:         strings.TrimRight(strings.TrimSpace(cfg.OAuthAppBaseURL), "/"),
-		},
-		oauthStates: newOAuthStateStore(cfg.RedisAddr, cfg.RedisPassword, cfg.OAuthStateRedisPrefix),
+		oauth:             newOAuthConfig(cfg.OAuthAppBaseURL, oauthProviders),
+		oauthStates:       newOAuthStateStore(cfg.RedisAddr, cfg.RedisPassword, cfg.OAuthStateRedisPrefix),
 	}
 	s.routes()
 	return s, nil
