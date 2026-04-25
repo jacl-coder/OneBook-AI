@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import onebookWordmark from '@/assets/brand/onebook-wordmark.svg'
 import onebookLogoMarkSvg from '@/assets/brand/onebook-logo-mark.svg'
 import googleIconSvg from '@/assets/brand/provider/google-logo.svg'
-import appleIconSvg from '@/assets/brand/provider/apple-logo.svg'
 import microsoftIconSvg from '@/assets/brand/provider/microsoft-logo.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
 import emailIconSvg from '@/assets/icons/email.svg'
@@ -1033,12 +1032,6 @@ export function LoginPage() {
       </button>
       <button type="button" className={cx(loginTw.socialButton, focusRingClass)} disabled title="即将支持">
         <span className={loginTw.socialIcon}>
-          <img src={appleIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
-        </span>
-        <span>Apple 登录即将支持</span>
-      </button>
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} disabled title="即将支持">
-        <span className={loginTw.socialIcon}>
           <img src={microsoftIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>Microsoft 登录即将支持</span>
@@ -1056,7 +1049,7 @@ export function LoginPage() {
             className={loginTw.socialIconImg}
           />
         </span>
-        <span>{entryMode === 'email' ? '继续使用手机登录' : '继续使用邮箱登录'}</span>
+        <span>{entryMode === 'email' ? '继续使用手机号登录' : '继续使用邮箱登录'}</span>
       </button>
     </div>
   )

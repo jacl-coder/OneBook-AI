@@ -4,7 +4,6 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { useQueryClient } from '@tanstack/react-query'
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
 import googleLogo from '@/assets/brand/provider/google-logo.svg'
-import appleLogo from '@/assets/brand/provider/apple-logo.svg'
 import microsoftLogo from '@/assets/brand/provider/microsoft-logo.svg'
 import emailIconSvg from '@/assets/icons/email.svg'
 import phoneIconSvg from '@/assets/icons/phone.svg'
@@ -1544,14 +1543,6 @@ export function ChatPage() {
                       <button type="button" className={chatTw.authProviderBtn} disabled title="即将支持">
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
-                            <img src={appleLogo} alt="" aria-hidden="true" />
-                          </span>
-                          <span>Apple 登录即将支持</span>
-                        </span>
-                      </button>
-                      <button type="button" className={chatTw.authProviderBtn} disabled title="即将支持">
-                        <span className={chatTw.authProviderBtnInner}>
-                          <span className={chatTw.authProviderBtnIcon}>
                             <img src={microsoftLogo} alt="" aria-hidden="true" />
                           </span>
                           <span>Microsoft 登录即将支持</span>
@@ -1566,7 +1557,7 @@ export function ChatPage() {
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={authEntryMode === 'email' ? phoneIconSvg : emailIconSvg} alt="" aria-hidden="true" />
                           </span>
-                          <span>{authEntryMode === 'email' ? '继续使用手机登录' : '继续使用邮箱登录'}</span>
+                          <span>{authEntryMode === 'email' ? '继续使用手机号登录' : '继续使用邮箱登录'}</span>
                         </span>
                       </button>
                     </div>
