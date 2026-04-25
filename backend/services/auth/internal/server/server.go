@@ -17,6 +17,7 @@ import (
 	"onebookai/pkg/store"
 	"onebookai/services/auth/internal/app"
 	"onebookai/services/auth/internal/security"
+	"onebookai/services/auth/internal/verify"
 )
 
 // Config wires required dependencies for the HTTP server.
@@ -41,6 +42,7 @@ type Config struct {
 	AliyunSMSChangePhoneTemplate   string
 	AliyunSMSBindPhoneTemplate     string
 	AliyunSMSVerifyBindingTemplate string
+	VerificationSender             verify.Sender
 }
 
 // Server exposes HTTP endpoints for the auth service.
@@ -54,7 +56,7 @@ type Server struct {
 	passwordLimiter *ratelimit.FixedWindowLimiter
 	trustedProxies  *util.TrustedProxies
 	alerter         *security.AuditAlerter
-	sender          verificationSender
+	sender          verify.Sender
 }
 
 // New constructs the server with routes configured.
@@ -108,22 +110,26 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init otp store: %w", err)
 	}
-	sender, err := newVerificationSender(senderConfig{
-		EmailProvider:                  cfg.EmailProvider,
-		SMSProvider:                    cfg.SMSProvider,
-		ResendAPIKey:                   cfg.ResendAPIKey,
-		ResendFrom:                     cfg.ResendFrom,
-		AliyunAccessKeyID:              cfg.AliyunAccessKeyID,
-		AliyunAccessKeySecret:          cfg.AliyunAccessKeySecret,
-		AliyunSMSSignName:              cfg.AliyunSMSSignName,
-		AliyunSMSSignupLoginTemplate:   cfg.AliyunSMSSignupLoginTemplate,
-		AliyunSMSPasswordResetTemplate: cfg.AliyunSMSPasswordResetTemplate,
-		AliyunSMSChangePhoneTemplate:   cfg.AliyunSMSChangePhoneTemplate,
-		AliyunSMSBindPhoneTemplate:     cfg.AliyunSMSBindPhoneTemplate,
-		AliyunSMSVerifyBindingTemplate: cfg.AliyunSMSVerifyBindingTemplate,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("init verification sender: %w", err)
+	sender := cfg.VerificationSender
+	if sender == nil {
+		var err error
+		sender, err = verify.NewSender(verify.Config{
+			EmailProvider:                  cfg.EmailProvider,
+			SMSProvider:                    cfg.SMSProvider,
+			ResendAPIKey:                   cfg.ResendAPIKey,
+			ResendFrom:                     cfg.ResendFrom,
+			AliyunAccessKeyID:              cfg.AliyunAccessKeyID,
+			AliyunAccessKeySecret:          cfg.AliyunAccessKeySecret,
+			AliyunSMSSignName:              cfg.AliyunSMSSignName,
+			AliyunSMSSignupLoginTemplate:   cfg.AliyunSMSSignupLoginTemplate,
+			AliyunSMSPasswordResetTemplate: cfg.AliyunSMSPasswordResetTemplate,
+			AliyunSMSChangePhoneTemplate:   cfg.AliyunSMSChangePhoneTemplate,
+			AliyunSMSBindPhoneTemplate:     cfg.AliyunSMSBindPhoneTemplate,
+			AliyunSMSVerifyBindingTemplate: cfg.AliyunSMSVerifyBindingTemplate,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("init verification sender: %w", err)
+		}
 	}
 	s := &Server{
 		app:             cfg.App,
@@ -485,7 +491,7 @@ func (s *Server) handleVerificationSend(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	if err := s.sender.SendVerification(ctx, verificationMessage{
+	if err := s.sender.SendVerification(ctx, verify.Message{
 		Channel:     channel,
 		Identifier:  identifier,
 		Purpose:     purpose,
