@@ -8,7 +8,7 @@ info:
     If missing, the gateway generates one and returns it in both response header
     `X-Request-Id` and error payload field `requestId`.
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8081
     description: Local dev (gateway)
 tags:
   - name: auth
@@ -159,6 +159,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/oauth/google/start:
+    get:
+      tags: [auth]
+      summary: Start Google OAuth login
+      description: Starts Google Authorization Code Flow with PKCE and redirects to Google.
+      responses:
+        "302":
+          description: Redirect to Google authorization endpoint
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Google OAuth is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/oauth/google/callback:
+    get:
+      tags: [auth]
+      summary: Complete Google OAuth login
+      description: Exchanges the authorization code, validates the ID token, sets OneBook session cookies, and redirects to the app.
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to `/chat` on success or `/log-in/error` on failure
   /api/auth/verification/send:
     post:
       tags: [auth]

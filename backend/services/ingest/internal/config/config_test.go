@@ -19,11 +19,11 @@ func TestLoadChunkEnvOverrides(t *testing.T) {
 
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
 	content := `
-port: "8084"
+port: "8085"
 logLevel: "info"
 databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
-bookServiceURL: "http://localhost:8082"
-indexerURL: "http://localhost:8085"
+bookServiceURL: "http://localhost:8083"
+indexerURL: "http://localhost:8086"
 internalJwtPrivateKeyPath: "secrets/internal-jwt/private.pem"
 internalJwtPublicKeyPath: "secrets/internal-jwt/public.pem"
 internalJwtKeyId: "internal-active"
@@ -70,10 +70,10 @@ chunkOverlap: 120
 
 func TestValidateConfigRejectsInvalidChunkSettings(t *testing.T) {
 	cfg := FileConfig{
-		Port:                      "8084",
+		Port:                      "8085",
 		DatabaseURL:               "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable",
-		BookServiceURL:            "http://localhost:8082",
-		IndexerURL:                "http://localhost:8085",
+		BookServiceURL:            "http://localhost:8083",
+		IndexerURL:                "http://localhost:8086",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
 		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",
@@ -87,10 +87,10 @@ func TestValidateConfigRejectsInvalidChunkSettings(t *testing.T) {
 
 func TestValidateConfigRejectsMissingOCRCommand(t *testing.T) {
 	cfg := FileConfig{
-		Port:                      "8084",
+		Port:                      "8085",
 		DatabaseURL:               "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable",
-		BookServiceURL:            "http://localhost:8082",
-		IndexerURL:                "http://localhost:8085",
+		BookServiceURL:            "http://localhost:8083",
+		IndexerURL:                "http://localhost:8086",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
 		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",
@@ -106,10 +106,10 @@ func TestValidateConfigRejectsMissingOCRCommand(t *testing.T) {
 
 func TestValidateConfigRejectsInvalidPDFThresholds(t *testing.T) {
 	cfg := FileConfig{
-		Port:                      "8084",
+		Port:                      "8085",
 		DatabaseURL:               "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable",
-		BookServiceURL:            "http://localhost:8082",
-		IndexerURL:                "http://localhost:8085",
+		BookServiceURL:            "http://localhost:8083",
+		IndexerURL:                "http://localhost:8086",
 		InternalJWTPrivateKeyPath: "secrets/internal-jwt/private.pem",
 		InternalJWTPublicKeyPath:  "secrets/internal-jwt/public.pem",
 		RabbitMQURL:               "amqp://onebook:onebook@localhost:5672/",

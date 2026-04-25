@@ -64,11 +64,13 @@ type Store interface {
 	// users
 	SaveUser(domain.User) error
 	SaveUserWithIdentity(domain.User, domain.UserIdentity) error
+	SaveUserWithIdentities(domain.User, []domain.UserIdentity) error
 	SaveUserIdentity(domain.UserIdentity) error
 	HasUserEmail(email string) (bool, error)
 	HasUserIdentity(identityType domain.IdentityType, identifier string) (bool, error)
 	GetUserByEmail(email string) (domain.User, bool, error)
 	GetUserByIdentity(identityType domain.IdentityType, identifier string) (domain.User, bool, error)
+	GetUserByProviderIdentity(provider, identifier string) (domain.User, bool, error)
 	GetUserByID(id string) (domain.User, bool, error)
 	ListUsers() ([]domain.User, error)
 	ListUsersWithOptions(UserListOptions) ([]domain.User, int, error)

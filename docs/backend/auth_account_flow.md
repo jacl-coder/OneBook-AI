@@ -8,6 +8,7 @@
 - 前端统一入口为 `/log-in-or-create-account`：输入邮箱/手机号后先查询账号状态，再进入密码登录、登录验证码或注册验证码流程；验证码必须由用户在验证码页手动点击发送。
 - 注册流程固定为：输入邮箱/手机号 -> 手动发送验证码 -> 校验验证码得到 `verificationToken` -> 设置密码完成注册。
 - 登录支持密码登录与验证码登录；密码登录命中无密码账号时返回 `AUTH_PASSWORD_NOT_SET`。
+- Google 第三方登录使用 Gateway 服务端 OAuth callback 完成，成功后同样下发 HttpOnly Cookie。
 - 忘记密码流程为：发送验证码 -> 校验验证码得到 `verificationToken` -> 设置新密码。
 - 登录态只通过 Gateway 下发的 HttpOnly Cookie 维护：`onebook_access` 与 `onebook_refresh`。
 
@@ -32,6 +33,11 @@
   - `exists=false` 时前端进入注册验证码流程；`exists=true,passwordLogin=false` 时前端进入登录验证码流程；`passwordLogin=true` 时前端进入密码登录流程。
 - `POST /api/auth/password/reset/complete`
   - body: `{ "channel": "email|phone", "identifier": "...", "verificationToken": "...", "newPassword": "..." }`
+- `GET /api/auth/oauth/google/start`
+  - 开始 Google 登录，Gateway 生成 `state`、`nonce`、PKCE challenge 后 302 到 Google。
+- `GET /api/auth/oauth/google/callback`
+  - Google 回调地址；Gateway 校验 ID Token 后绑定或创建用户，设置 Cookie，并 302 回 `/chat`。
+  - 前端回跳 origin 由 `OAUTH_APP_BASE_URL` 控制，本地默认 `http://localhost:5173`。
 - 兼容别名：`/api/auth/login`、`/api/auth/signup`、`/api/auth/otp/send`、`/api/auth/otp/verify` 暂仍可用，但新前端应使用上面的新接口。
 
 ## 3. 验证码与安全
@@ -40,6 +46,8 @@
 - 限流维度包含 IP、channel、identifier、purpose。
 - 响应中的目标地址必须脱敏，例如 `j***e@example.com`、`+86****0000`。
 - 注册和重置密码必须使用验证码校验后签发的 `verificationToken`，不能直接用验证码完成最终写操作。
+- Google OAuth 使用 Authorization Code Flow + PKCE + `state` + `nonce`；Google token 不返回给前端。
+- Google verified email 命中已有 verified email identity 时自动绑定到同一用户；未 verified email 不自动绑定。
 
 ## 4. 发送服务配置
 - 本地默认使用 `console` provider，只记录脱敏目标和用途，不输出明文验证码。

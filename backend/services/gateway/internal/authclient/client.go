@@ -71,6 +71,14 @@ func (c *Client) LoginMethods(requestID, identifier string) (LoginMethodsRespons
 	return resp, nil
 }
 
+func (c *Client) OAuthComplete(requestID string, payload OAuthCompleteRequest) (domain.User, string, string, error) {
+	var resp authResponse
+	if err := c.doJSON(http.MethodPost, "/auth/oauth/complete", requestID, "", payload, &resp); err != nil {
+		return domain.User{}, "", "", err
+	}
+	return resp.User, resp.Token, resp.RefreshToken, nil
+}
+
 func (c *Client) VerificationSend(requestID, channel, identifier, purpose string) (VerificationSendResponse, error) {
 	payload := map[string]string{"channel": channel, "identifier": identifier, "purpose": purpose}
 	var resp VerificationSendResponse
@@ -734,6 +742,15 @@ type VerificationVerifyResponse struct {
 type LoginMethodsResponse struct {
 	Exists        bool `json:"exists"`
 	PasswordLogin bool `json:"passwordLogin"`
+}
+
+type OAuthCompleteRequest struct {
+	Provider      string `json:"provider"`
+	Subject       string `json:"subject"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"emailVerified"`
+	DisplayName   string `json:"displayName"`
+	AvatarURL     string `json:"avatarUrl"`
 }
 
 type PasswordResetVerifyResponse struct {

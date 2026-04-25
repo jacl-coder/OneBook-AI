@@ -73,6 +73,11 @@ func main() {
 		PasswordRateLimitPerMinute: cfg.PasswordRateLimitPerMinute,
 		MaxUploadBytes:             cfg.MaxUploadBytes,
 		AllowedExtensions:          cfg.AllowedExtensions,
+		OAuthGoogleClientID:        cfg.OAuthGoogleClientID,
+		OAuthGoogleClientSecret:    cfg.OAuthGoogleClientSecret,
+		OAuthGoogleRedirectURL:     cfg.OAuthGoogleRedirectURL,
+		OAuthStateRedisPrefix:      cfg.OAuthStateRedisPrefix,
+		OAuthAppBaseURL:            cfg.OAuthAppBaseURL,
 	})
 	if err != nil {
 		util.Fatal("failed to init gateway server", "err", err)

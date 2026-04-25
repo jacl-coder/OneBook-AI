@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -40,6 +41,15 @@ type App struct {
 	refreshTokens store.RefreshTokenStore
 	refreshTTL    time.Duration
 	evals         *evalCenter
+}
+
+type OAuthLoginInput struct {
+	Provider      string
+	Subject       string
+	Email         string
+	EmailVerified bool
+	DisplayName   string
+	AvatarURL     string
 }
 
 // New constructs the application with database storage and session management.
@@ -255,6 +265,91 @@ func (a *App) LoginByIdentity(identityType domain.IdentityType, identifier strin
 	}
 	if user.Status == domain.StatusDisabled {
 		return domain.User{}, "", "", ErrUserDisabled
+	}
+	return a.issueUserTokens(user)
+}
+
+func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, string, error) {
+	provider := normalizeOAuthProvider(input.Provider)
+	subject := strings.TrimSpace(input.Subject)
+	if provider == "" || subject == "" {
+		return domain.User{}, "", "", ErrIdentifierRequired
+	}
+	user, ok, err := a.store.GetUserByProviderIdentity(provider, subject)
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("fetch oauth identity: %w", err)
+	}
+	if ok {
+		if user.Status == domain.StatusDisabled {
+			return domain.User{}, "", "", ErrUserDisabled
+		}
+		return a.issueUserTokens(user)
+	}
+
+	now := time.Now().UTC()
+	email := normalizeOAuthEmail(input.Email)
+	if input.EmailVerified && email != "" {
+		user, ok, err = a.store.GetUserByIdentity(domain.IdentityEmail, email)
+		if err != nil {
+			return domain.User{}, "", "", fmt.Errorf("fetch email identity: %w", err)
+		}
+		if ok {
+			if user.Status == domain.StatusDisabled {
+				return domain.User{}, "", "", ErrUserDisabled
+			}
+			if err := a.store.SaveUserIdentity(domain.UserIdentity{
+				ID:         util.NewID(),
+				UserID:     user.ID,
+				Type:       domain.IdentityOAuth,
+				Provider:   provider,
+				Identifier: subject,
+				VerifiedAt: &now,
+				IsPrimary:  false,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			}); err != nil {
+				if strings.Contains(err.Error(), "identity already exists") {
+					existingUser, found, fetchErr := a.store.GetUserByProviderIdentity(provider, subject)
+					if fetchErr != nil {
+						return domain.User{}, "", "", fmt.Errorf("fetch oauth identity after conflict: %w", fetchErr)
+					}
+					if found {
+						if existingUser.Status == domain.StatusDisabled {
+							return domain.User{}, "", "", ErrUserDisabled
+						}
+						return a.issueUserTokens(existingUser)
+					}
+				}
+				return domain.User{}, "", "", fmt.Errorf("save oauth identity: %w", err)
+			}
+			return a.issueUserTokens(user)
+		}
+	}
+
+	role := domain.RoleUser
+	count, err := a.store.UserCount()
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("count users: %w", err)
+	}
+	if count == 0 {
+		role = domain.RoleAdmin
+	}
+	user, err = a.createOAuthUser(provider, subject, email, input.EmailVerified, role)
+	if err != nil {
+		if strings.Contains(err.Error(), "identity already exists") {
+			existingUser, found, fetchErr := a.store.GetUserByProviderIdentity(provider, subject)
+			if fetchErr != nil {
+				return domain.User{}, "", "", fmt.Errorf("fetch oauth identity after create conflict: %w", fetchErr)
+			}
+			if found {
+				if existingUser.Status == domain.StatusDisabled {
+					return domain.User{}, "", "", ErrUserDisabled
+				}
+				return a.issueUserTokens(existingUser)
+			}
+			return domain.User{}, "", "", ErrIdentifierAlreadyExists
+		}
+		return domain.User{}, "", "", err
 	}
 	return a.issueUserTokens(user)
 }
@@ -695,10 +790,75 @@ func (a *App) createUserWithIdentity(identityType domain.IdentityType, identifie
 	return user, nil
 }
 
+func (a *App) createOAuthUser(provider, subject, email string, emailVerified bool, role domain.UserRole) (domain.User, error) {
+	now := time.Now().UTC()
+	displayEmail := ""
+	if emailVerified {
+		displayEmail = email
+	}
+	user := domain.User{
+		ID:           util.NewID(),
+		Email:        displayEmail,
+		PasswordHash: "",
+		Role:         role,
+		Status:       domain.StatusActive,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	identities := []domain.UserIdentity{{
+		ID:         util.NewID(),
+		UserID:     user.ID,
+		Type:       domain.IdentityOAuth,
+		Provider:   provider,
+		Identifier: subject,
+		VerifiedAt: &now,
+		IsPrimary:  !emailVerified || email == "",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}}
+	if emailVerified && email != "" {
+		identities = append(identities, domain.UserIdentity{
+			ID:         util.NewID(),
+			UserID:     user.ID,
+			Type:       domain.IdentityEmail,
+			Identifier: email,
+			VerifiedAt: &now,
+			IsPrimary:  true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		})
+	}
+	if err := a.store.SaveUserWithIdentities(user, identities); err != nil {
+		return domain.User{}, fmt.Errorf("save oauth user identities: %w", err)
+	}
+	return user, nil
+}
+
 func isSupportedIdentityType(identityType domain.IdentityType) bool {
 	return identityType == domain.IdentityEmail || identityType == domain.IdentityPhone
 }
 
 func hasPassword(passwordHash string) bool {
 	return strings.TrimSpace(passwordHash) != ""
+}
+
+func normalizeOAuthProvider(provider string) string {
+	switch strings.TrimSpace(strings.ToLower(provider)) {
+	case "google":
+		return "google"
+	default:
+		return ""
+	}
+}
+
+func normalizeOAuthEmail(email string) string {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return ""
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address == "" || strings.Contains(parsed.Address, " ") {
+		return ""
+	}
+	return strings.ToLower(parsed.Address)
 }

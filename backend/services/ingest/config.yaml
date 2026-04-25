@@ -1,4 +1,4 @@
-port: "8084"
+port: "8085"
 # Secrets loaded from environment variables:
 # DATABASE_URL, RABBITMQ_URL
 # ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH / ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH / ONEBOOK_INTERNAL_JWT_KEY_ID / ONEBOOK_INTERNAL_JWT_VERIFY_PUBLIC_KEYS
@@ -9,8 +9,8 @@ port: "8084"
 # INGEST_PDF_MIN_PAGE_RUNES, INGEST_PDF_MIN_PAGE_SCORE, INGEST_PDF_OCR_MIN_SCORE_DELTA
 logLevel: "info"
 logsDir: "backend/logs"
-bookServiceURL: "http://localhost:8082"
-indexerURL: "http://localhost:8085"
+bookServiceURL: "http://localhost:8083"
+indexerURL: "http://localhost:8086"
 rabbitmqURL: "amqp://onebook:onebook@localhost:5672/"
 queueExchange: "onebook.jobs"
 queueName: "onebook.ingest.jobs"

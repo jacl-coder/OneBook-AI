@@ -8,11 +8,11 @@ import (
 
 func TestLoadDefaultsFeatureFlagsToEnabled(t *testing.T) {
 	path := writeTempConfig(t, `
-port: "8083"
+port: "8084"
 databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
-authServiceURL: "http://localhost:8081"
-authJwksURL: "http://localhost:8081/auth/jwks"
-bookServiceURL: "http://localhost:8082"
+authServiceURL: "http://localhost:8082"
+authJwksURL: "http://localhost:8082/auth/jwks"
+bookServiceURL: "http://localhost:8083"
 generationProvider: "ollama"
 generationBaseURL: "http://localhost:11434"
 generationModel: "qwen3"
@@ -47,11 +47,11 @@ func TestLoadReadsFeatureFlagsFromEnv(t *testing.T) {
 	t.Setenv("CHAT_ABSTAIN_ENABLED", "false")
 
 	path := writeTempConfig(t, `
-port: "8083"
+port: "8084"
 databaseURL: "postgres://onebook:onebook@localhost:5432/onebook?sslmode=disable"
-authServiceURL: "http://localhost:8081"
-authJwksURL: "http://localhost:8081/auth/jwks"
-bookServiceURL: "http://localhost:8082"
+authServiceURL: "http://localhost:8082"
+authJwksURL: "http://localhost:8082/auth/jwks"
+bookServiceURL: "http://localhost:8083"
 generationProvider: "ollama"
 generationBaseURL: "http://localhost:11434"
 generationModel: "qwen3"

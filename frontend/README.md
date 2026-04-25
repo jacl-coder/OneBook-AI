@@ -22,7 +22,7 @@ npm run dev
 复制并修改 `frontend/.env.example`：
 
 ```env
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8081
 VITE_API_TIMEOUT_MS=15000
 ```
 

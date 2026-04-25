@@ -1,4 +1,4 @@
-port: "8085"
+port: "8086"
 # Secrets loaded from environment variables:
 # DATABASE_URL, RABBITMQ_URL
 # ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH / ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH / ONEBOOK_INTERNAL_JWT_KEY_ID / ONEBOOK_INTERNAL_JWT_VERIFY_PUBLIC_KEYS
@@ -7,7 +7,7 @@ port: "8085"
 # EMBEDDING_BATCH_SIZE, EMBEDDING_CONCURRENCY
 logLevel: "info"
 logsDir: "backend/logs"
-bookServiceURL: "http://localhost:8082"
+bookServiceURL: "http://localhost:8083"
 rabbitmqURL: "amqp://onebook:onebook@localhost:5672/"
 queueExchange: "onebook.jobs"
 queueName: "onebook.indexer.jobs"

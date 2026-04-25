@@ -57,6 +57,9 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := tx.AutoMigrate(&UserModel{}, &UserIdentityModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
+		if err := ensureUserIdentityIndexes(tx); err != nil {
+			return err
+		}
 		if err := backfillUserEmailIdentities(tx); err != nil {
 			return err
 		}
@@ -180,11 +183,12 @@ func cleanupLegacyVectorArtifacts(tx *gorm.DB) error {
 
 func backfillUserEmailIdentities(tx *gorm.DB) error {
 	if err := tx.Exec(`
-		INSERT INTO user_identity_models (id, user_id, type, identifier, verified_at, is_primary, created_at, updated_at)
+		INSERT INTO user_identity_models (id, user_id, type, provider, identifier, verified_at, is_primary, created_at, updated_at)
 		SELECT
 			'id_' || md5(id || ':email:' || lower(trim(email))),
 			id,
 			'email',
+			'',
 			lower(trim(email)),
 			COALESCE(NULLIF(updated_at, '0001-01-01 00:00:00+00'::timestamptz), now()),
 			true,
@@ -192,9 +196,42 @@ func backfillUserEmailIdentities(tx *gorm.DB) error {
 			COALESCE(NULLIF(updated_at, '0001-01-01 00:00:00+00'::timestamptz), now())
 		FROM user_models
 		WHERE trim(email) <> ''
-		ON CONFLICT (type, identifier) DO NOTHING;
+		ON CONFLICT (type, identifier) WHERE type IN ('email', 'phone') DO NOTHING;
 	`).Error; err != nil {
 		return fmt.Errorf("backfill user email identities: %w", err)
+	}
+	return nil
+}
+
+func ensureUserIdentityIndexes(tx *gorm.DB) error {
+	if err := tx.Exec(`
+		UPDATE user_identity_models SET provider = '' WHERE provider IS NULL;
+	`).Error; err != nil {
+		return fmt.Errorf("backfill user identity provider: %w", err)
+	}
+	if err := tx.Exec(`
+		DROP INDEX IF EXISTS idx_user_identity_provider_identifier;
+	`).Error; err != nil {
+		return fmt.Errorf("drop legacy user identity provider index: %w", err)
+	}
+	if err := tx.Exec(`
+		DROP INDEX IF EXISTS idx_user_identity_type_identifier;
+	`).Error; err != nil {
+		return fmt.Errorf("drop legacy user identity type index: %w", err)
+	}
+	if err := tx.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_user_identity_type_identifier
+		ON user_identity_models (type, identifier)
+		WHERE type IN ('email', 'phone');
+	`).Error; err != nil {
+		return fmt.Errorf("ensure user identity type index: %w", err)
+	}
+	if err := tx.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_user_identity_oauth_provider_identifier
+		ON user_identity_models (provider, identifier)
+		WHERE type = 'oauth';
+	`).Error; err != nil {
+		return fmt.Errorf("ensure user identity oauth provider index: %w", err)
 	}
 	return nil
 }
@@ -235,6 +272,10 @@ func (s *GormStore) SaveUser(u domain.User) error {
 }
 
 func (s *GormStore) SaveUserWithIdentity(u domain.User, identity domain.UserIdentity) error {
+	return s.SaveUserWithIdentities(u, []domain.UserIdentity{identity})
+}
+
+func (s *GormStore) SaveUserWithIdentities(u domain.User, identities []domain.UserIdentity) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		model := userToModel(u)
 		if err := tx.Clauses(clause.OnConflict{
@@ -243,16 +284,19 @@ func (s *GormStore) SaveUserWithIdentity(u domain.User, identity domain.UserIden
 		}).Create(&model).Error; err != nil {
 			return err
 		}
-		identityModel := userIdentityToModel(identity)
-		result := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "type"}, {Name: "identifier"}},
-			DoNothing: true,
-		}).Create(&identityModel)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return fmt.Errorf("identity already exists")
+		for _, identity := range identities {
+			identityModel := userIdentityToModel(identity)
+			result := tx.Clauses(clause.OnConflict{
+				Columns:     userIdentityConflictColumns(identity),
+				TargetWhere: userIdentityConflictTargetWhere(identity),
+				DoNothing:   true,
+			}).Create(&identityModel)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("identity already exists")
+			}
 		}
 		return nil
 	})
@@ -260,9 +304,24 @@ func (s *GormStore) SaveUserWithIdentity(u domain.User, identity domain.UserIden
 
 func (s *GormStore) SaveUserIdentity(identity domain.UserIdentity) error {
 	model := userIdentityToModel(identity)
+	if identity.Type == domain.IdentityOAuth {
+		result := s.db.Clauses(clause.OnConflict{
+			Columns:     userIdentityConflictColumns(identity),
+			TargetWhere: userIdentityConflictTargetWhere(identity),
+			DoNothing:   true,
+		}).Create(&model)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("identity already exists")
+		}
+		return nil
+	}
 	return s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "type"}, {Name: "identifier"}},
-		DoUpdates: clause.AssignmentColumns([]string{"user_id", "verified_at", "is_primary", "updated_at"}),
+		Columns:     userIdentityConflictColumns(identity),
+		TargetWhere: userIdentityConflictTargetWhere(identity),
+		DoUpdates:   clause.AssignmentColumns([]string{"user_id", "verified_at", "is_primary", "updated_at"}),
 	}).Create(&model).Error
 }
 
@@ -293,6 +352,21 @@ func (s *GormStore) GetUserByIdentity(identityType domain.IdentityType, identifi
 	err := s.db.
 		Joins("JOIN user_identity_models ON user_identity_models.user_id = user_models.id").
 		Where("user_identity_models.type = ? AND user_identity_models.identifier = ?", string(identityType), identifier).
+		First(&model).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.User{}, false, nil
+		}
+		return domain.User{}, false, err
+	}
+	return userFromModel(model), true, nil
+}
+
+func (s *GormStore) GetUserByProviderIdentity(provider, identifier string) (domain.User, bool, error) {
+	var model UserModel
+	err := s.db.
+		Joins("JOIN user_identity_models ON user_identity_models.user_id = user_models.id").
+		Where("user_identity_models.type = ? AND user_identity_models.provider = ? AND user_identity_models.identifier = ?", string(domain.IdentityOAuth), strings.TrimSpace(provider), identifier).
 		First(&model).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -1517,6 +1591,7 @@ func userIdentityToModel(identity domain.UserIdentity) UserIdentityModel {
 		ID:         identity.ID,
 		UserID:     identity.UserID,
 		Type:       string(identity.Type),
+		Provider:   strings.TrimSpace(identity.Provider),
 		Identifier: identity.Identifier,
 		VerifiedAt: identity.VerifiedAt,
 		IsPrimary:  identity.IsPrimary,
@@ -1530,12 +1605,27 @@ func userIdentityFromModel(m UserIdentityModel) domain.UserIdentity {
 		ID:         m.ID,
 		UserID:     m.UserID,
 		Type:       domain.IdentityType(m.Type),
+		Provider:   m.Provider,
 		Identifier: m.Identifier,
 		VerifiedAt: m.VerifiedAt,
 		IsPrimary:  m.IsPrimary,
 		CreatedAt:  m.CreatedAt,
 		UpdatedAt:  m.UpdatedAt,
 	}
+}
+
+func userIdentityConflictColumns(identity domain.UserIdentity) []clause.Column {
+	if identity.Type == domain.IdentityOAuth {
+		return []clause.Column{{Name: "provider"}, {Name: "identifier"}}
+	}
+	return []clause.Column{{Name: "type"}, {Name: "identifier"}}
+}
+
+func userIdentityConflictTargetWhere(identity domain.UserIdentity) clause.Where {
+	if identity.Type == domain.IdentityOAuth {
+		return clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "type = 'oauth'"}}}
+	}
+	return clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "type IN ('email', 'phone')"}}}
 }
 
 func bookToModel(b domain.Book) BookModel {

@@ -1,6 +1,6 @@
 # 后端联调交接文档（Frontend Handoff）
 
-本文档用于前端开发阶段，约定和后端联调的最小必要信息。默认本地网关地址为 `http://localhost:8080`。
+本文档用于前端开发阶段，约定和后端联调的最小必要信息。默认本地网关地址为 `http://localhost:8081`。
 
 ## 1. 联调边界
 - 前端只调用 Gateway 暴露的 `/api/*` 接口。
@@ -17,6 +17,7 @@
 - 校验验证码：`POST /api/auth/verification/verify`
 - 完成注册：`POST /api/auth/signup/complete`
 - 密码登录：`POST /api/auth/login/password`
+- Google 登录：`GET /api/auth/oauth/google/start`
 - 忘记密码完成重置：`POST /api/auth/password/reset/complete`
 - 登录验证码、密码登录、注册完成成功响应包含 `user`。
 - 注册和忘记密码验证码校验成功响应包含短期 `verificationToken`。
@@ -124,7 +125,7 @@
   - `details`：可选字段级错误详情。
 - 端到端示例（推荐前端/运维直接照此落地）：
 ```bash
-curl -i -X POST http://localhost:8080/api/chats \
+curl -i -X POST http://localhost:8081/api/chats \
   -H "Content-Type: application/json" \
   --cookie "onebook_access=<cookie_value>" \
   -H "X-Request-Id: req-demo-20260213-001" \
@@ -167,7 +168,7 @@ Content-Type: application/json
 ```
 - 若前端本地跨域访问网关，确保设置：
 ```bash
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8086
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8089
 CORS_ALLOW_CREDENTIALS=true
 ```
 （可与 Swagger 地址并存，逗号分隔）

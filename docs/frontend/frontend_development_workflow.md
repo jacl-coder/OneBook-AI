@@ -16,7 +16,7 @@
 
 ## 2. 联调边界
 
-- 前端只调用 Gateway：`http://localhost:8080`
+- 前端只调用 Gateway：`http://localhost:8081`
 - API 语义以 `docs/backend/backend_handoff.md` 与 OpenAPI 为准
 - 不直接请求内部服务端口
 
@@ -35,7 +35,7 @@ npm run dev
 文件：`frontend/.env.example`
 
 ```env
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8081
 VITE_API_TIMEOUT_MS=120000
 ```
 
@@ -110,4 +110,4 @@ npm run test:unit
 - 登录态异常：
   - 检查浏览器是否携带 `onebook_access` / `onebook_refresh` Cookie
   - 检查 refresh 请求是否被错误拦截或重复触发
-  - 检查后端 `.env`：`CORS_ALLOWED_ORIGINS` 包含 `http://localhost:5173,http://localhost:8086`，且 `CORS_ALLOW_CREDENTIALS=true`
+  - 检查后端 `.env`：`CORS_ALLOWED_ORIGINS` 包含 `http://localhost:5173,http://localhost:8089`，且 `CORS_ALLOW_CREDENTIALS=true`

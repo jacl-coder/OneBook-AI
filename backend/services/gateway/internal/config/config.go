@@ -44,6 +44,11 @@ type FileConfig struct {
 	ChatServiceURL             string   `yaml:"chatServiceURL"`
 	MaxUploadBytes             int64    `yaml:"maxUploadBytes"`
 	AllowedExtensions          []string `yaml:"allowedExtensions"`
+	OAuthGoogleClientID        string   `yaml:"oauthGoogleClientId"`
+	OAuthGoogleClientSecret    string   `yaml:"oauthGoogleClientSecret"`
+	OAuthGoogleRedirectURL     string   `yaml:"oauthGoogleRedirectUrl"`
+	OAuthStateRedisPrefix      string   `yaml:"oauthStateRedisPrefix"`
+	OAuthAppBaseURL            string   `yaml:"oauthAppBaseUrl"`
 }
 
 // Load reads config from path (defaults to config.yaml).
@@ -154,6 +159,21 @@ func Load(path string) (FileConfig, error) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.PasswordRateLimitPerMinute = n
 		}
+	}
+	if v := os.Getenv("OAUTH_GOOGLE_CLIENT_ID"); v != "" {
+		cfg.OAuthGoogleClientID = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"); v != "" {
+		cfg.OAuthGoogleClientSecret = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_GOOGLE_REDIRECT_URL"); v != "" {
+		cfg.OAuthGoogleRedirectURL = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_STATE_REDIS_PREFIX"); v != "" {
+		cfg.OAuthStateRedisPrefix = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_APP_BASE_URL"); v != "" {
+		cfg.OAuthAppBaseURL = strings.TrimSpace(v)
 	}
 	if err := validateConfig(cfg); err != nil {
 		return cfg, err

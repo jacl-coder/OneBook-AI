@@ -108,7 +108,7 @@ const chatTw = {
   inlineCenter: 'inline-flex items-center justify-center',
   footerLegalLink: 'mx-[3px] underline [text-underline-offset:auto]',
   authProviderBtn:
-    'flex h-[52px] cursor-pointer items-center justify-center rounded-[99999px] border border-[rgba(0,0,0,0.15)] bg-transparent px-6 text-[#0d0d0d] transition-[background-color,border-color] duration-150 hover:border-[#cfd2db] hover:bg-[#f5f5f5]',
+    'flex h-[52px] cursor-pointer items-center justify-center rounded-[99999px] border border-[rgba(0,0,0,0.15)] bg-transparent px-6 text-[#0d0d0d] transition-[background-color,border-color] duration-150 hover:border-[#cfd2db] hover:bg-[#f5f5f5] disabled:cursor-not-allowed disabled:opacity-50',
   authProviderBtnInner: 'inline-flex items-center justify-center gap-2 text-[16px] leading-6 font-normal',
   authProviderBtnIcon: 'inline-flex h-[18px] w-[18px] items-center justify-center text-[#0d0d0d]',
   dividerLine: 'h-px bg-[#ececec]',
@@ -906,6 +906,10 @@ export function ChatPage() {
     setIsAuthOpen(true)
   }
 
+  const startGoogleOAuth = () => {
+    window.location.assign(new URL('/api/auth/oauth/google/start', env.apiBaseUrl).toString())
+  }
+
   const switchAuthEntryMode = (nextMode: AuthEntryMode) => {
     if (authEntryMode === nextMode) return
     setAuthEntryMode(nextMode)
@@ -1529,7 +1533,7 @@ export function ChatPage() {
 
                   <form className={chatTw.authModalForm} onSubmit={handleAuthSubmit} noValidate>
                     <div className={chatTw.authProviderGroup} role="group" aria-label="选择登录选项">
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
+                      <button type="button" className={chatTw.authProviderBtn} onClick={startGoogleOAuth}>
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={googleLogo} alt="" aria-hidden="true" />
@@ -1537,20 +1541,20 @@ export function ChatPage() {
                           <span>继续使用 Google 登录</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
+                      <button type="button" className={chatTw.authProviderBtn} disabled title="即将支持">
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={appleLogo} alt="" aria-hidden="true" />
                           </span>
-                          <span>继续使用 Apple 登录</span>
+                          <span>Apple 登录即将支持</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} onClick={() => navigate('/log-in-or-create-account')}>
+                      <button type="button" className={chatTw.authProviderBtn} disabled title="即将支持">
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={microsoftLogo} alt="" aria-hidden="true" />
                           </span>
-                          <span>继续使用 Microsoft 登录</span>
+                          <span>Microsoft 登录即将支持</span>
                         </span>
                       </button>
                       <button

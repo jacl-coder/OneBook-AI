@@ -155,6 +155,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/auth/login", s.handleLogin)
 	s.mux.HandleFunc("/auth/login/password", s.handleLogin)
 	s.mux.HandleFunc("/auth/login/methods", s.handleLoginMethods)
+	s.mux.HandleFunc("/auth/oauth/complete", s.handleOAuthComplete)
 	s.mux.HandleFunc("/auth/verification/send", s.handleVerificationSend)
 	s.mux.HandleFunc("/auth/verification/verify", s.handleVerificationVerify)
 	s.mux.HandleFunc("/auth/otp/send", s.handleVerificationSend)
@@ -371,6 +372,52 @@ func (s *Server) handleLoginMethods(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "auth.login.methods", "success")
 	writeJSON(w, http.StatusOK, loginMethodsResponse{Exists: exists, PasswordLogin: passwordLogin})
+}
+
+func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.allowRate(w, r, s.loginLimiter, "too many oauth login attempts") {
+		s.audit(r, "auth.oauth.complete", "rate_limited")
+		return
+	}
+	var req oauthCompleteRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		s.audit(r, "auth.oauth.complete", "fail", "reason", "invalid_json")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, accessToken, refreshToken, err := s.app.CompleteOAuthLogin(app.OAuthLoginInput{
+		Provider:      req.Provider,
+		Subject:       req.Subject,
+		Email:         req.Email,
+		EmailVerified: req.EmailVerified,
+		DisplayName:   req.DisplayName,
+		AvatarURL:     req.AvatarURL,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, app.ErrIdentifierRequired), errors.Is(err, app.ErrUnsupportedIdentityType):
+			s.audit(r, "auth.oauth.complete", "fail", "reason", "invalid_request")
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrUserDisabled), errors.Is(err, app.ErrInvalidCredentials):
+			s.audit(r, "auth.oauth.complete", "fail", "reason", "invalid_credentials")
+			writeError(w, http.StatusUnauthorized, app.ErrInvalidCredentials.Error())
+		default:
+			util.LoggerFromContext(r.Context()).Error("auth.oauth.complete_error", "err", err)
+			s.audit(r, "auth.oauth.complete", "fail", "reason", "internal_error")
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+	s.audit(r, "auth.oauth.complete", "success", "user_id", user.ID, "provider", req.Provider)
+	writeJSON(w, http.StatusOK, authResponse{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	})
 }
 
 func (s *Server) handleVerificationSend(w http.ResponseWriter, r *http.Request) {
@@ -1071,6 +1118,15 @@ func (r loginMethodsRequest) identifier() string {
 type loginMethodsResponse struct {
 	Exists        bool `json:"exists"`
 	PasswordLogin bool `json:"passwordLogin"`
+}
+
+type oauthCompleteRequest struct {
+	Provider      string `json:"provider"`
+	Subject       string `json:"subject"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"emailVerified"`
+	DisplayName   string `json:"displayName"`
+	AvatarURL     string `json:"avatarUrl"`
 }
 
 type verificationSendRequest struct {

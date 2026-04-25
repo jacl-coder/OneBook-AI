@@ -70,7 +70,7 @@ services:
       URLS: '[{"url":"/specs/openapi.yaml","name":"Gateway"},{"url":"/specs/openapi-internal.yaml","name":"Internal"}]'
       URLS_PRIMARY_NAME: "Gateway"
     ports:
-      - "8086:8080"
+      - "8089:8080"
     volumes:
       - ./backend/api/rest:/usr/share/nginx/html/specs:ro
   ocr-service:

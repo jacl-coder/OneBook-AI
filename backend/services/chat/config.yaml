@@ -1,4 +1,4 @@
-port: "8083"
+port: "8084"
 # Secrets loaded from environment variables:
 # DATABASE_URL,
 # GENERATION_PROVIDER (gemini|ollama|openai-compat, default: gemini),
@@ -11,12 +11,12 @@ port: "8083"
 # JWT_ISSUER/JWT_AUDIENCE/JWT_LEEWAY
 logLevel: "info"
 logsDir: "backend/logs"
-authServiceURL: "http://localhost:8081"
-authJwksURL: "http://localhost:8081/auth/jwks"
+authServiceURL: "http://localhost:8082"
+authJwksURL: "http://localhost:8082/auth/jwks"
 jwtIssuer: "onebook-auth"
 jwtAudience: "onebook-api"
 jwtLeeway: "30s"
-bookServiceURL: "http://localhost:8082"
+bookServiceURL: "http://localhost:8083"
 topK: 5
 denseRecallTopK: 40
 lexicalRecallTopK: 60

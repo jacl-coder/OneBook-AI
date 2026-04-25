@@ -13,12 +13,12 @@ if [[ -z "$SERVICE" ]]; then
 fi
 
 declare -A SERVICE_PORTS=(
-  [auth]=8081
-  [book]=8082
-  [chat]=8083
-  [ingest]=8084
-  [indexer]=8085
-  [gateway]=8080
+  [auth]=8082
+  [book]=8083
+  [chat]=8084
+  [ingest]=8085
+  [indexer]=8086
+  [gateway]=8081
 )
 
 declare -A SERVICE_CMDS=(
@@ -81,4 +81,5 @@ sleep 1
 # Start service in foreground
 echo "Starting $SERVICE..."
 cd "$SVC_DIR"
-exec GOCACHE="$ROOT_DIR/backend/.cache/go-build" go run "$CMD"
+export GOCACHE="$ROOT_DIR/backend/.cache/go-build"
+exec go run "$CMD"

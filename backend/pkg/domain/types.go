@@ -41,6 +41,7 @@ type IdentityType string
 const (
 	IdentityEmail IdentityType = "email"
 	IdentityPhone IdentityType = "phone"
+	IdentityOAuth IdentityType = "oauth"
 )
 
 type Book struct {
@@ -80,6 +81,7 @@ type UserIdentity struct {
 	ID         string       `json:"id"`
 	UserID     string       `json:"userId"`
 	Type       IdentityType `json:"type"`
+	Provider   string       `json:"provider,omitempty"`
 	Identifier string       `json:"identifier"`
 	VerifiedAt *time.Time   `json:"verifiedAt,omitempty"`
 	IsPrimary  bool         `json:"isPrimary"`

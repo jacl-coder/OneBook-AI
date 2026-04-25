@@ -12,18 +12,18 @@ OneBook-AI is a "book conversation" app: users upload PDF/EPUB/TXT books, the sy
 
 ```
 Frontend (React + Vite, :5173)
-    └── Gateway (:8080) ── Unified entry, auth, rate limiting, routing
-        ├── Auth (:8081) ── Signup/login/JWT/Refresh/admin/eval worker
-        ├── Book (:8082) ── Book metadata, MinIO upload, state machine
-        ├── Chat (:8083) ── RAG: dense+lexical retrieval → rerank → LLM
-        ├── Ingest (:8084) ── File parsing & semantic chunking
-        └── Indexer (:8085) ── Ollama embedding → Qdrant + OpenSearch
+    └── Gateway (:8081) ── Unified entry, auth, rate limiting, routing
+        ├── Auth (:8082) ── Signup/login/OAuth/JWT/Refresh/admin/eval worker
+        ├── Book (:8083) ── Book metadata, MinIO upload, state machine
+        ├── Chat (:8084) ── RAG: dense+lexical retrieval → rerank → LLM
+        ├── Ingest (:8085) ── File parsing & semantic chunking
+        └── Indexer (:8086) ── Ollama embedding → Qdrant + OpenSearch
 
 Infrastructure: Postgres, Redis, RabbitMQ, MinIO, Qdrant, OpenSearch, Ollama
 Optional services: OCR (:8087), Reranker (:8088)
 ```
 
-All external API calls go through Gateway. Internal service-to-service calls use short-lived service JWTs. Auth uses RS256 JWT with HttpOnly cookies + refresh token rotation.
+All external API calls go through Gateway. Internal service-to-service calls use short-lived service JWTs. Auth uses RS256 JWT with HttpOnly cookies + refresh token rotation. Local Gateway intentionally avoids port `8080`; use `http://localhost:8081`.
 
 ## Key Commands
 
@@ -64,10 +64,11 @@ docker build -f backend/Dockerfile -t onebook-gateway --build-arg SERVICE=gatewa
 
 | Service | Port | Service | Port |
 |---|---|---|---|
-| Gateway | 8080 | Ingest | 8084 |
-| Auth | 8081 | Indexer | 8085 |
-| Book | 8082 | Swagger UI | 8086 |
-| Chat | 8083 | OCR | 8087 | Reranker | 8088 |
+| Gateway | 8081 | Ingest | 8085 |
+| Auth | 8082 | Indexer | 8086 |
+| Book | 8083 | Swagger UI | 8089 |
+| Chat | 8084 | OCR | 8087 |
+| Reranker | 8088 |  |  |
 
 ## Backend Structure
 
@@ -92,11 +93,20 @@ docker build -f backend/Dockerfile -t onebook-gateway --build-arg SERVICE=gatewa
 Key libraries: React 19, Vite 7, React Router v7, TanStack Query v5, Zustand v5, Tailwind CSS v4, Axios (withCredentials for cookie auth).
 
 ### Frontend-backend contract
-- All requests → Gateway at `http://localhost:8080`
+- All requests → Gateway at `http://localhost:8081`
 - Cookie auth via `withCredentials: true` (HttpOnly JWT)
 - 401 triggers single-flight refresh, then replays original request
 - Upload requires `Idempotency-Key` header
 - Poll `GET /api/books/{id}` until status is `ready` or `failed`
+
+### Auth notes
+- The unified login/register page is `/log-in-or-create-account`; legacy `/log-in` and `/create-account` are not maintained.
+- Email/phone auth uses verification challenges and HttpOnly cookie sessions; frontend must not store auth tokens in JavaScript.
+- Google OAuth v1 uses server-side Authorization Code Flow + PKCE through Gateway:
+  - Start: `GET /api/auth/oauth/google/start`
+  - Callback: `GET /api/auth/oauth/google/callback`
+  - Local redirect URI: `http://localhost:8081/api/auth/oauth/google/callback`
+- `.env` must provide `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`, and matching `OAUTH_GOOGLE_REDIRECT_URL` for real Google login.
 
 ## Development Rules
 

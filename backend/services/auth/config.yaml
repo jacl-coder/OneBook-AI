@@ -1,4 +1,4 @@
-port: "8081"
+port: "8082"
 logLevel: "info"
 logsDir: "backend/logs"
 # Secrets loaded from environment variables:

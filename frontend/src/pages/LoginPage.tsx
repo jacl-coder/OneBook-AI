@@ -24,6 +24,7 @@ import {
   verifyOtp,
 } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
+import { env } from '@/shared/config/env'
 import {
   AUTH_EMAIL_STORAGE_KEY,
   AUTH_ERROR_MESSAGE_STORAGE_KEY,
@@ -185,9 +186,10 @@ export function LoginPage() {
   const locationSearchParams = new URLSearchParams(location.search)
   const locationSearchEmail =
     normalizeText(locationSearchParams.get('identifier')) || normalizeText(locationSearchParams.get('email'))
+  const locationSearchErrorMessage = normalizeText(locationSearchParams.get('message'))
   const locationStateEmail =
     step === 'entry' ? locationSearchEmail : normalizeText(locationState?.email) || locationSearchEmail
-  const locationStateErrorMessage = normalizeText(locationState?.errorMessage)
+  const locationStateErrorMessage = normalizeText(locationState?.errorMessage) || locationSearchErrorMessage
   const locationStateChallengeId = normalizeText(locationState?.challengeId)
   const locationStatePurpose = normalizeOtpPurpose(locationState?.purpose)
   const locationStateOtpEmail = normalizeText(locationState?.otpEmail)
@@ -1017,25 +1019,29 @@ export function LoginPage() {
     }
   }
 
+  const startGoogleOAuth = () => {
+    window.location.assign(new URL('/api/auth/oauth/google/start', env.apiBaseUrl).toString())
+  }
+
   const renderSocialButtons = () => (
     <div className={loginTw.socialGroup} role="group" aria-label="选择登录选项">
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} onClick={startGoogleOAuth}>
         <span className={loginTw.socialIcon}>
           <img src={googleIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
         <span>继续使用 Google 登录</span>
       </button>
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} disabled title="即将支持">
         <span className={loginTw.socialIcon}>
           <img src={appleIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
-        <span>继续使用 Apple 登录</span>
+        <span>Apple 登录即将支持</span>
       </button>
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)}>
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} disabled title="即将支持">
         <span className={loginTw.socialIcon}>
           <img src={microsoftIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
-        <span>继续使用 Microsoft 登录</span>
+        <span>Microsoft 登录即将支持</span>
       </button>
       <button
         type="button"

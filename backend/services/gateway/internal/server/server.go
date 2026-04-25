@@ -61,6 +61,11 @@ type Config struct {
 	PasswordRateLimitPerMinute int
 	MaxUploadBytes             int64
 	AllowedExtensions          []string
+	OAuthGoogleClientID        string
+	OAuthGoogleClientSecret    string
+	OAuthGoogleRedirectURL     string
+	OAuthStateRedisPrefix      string
+	OAuthAppBaseURL            string
 }
 
 // Server exposes HTTP endpoints for the backend.
@@ -82,6 +87,8 @@ type Server struct {
 	refreshLimiter    *ratelimit.FixedWindowLimiter
 	passwordLimiter   *ratelimit.FixedWindowLimiter
 	trustedProxies    *util.TrustedProxies
+	oauth             oauthConfig
+	oauthStates       *oauthStateStore
 }
 
 // New constructs the server with routes configured.
@@ -164,6 +171,13 @@ func New(cfg Config) (*Server, error) {
 		refreshLimiter:    refreshLimiter,
 		passwordLimiter:   passwordLimiter,
 		trustedProxies:    trustedProxies,
+		oauth: oauthConfig{
+			GoogleClientID:     strings.TrimSpace(cfg.OAuthGoogleClientID),
+			GoogleClientSecret: strings.TrimSpace(cfg.OAuthGoogleClientSecret),
+			GoogleRedirectURL:  strings.TrimSpace(cfg.OAuthGoogleRedirectURL),
+			AppBaseURL:         strings.TrimRight(strings.TrimSpace(cfg.OAuthAppBaseURL), "/"),
+		},
+		oauthStates: newOAuthStateStore(cfg.RedisAddr, cfg.RedisPassword, cfg.OAuthStateRedisPrefix),
 	}
 	s.routes()
 	return s, nil
@@ -183,6 +197,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
 	s.mux.HandleFunc("/api/auth/login/password", s.handleLogin)
 	s.mux.HandleFunc("/api/auth/login/methods", s.handleLoginMethods)
+	s.mux.HandleFunc("/api/auth/oauth/google/start", s.handleGoogleOAuthStart)
+	s.mux.HandleFunc("/api/auth/oauth/google/callback", s.handleGoogleOAuthCallback)
 	s.mux.HandleFunc("/api/auth/verification/send", s.handleVerificationSend)
 	s.mux.HandleFunc("/api/auth/verification/verify", s.handleVerificationVerify)
 	s.mux.HandleFunc("/api/auth/otp/send", s.handleVerificationSend)

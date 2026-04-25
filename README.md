@@ -48,24 +48,24 @@ Browser / Frontend (React + Vite, :5173)
             │  HTTP + Cookie (withCredentials)
             ▼
   ┌─────────────────────┐
-  │    Gateway  :8080   │  统一入口 · 鉴权 · 限流 · 路由
+  │    Gateway  :8081   │  统一入口 · 鉴权 · 限流 · 路由
   └─────┬───────────────┘
         │ Internal JWT (RS256)
    ┌────┴────────────────────────────────────────────┐
    │                                                 │
    ▼                       ▼                         ▼
-Auth :8081          Book :8082                Chat :8083
+Auth :8082          Book :8083                Chat :8084
 注册/登录/JWT        书籍元数据/MinIO          向量检索 + LLM 生成
 RefreshToken                │                        │
 撤销/限流           ┌───────┘              Qdrant (dense) + OpenSearch (BM25)
 管理员/审计         │                               │
 Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
                     ▼
-             Ingest :8084
+             Ingest :8085
              文件解析/分块
                     │ RabbitMQ Queue
                     ▼
-             Indexer :8085
+             Indexer :8086
              Ollama Embedding → Qdrant
                     Lexical Docs → OpenSearch
 
@@ -189,7 +189,7 @@ OneBook-AI/
 
 ## 5. 后端微服务详解
 
-### Gateway（:8080）
+### Gateway（:8081）
 
 - 统一对外入口：所有 `/api/*` 路由在此鉴权后转发到下游服务。
 - 通过 Gateway 下游调用时使用**内部短时效服务 JWT**（RS256，校验 `iss/aud/exp`）。
@@ -197,7 +197,7 @@ OneBook-AI/
 - 对外 CORS：`CORS_ALLOWED_ORIGINS` + `CORS_ALLOW_CREDENTIALS`。
 - `/healthz` 健康检查。
 
-### Auth（:8081）
+### Auth（:8082）
 
 - 注册（`POST /api/auth/signup`）、登录（`POST /api/auth/login`）、登出（`POST /api/auth/logout`）。
 - OTP 验证（`POST /api/auth/otp/send`、`POST /api/auth/otp/verify`）。
@@ -207,7 +207,7 @@ OneBook-AI/
 - 管理员用户管理（启停、角色变更）、操作审计日志、系统概览。
 - **Admin Eval Center Worker**：轮询 Postgres 中 `queued` 评测任务并执行，结果写回数据库+文件。
 
-### Book（:8082）
+### Book（:8083）
 
 - 上传校验（扩展名白名单：pdf/epub/txt；大小限制：默认 50MB）。
 - 书籍元数据（`primaryCategory`、`tags[]`、`format`、`language`）存 Postgres，文件存 MinIO。
@@ -216,7 +216,7 @@ OneBook-AI/
 - 软删除 + 后台异步清理（最终硬删除）。
 - 支持 `PATCH /api/books/{id}` 更新书名/分类/标签。
 
-### Ingest（:8084）
+### Ingest（:8085）
 
 - 从 RabbitMQ queue 消费任务，拉取 MinIO 文件。
 - PDF：优先 `pdftotext`，失败回退 Go PDF 库；按页质量评估触发 OCR（阈值可配置）。
@@ -227,14 +227,14 @@ OneBook-AI/
 - Chunk 元数据：`source_type`、`source_ref`、`extract_method`、`page`、`section`、`chunk`、`document_id`、`chunk_index`、`chunk_count`、`content_sha256`、`content_runes`、`page_quality_score`。
 - 写入 chunks 后通过内部接口提交 indexer job。
 
-### Indexer（:8085）
+### Indexer（:8086）
 
 - 从 RabbitMQ queue 消费任务，批量调用 Ollama 生成向量（维度 `ONEBOOK_EMBEDDING_DIM`，默认 3072）。
 - 写入 Qdrant（collection：`QDRANT_COLLECTION`，默认 `onebook_chunks`）与 OpenSearch（index：`OPENSEARCH_INDEX`，默认 `onebook_lexical_chunks`）。
 - `chunk_index_status` 记录 OpenSearch/Qdrant 两路同步状态、时间和失败原因。
 - 写入完成后更新书籍状态为 `ready`。
 
-### Chat（:8083）
+### Chat（:8084）
 
 - 问题向量化 → Dense + Lexical 双召回（Qdrant + OpenSearch）→ fusion → rerank → 按 `chunk_id` 回 PostgreSQL → TopK context。
 - 聊天前先做轻量路由：明显跟进问题优先复用最近会话历史；明显书外/实时问题默认直接拒答（可由 `CHAT_ABSTAIN_ENABLED=false` 关闭），其余问题再进入检索链路。
@@ -285,7 +285,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 
 ## 7. 完整 API 参考
 
-> 所有接口均经由 Gateway（`:8080`）对外暴露，完整规范见 `backend/api/rest/openapi.yaml`。
+> 所有接口均经由 Gateway（`:8081`）对外暴露，完整规范见 `backend/api/rest/openapi.yaml`。
 
 ### 认证（无需登录）
 
@@ -392,7 +392,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `JWT_ISSUER` | `onebook-auth` | JWT iss |
 | `JWT_AUDIENCE` | `onebook-api` | JWT aud |
 | `JWT_LEEWAY` | `30s` | 时钟偏差容忍 |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:8086` | 允许的 CORS 来源（逗号分隔） |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:8089` | 允许的 CORS 来源（逗号分隔） |
 | `CORS_ALLOW_CREDENTIALS` | `true` | 允许 Cookie 跨域 |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO 地址 |
 | `MINIO_ACCESS_KEY` | `onebook` | MinIO 访问密钥 |
@@ -520,13 +520,13 @@ docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
 
 | 服务 | 端口 |
 |---|---|
-| Gateway | 8080 |
-| Auth | 8081 |
-| Book | 8082 |
-| Chat | 8083 |
-| Ingest | 8084 |
-| Indexer | 8085 |
-| Swagger UI | 8086 |
+| Gateway | 8081 |
+| Auth | 8082 |
+| Book | 8083 |
+| Chat | 8084 |
+| Ingest | 8085 |
+| Indexer | 8086 |
+| Swagger UI | 8089 |
 | OCR Service | 8087 |
 | Reranker Service | 8088 |
 | RabbitMQ AMQP | 5672 |
@@ -569,7 +569,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 - Gateway REST/OpenAPI：`backend/api/rest/openapi.yaml`
 - Internal REST/OpenAPI：`backend/api/rest/openapi-internal.yaml`
-- Swagger UI（启动后）：`http://localhost:8086`
+- Swagger UI（启动后）：`http://localhost:8089`
 
 ---
 
@@ -591,7 +591,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 ### 联调约定
 
-- 所有请求统一发往 Gateway：`http://localhost:8080`。
+- 所有请求统一发往 Gateway：`http://localhost:8081`。
 - 使用 `withCredentials: true`（HttpOnly Cookie 认证，不手动注入 `Authorization` 头）。
 - 收到 `401` 时触发 `POST /api/auth/refresh`（**Single-flight**：并发 401 只发一次 refresh），成功后自动重放原请求。
 - 上传书籍后轮询 `GET /api/books/{id}`（建议每 2~3 秒）直到 `status` 为 `ready` 或 `failed`。

@@ -7,15 +7,15 @@ info:
     Internal services propagate `X-Request-Id` and include the same value in
     error payload field `requestId`.
 servers:
-  - url: http://localhost:8081
-    description: Local dev (auth service)
   - url: http://localhost:8082
-    description: Local dev (book service)
+    description: Local dev (auth service)
   - url: http://localhost:8083
-    description: Local dev (chat service)
+    description: Local dev (book service)
   - url: http://localhost:8084
-    description: Local dev (ingest service)
+    description: Local dev (chat service)
   - url: http://localhost:8085
+    description: Local dev (ingest service)
+  - url: http://localhost:8086
     description: Local dev (indexer service)
 tags:
   - name: auth-admin
@@ -40,6 +40,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /auth/oauth/complete:
+    post:
+      tags: [auth-admin]
+      summary: Complete OAuth login with verified provider identity
+      description: Called by Gateway after Google ID token validation to bind or create a local user and issue OneBook tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthCompleteRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Invalid OAuth identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: User disabled or credentials rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /internal/books/{id}/file:
     get:
       tags: [internal-book]
@@ -671,6 +707,55 @@ components:
         reason:
           type: string
       required: [reason]
+    OAuthCompleteRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [google]
+        subject:
+          type: string
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+      required: [provider, subject, emailVerified]
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required: [token, refreshToken, user]
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, email, role, status, createdAt, updatedAt]
     Book:
       type: object
       properties:

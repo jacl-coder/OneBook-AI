@@ -20,8 +20,9 @@ type UserModel struct {
 type UserIdentityModel struct {
 	ID         string     `gorm:"primaryKey"`
 	UserID     string     `gorm:"not null;index"`
-	Type       string     `gorm:"not null;uniqueIndex:idx_user_identity_type_identifier,priority:1"`
-	Identifier string     `gorm:"not null;uniqueIndex:idx_user_identity_type_identifier,priority:2"`
+	Type       string     `gorm:"not null;index"`
+	Provider   string     `gorm:"not null;default:'';index"`
+	Identifier string     `gorm:"not null;index"`
 	VerifiedAt *time.Time `gorm:"index"`
 	IsPrimary  bool       `gorm:"not null;default:false;index"`
 	CreatedAt  time.Time  `gorm:"not null"`
