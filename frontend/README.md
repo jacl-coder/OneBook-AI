@@ -61,6 +61,6 @@ npm run preview
   - `params.rerankMode = service | fallback`
 
 ## 7. 参考文档
-- `../docs/frontend/frontend_development_workflow.md`
-- `../docs/backend/backend_handoff.md`
-- `../docs/product/functional_spec.md`
+- `../README.md`
+- `../backend/api/rest/openapi.yaml`
+- `../frontend/.env.example`

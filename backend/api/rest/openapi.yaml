@@ -103,7 +103,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Account has no password, use OTP login
+          description: Account has no password, use verification-code login
           content:
             application/json:
               schema:
@@ -127,7 +127,7 @@ paths:
       description: |
         Returns whether password login should be used for the given email or phone.
         When `exists=false`, client should continue with sign-up verification.
-        When `exists=true` and `passwordLogin=false`, client should continue with login OTP verification.
+        When `exists=true` and `passwordLogin=false`, client should continue with login verification-code flow.
       requestBody:
         required: true
         content:
@@ -272,13 +272,13 @@ paths:
               schema:
               $ref: "#/components/schemas/VerificationVerifyResponse"
         "400":
-          description: Invalid input or invalid OTP challenge/code
+          description: Invalid input or invalid verification challenge/code
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: OTP expired or verification failed
+          description: Verification code expired or verification failed
           content:
             application/json:
               schema:
@@ -316,13 +316,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/PasswordResetVerifyResponse"
         "400":
-          description: Invalid input or invalid OTP challenge/code
+          description: Invalid input or invalid verification challenge/code
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: OTP expired or verification failed
+          description: Verification code expired or verification failed
           content:
             application/json:
               schema:
@@ -1900,15 +1900,15 @@ components:
           type: boolean
           description: |
             Whether the client should continue with password login flow.
-            false means continue with OTP flow.
+            false means continue with verification-code flow.
       required: [exists, passwordLogin]
     OtpPurpose:
       type: string
       enum: [signup, login, password_reset]
       description: |
-        OTP flow purpose:
+        Verification-code flow purpose:
         - signup: verify identifier before password registration
-        - login: OTP login
+        - login: verification-code login
         - password_reset: forgot-password verification
     VerificationChannel:
       type: string

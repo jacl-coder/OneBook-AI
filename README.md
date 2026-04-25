@@ -83,8 +83,8 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 
 ### 核心数据流
 
-1. **上传** → Gateway → Book 服务 → 写 MinIO + Postgres → 入队 Ingest Stream
-2. **解析** → Ingest 拉文件 → PDF/EPUB/TXT 解析 → 语义分块 → 写 chunks → 入队 Indexer Stream
+1. **上传** → Gateway → Book 服务 → 写 MinIO + Postgres → 入队 Ingest RabbitMQ job
+2. **解析** → Ingest 拉文件 → PDF/EPUB/TXT 解析 → 语义分块 → 写 chunks → 入队 Indexer RabbitMQ job
 3. **索引** → Indexer → Ollama Embedding → Qdrant 写 semantic 向量，同时写 lexical 文档到 OpenSearch，并更新 `chunk_index_status`
 4. **对话** → Chat → Dense + Lexical 双召回 → fusion → rerank → 按 `chunk_id` 回 PostgreSQL 取正文/引用 → 上下文拼装 + 历史 N 轮 → LLM → 保存消息 + 引用
 
@@ -129,8 +129,10 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 OneBook-AI/
 ├── backend/                    # 后端 Go monorepo
 │   ├── services/               # 各微服务（独立可运行）
-│   │   ├── gateway/            # 统一入口、鉴权、限流、路由
+│   │   ├── gateway/            # 统一入口、鉴权、限流、路由、OAuth start/callback
+│   │   │   └── internal/oauth/ # OAuth provider adapter（当前 Google）
 │   │   ├── auth/               # 认证、用户管理、Eval Worker、审计
+│   │   │   └── internal/verify/# 邮件/短信验证码 provider adapter（console/Resend/Aliyun）
 │   │   ├── book/               # 书籍元数据、MinIO 存储
 │   │   ├── chat/               # 检索 + LLM 生成
 │   │   ├── ingest/             # 文件解析与分块
@@ -167,11 +169,7 @@ OneBook-AI/
 │       └── shared/             # 共享组件、hooks、API 客户端
 │
 ├── services/ocr/               # 可选 OCR 服务（PaddleOCR，Docker 部署）
-├── docs/                       # 详细文档
-│   ├── architecture/           # 技术框架、Advanced RAG 蓝图、RAG 评测计划
-│   ├── backend/                # 后端架构、前端联调交接、API 响应规范、认证流程
-│   ├── frontend/               # 前端开发流程
-│   └── product/                # 需求文档、功能规格
+├── services/reranker/          # 可选 Reranker HTTP 服务（Cross-Encoder，Docker 部署）
 ├── docker-compose.yml          # 依赖服务（Postgres/Redis/RabbitMQ/Qdrant/MinIO/Swagger UI）
 ├── .env.example                # 所有配置项示例（复制为 .env 后填写）
 ├── run.sh                      # 一键启动脚本（含密钥自动生成）
@@ -193,6 +191,7 @@ OneBook-AI/
 
 - 统一对外入口：所有 `/api/*` 路由在此鉴权后转发到下游服务。
 - 通过 Gateway 下游调用时使用**内部短时效服务 JWT**（RS256，校验 `iss/aud/exp`）。
+- OAuth 登录入口：`/api/auth/oauth/google/start` 与 `/api/auth/oauth/google/callback`。Gateway 持有 OAuth state/nonce/PKCE 上下文，provider 具体实现位于 `backend/services/gateway/internal/oauth`。
 - 提供管理员后台聚合接口（`/api/admin/*`）。
 - 对外 CORS：`CORS_ALLOWED_ORIGINS` + `CORS_ALLOW_CREDENTIALS`。
 - `/healthz` 健康检查。
@@ -200,7 +199,8 @@ OneBook-AI/
 ### Auth（:8082）
 
 - 注册（`POST /api/auth/signup`）、登录（`POST /api/auth/login`）、登出（`POST /api/auth/logout`）。
-- OTP 验证（`POST /api/auth/otp/send`、`POST /api/auth/otp/verify`）。
+- 验证码认证（推荐 `POST /api/auth/verification/send`、`POST /api/auth/verification/verify`；`/otp/*` 为兼容别名）。
+- 邮件/短信验证码投递 provider 位于 `backend/services/auth/internal/verify`，当前支持 `console`、Resend、阿里云 PNVS SMS Verify。
 - 忘记密码重置（`POST /api/auth/password/reset/verify`、`POST /api/auth/password/reset/complete`）。
 - RS256 JWT 签发（私钥），JWKS 端点（`GET /api/auth/jwks`）供其他服务本地验签。
 - Refresh Token：轮换 + Redis 原子 CAS + 重放整个 token family 撤销。
@@ -293,10 +293,16 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 |---|---|---|
 | POST | `/api/auth/signup` | 注册（需含大写/小写/数字/特殊字符，最少 12 位） |
 | POST | `/api/auth/login` | 登录（返回 HttpOnly Cookie） |
-| POST | `/api/auth/otp/send` | 发送 OTP |
-| POST | `/api/auth/otp/verify` | 验证 OTP |
+| POST | `/api/auth/login/methods` | 查询账号存在性与可用登录方式 |
+| POST | `/api/auth/verification/send` | 发送验证码 |
+| POST | `/api/auth/verification/verify` | 校验验证码；登录用途会设置 Cookie，注册/重置密码用途会返回 `verificationToken` |
+| POST | `/api/auth/otp/send` | 发送验证码（兼容别名） |
+| POST | `/api/auth/otp/verify` | 校验验证码（兼容别名） |
+| POST | `/api/auth/signup/complete` | 使用 `verificationToken` 完成注册 |
 | POST | `/api/auth/password/reset/verify` | 忘记密码 — 验证码校验 |
 | POST | `/api/auth/password/reset/complete` | 忘记密码 — 完成重置 |
+| GET | `/api/auth/oauth/google/start` | 开始 Google OAuth 登录 |
+| GET | `/api/auth/oauth/google/callback` | Google OAuth 回调 |
 | POST | `/api/auth/refresh` | 刷新 Access Token（依赖 Cookie，无需 Body） |
 | POST | `/api/auth/logout` | 登出 |
 | GET | `/api/auth/jwks` | 获取公钥 JWKS |
@@ -345,7 +351,15 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | GET | `/api/admin/books/{id}/index-status` | 查看书籍索引同步状态 |
 | POST | `/api/admin/books/{id}/repair-index` | 触发书籍索引修复（当前实现为整书重处理，需 `Idempotency-Key`） |
 | GET | `/api/admin/audit-logs` | 操作审计日志分页列表 |
+| GET | `/api/admin/evals/overview` | RAG 评测概览 |
+| GET/POST | `/api/admin/evals/datasets` | 评测数据集列表/创建 |
+| GET/PATCH/DELETE | `/api/admin/evals/datasets/{id}` | 评测数据集详情/更新/删除 |
+| GET | `/api/admin/evals/runs` | 评测任务列表 |
 | POST | `/api/admin/evals/runs` | 创建评测任务（需 `Idempotency-Key`） |
+| GET | `/api/admin/evals/runs/{id}` | 评测任务详情 |
+| POST | `/api/admin/evals/runs/{id}/cancel` | 取消评测任务 |
+| GET | `/api/admin/evals/runs/{id}/per-query` | 单 query 评测明细 |
+| GET | `/api/admin/evals/runs/{id}/artifacts/{name}` | 下载评测 artifact |
 
 ### 错误响应格式（统一）
 
@@ -440,6 +454,18 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `CHAT_CONTEXT_BUDGET` | `2200` | 上下文字数预算（runes） |
 | `CHAT_MIN_EVIDENCE_COUNT` | `2` | 最少证据数（低于此数时拒答） |
 | `CHAT_ABSTAIN_ENABLED` | `true` | 是否启用拒答策略（书外实时问题、证据不足、grounding 失败） |
+| `AUTH_EMAIL_PROVIDER` | `console` | 邮件验证码 provider：`console` / `resend` |
+| `RESEND_API_KEY` | — | Resend API Key（`AUTH_EMAIL_PROVIDER=resend` 时必填） |
+| `RESEND_FROM` | — | Resend 发件人（`AUTH_EMAIL_PROVIDER=resend` 时必填） |
+| `AUTH_SMS_PROVIDER` | `console` | 短信验证码 provider：`console` / `aliyun` |
+| `ALIYUN_ACCESS_KEY_ID` | — | 阿里云 AccessKey ID（`AUTH_SMS_PROVIDER=aliyun` 时必填） |
+| `ALIYUN_ACCESS_KEY_SECRET` | — | 阿里云 AccessKey Secret（`AUTH_SMS_PROVIDER=aliyun` 时必填） |
+| `ALIYUN_SMS_SIGN_NAME` | — | 阿里云 PNVS 短信签名（`AUTH_SMS_PROVIDER=aliyun` 时必填） |
+| `OAUTH_GOOGLE_CLIENT_ID` | — | Google OAuth Client ID |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | — | Google OAuth Client Secret |
+| `OAUTH_GOOGLE_REDIRECT_URL` | `http://localhost:8081/api/auth/oauth/google/callback` | Google OAuth Gateway 回调地址 |
+| `OAUTH_STATE_REDIS_PREFIX` | `onebook:auth:oauth` | OAuth state Redis key 前缀 |
+| `OAUTH_APP_BASE_URL` | `http://localhost:5173` | OAuth 成功/失败后回跳的前端 base URL |
 | `LOGS_DIR` | `backend/logs` | 日志文件目录 |
 | `AUTH_EVAL_STORAGE_DIR` | `data/eval-center` | Eval Center 文件存储目录 |
 | `AUTH_EVAL_WORKER_POLL_INTERVAL` | `3s` | Eval Worker 轮询间隔 |
@@ -551,7 +577,7 @@ cd backend && go test ./...
 cd frontend && npm run lint && npm run build
 
 # OpenAPI 规范校验
-cd backend && go run ./cmd/check_openapi
+cd backend && go run ./cmd/check_openapi api/rest/openapi.yaml api/rest/openapi-internal.yaml
 
 # RAG 离线评测（一键脚本）
 ./scripts/run-rag-eval.sh
@@ -580,7 +606,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 | 路径 | 组件 | 说明 |
 |---|---|---|
 | `/` | `HomePage` | 首页 |
-| `/log-in` 等 | `LoginPage` | 登录/注册/OTP/密码重置（多步骤，统一组件） |
+| `/log-in-or-create-account` 等 | `LoginPage` | 登录/注册/验证码/密码重置/OAuth 错误页（多步骤，统一组件） |
 | `/library` | `LibraryPage` | 书库管理 |
 | `/chat`、`/chat/:conversationId` | `ChatPage` | 对话页面 |
 | `/admin/overview` | `AdminOverviewPage` | 管理后台概览 |
@@ -608,6 +634,8 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - **Refresh Token**：长期 Cookie（`onebook_refresh`），轮换策略（每次刷新发新 Token + 作废旧 Token）。
 - **重放检测**：检测到旧 Refresh Token 重放后，撤销整个 token family，强制重新登录。
 - **Redis 原子 CAS**：防止并发请求下同一 Refresh Token 双成功。
+- **验证码投递**：Auth 通过 `verify.Sender` 抽象邮件/短信 provider；本地 `console` 只记录脱敏目标和用途，不输出明文验证码。
+- **OAuth 登录**：Gateway 通过 `oauth.Provider` 抽象第三方登录 provider；当前只注册 Google，使用 server-side Authorization Code Flow + PKCE + state + nonce。
 
 ### 密码
 
@@ -641,9 +669,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 ---
 
-## 13. RAG 演进路线（Advanced RAG 蓝图）
-
-完整蓝图见 `docs/architecture/advanced_rag_plan.md`。
+## 13. RAG 当前状态
 
 ### 当前判断：M1 收尾 + M2 已落地 + M3/M4 起步
 - 文档清洗与 chunk 元数据规范落地。
@@ -657,28 +683,6 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 增量重建 / 索引修复链路仍需补齐。
 - RAG 指标尚未接入 CI 阈值阻断。
 
-### 后续里程碑
-
-| 里程碑 | 目标 |
-|---|---|
-| M2 | 主链已落地，继续做参数、容量、降级与恢复策略治理 |
-| M3 | 补强引用一致性校验、低置信度降级与答案质量控制闭环 |
-| M4 | 把固定离线评测与 CI 门禁、版本对比报告真正接通 |
-| M5 | 特性开关灰度 + 成本预算 + 回滚预案 |
-
-### KPI 目标（M3）
-
-| 维度 | 指标 | 目标 |
-|---|---|---|
-| 检索 | Recall@20 | +10%（相对 M0） |
-| 检索 | nDCG@10 | +10%（相对 M0） |
-| 生成 | 引用命中率 | ≥ 90% |
-| 生成 | 幻觉率 | ≤ 8% |
-| 生成 | 拒答正确率 | ≥ 85% |
-| 工程 | 问答 P95 延迟增幅 | ≤ 20% |
-
----
-
 ## 14. 开发规范（AI Agent 必读）
 
 > 完整规范见 `AGENTS.md`，本节为摘要。
@@ -687,7 +691,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 
 1. **理解先于修改**：修改前先读懂现有行为，实现最小可行改动，不引入 Breaking Change。
 2. **小步精准**：避免大范围重构，目标改动周边的逻辑要求基本不变。
-3. **文档同步**：API 行为变更必须同步 OpenAPI 和 `docs/`，前端解析逻辑一并更新。
+3. **文档同步**：API 行为变更必须同步 OpenAPI；运行/配置/架构事实变化同步本 README 或对应 `.env.example`，前端解析逻辑一并更新。
 
 ### 验证标准
 

@@ -25,7 +25,7 @@ API and error semantics:
   - External API changes: `backend/api/rest/openapi.yaml`
   - Internal service API changes: `backend/api/rest/openapi-internal.yaml`
   - If both scopes are affected, update both files
-- Also update relevant docs under `docs/` and frontend parsing logic if affected.
+- Also update `README.md`, OpenAPI specs, `.env.example`, and frontend parsing logic if affected.
 
 Commit convention (Conventional Commits):
 - Use standard types only: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `build`, `ci`, `perf`.

@@ -44,7 +44,7 @@ paths:
     post:
       tags: [auth-admin]
       summary: Complete OAuth login with verified provider identity
-      description: Called by Gateway after Google ID token validation to bind or create a local user and issue OneBook tokens.
+      description: Called by Gateway after OAuth provider identity validation to bind or create a local user and issue OneBook tokens. Current external provider implementation is Google.
       requestBody:
         required: true
         content:
