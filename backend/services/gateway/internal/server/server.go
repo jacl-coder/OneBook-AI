@@ -65,6 +65,10 @@ type Config struct {
 	OAuthGoogleClientID        string
 	OAuthGoogleClientSecret    string
 	OAuthGoogleRedirectURL     string
+	OAuthMicrosoftClientID     string
+	OAuthMicrosoftClientSecret string
+	OAuthMicrosoftRedirectURL  string
+	OAuthMicrosoftTenant       string
 	OAuthStateRedisPrefix      string
 	OAuthAppBaseURL            string
 	OAuthProviders             map[string]oauth.Provider
@@ -143,9 +147,13 @@ func New(cfg Config) (*Server, error) {
 	oauthProviders := cfg.OAuthProviders
 	if oauthProviders == nil {
 		oauthProviders = oauth.NewProviders(oauth.Config{
-			GoogleClientID:     cfg.OAuthGoogleClientID,
-			GoogleClientSecret: cfg.OAuthGoogleClientSecret,
-			GoogleRedirectURL:  cfg.OAuthGoogleRedirectURL,
+			GoogleClientID:        cfg.OAuthGoogleClientID,
+			GoogleClientSecret:    cfg.OAuthGoogleClientSecret,
+			GoogleRedirectURL:     cfg.OAuthGoogleRedirectURL,
+			MicrosoftClientID:     cfg.OAuthMicrosoftClientID,
+			MicrosoftClientSecret: cfg.OAuthMicrosoftClientSecret,
+			MicrosoftRedirectURL:  cfg.OAuthMicrosoftRedirectURL,
+			MicrosoftTenant:       cfg.OAuthMicrosoftTenant,
 		})
 	}
 	s := &Server{
@@ -204,6 +212,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/login/methods", s.handleLoginMethods)
 	s.mux.HandleFunc("/api/auth/oauth/google/start", s.handleGoogleOAuthStart)
 	s.mux.HandleFunc("/api/auth/oauth/google/callback", s.handleGoogleOAuthCallback)
+	s.mux.HandleFunc("/api/auth/oauth/microsoft/start", s.handleMicrosoftOAuthStart)
+	s.mux.HandleFunc("/api/auth/oauth/microsoft/callback", s.handleMicrosoftOAuthCallback)
 	s.mux.HandleFunc("/api/auth/verification/send", s.handleVerificationSend)
 	s.mux.HandleFunc("/api/auth/verification/verify", s.handleVerificationVerify)
 	s.mux.HandleFunc("/api/auth/otp/send", s.handleVerificationSend)

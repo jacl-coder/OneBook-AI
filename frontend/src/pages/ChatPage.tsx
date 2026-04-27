@@ -909,6 +909,10 @@ export function ChatPage() {
     window.location.assign(new URL('/api/auth/oauth/google/start', env.apiBaseUrl).toString())
   }
 
+  const startMicrosoftOAuth = () => {
+    window.location.assign(new URL('/api/auth/oauth/microsoft/start', env.apiBaseUrl).toString())
+  }
+
   const switchAuthEntryMode = (nextMode: AuthEntryMode) => {
     if (authEntryMode === nextMode) return
     setAuthEntryMode(nextMode)
@@ -1540,12 +1544,12 @@ export function ChatPage() {
                           <span>继续使用 Google 登录</span>
                         </span>
                       </button>
-                      <button type="button" className={chatTw.authProviderBtn} disabled title="即将支持">
+                      <button type="button" className={chatTw.authProviderBtn} onClick={startMicrosoftOAuth}>
                         <span className={chatTw.authProviderBtnInner}>
                           <span className={chatTw.authProviderBtnIcon}>
                             <img src={microsoftLogo} alt="" aria-hidden="true" />
                           </span>
-                          <span>Microsoft 登录即将支持</span>
+                          <span>继续使用 Microsoft 登录</span>
                         </span>
                       </button>
                       <button

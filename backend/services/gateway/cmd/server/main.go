@@ -76,6 +76,10 @@ func main() {
 		OAuthGoogleClientID:        cfg.OAuthGoogleClientID,
 		OAuthGoogleClientSecret:    cfg.OAuthGoogleClientSecret,
 		OAuthGoogleRedirectURL:     cfg.OAuthGoogleRedirectURL,
+		OAuthMicrosoftClientID:     cfg.OAuthMicrosoftClientID,
+		OAuthMicrosoftClientSecret: cfg.OAuthMicrosoftClientSecret,
+		OAuthMicrosoftRedirectURL:  cfg.OAuthMicrosoftRedirectURL,
+		OAuthMicrosoftTenant:       cfg.OAuthMicrosoftTenant,
 		OAuthStateRedisPrefix:      cfg.OAuthStateRedisPrefix,
 		OAuthAppBaseURL:            cfg.OAuthAppBaseURL,
 	})

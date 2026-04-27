@@ -3,18 +3,19 @@ package oauth
 import (
 	"encoding/base64"
 	"math/big"
+	"strings"
 	"testing"
 )
 
-func TestGoogleJWKPublicKeyFromModulusExponent(t *testing.T) {
+func TestRSAJWKPublicKeyFromModulusExponent(t *testing.T) {
 	modulus := new(big.Int).SetUint64(65537 * 65539)
-	key := googleJWK{
+	key := rsaJWK{
 		KID: "test-key",
 		KTY: "RSA",
 		N:   base64.RawURLEncoding.EncodeToString(modulus.Bytes()),
 		E:   base64.RawURLEncoding.EncodeToString([]byte{0x01, 0x00, 0x01}),
 	}
-	pub, err := key.publicKey()
+	pub, err := key.publicKey("test")
 	if err != nil {
 		t.Fatalf("publicKey() error = %v", err)
 	}
@@ -23,5 +24,42 @@ func TestGoogleJWKPublicKeyFromModulusExponent(t *testing.T) {
 	}
 	if pub.N.Cmp(modulus) != 0 {
 		t.Fatalf("public modulus = %s, want %s", pub.N.String(), modulus.String())
+	}
+}
+
+func TestNewProvidersIncludesMicrosoft(t *testing.T) {
+	providers := NewProviders(Config{})
+	if _, ok := providers[ProviderGoogle]; !ok {
+		t.Fatal("google provider missing")
+	}
+	if _, ok := providers[ProviderMicrosoft]; !ok {
+		t.Fatal("microsoft provider missing")
+	}
+}
+
+func TestMicrosoftAuthCodeURLUsesConfiguredTenant(t *testing.T) {
+	provider := newMicrosoftProvider(Config{
+		MicrosoftClientID:    "client-id",
+		MicrosoftRedirectURL: "http://localhost:8081/api/auth/oauth/microsoft/callback",
+		MicrosoftTenant:      "organizations",
+	})
+	got, err := provider.AuthCodeURL("state", "nonce", "verifier")
+	if err != nil {
+		t.Fatalf("AuthCodeURL() error = %v", err)
+	}
+	if want := "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize"; !strings.HasPrefix(got, want) {
+		t.Fatalf("authorize URL = %q, want prefix %q", got, want)
+	}
+}
+
+func TestValidMicrosoftIssuer(t *testing.T) {
+	if !validMicrosoftIssuer("https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0", "11111111-1111-1111-1111-111111111111", "common") {
+		t.Fatal("common tenant issuer rejected")
+	}
+	if !validMicrosoftIssuer("https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0", "11111111-1111-1111-1111-111111111111", "11111111-1111-1111-1111-111111111111") {
+		t.Fatal("matching tenant issuer rejected")
+	}
+	if validMicrosoftIssuer("https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0", "22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111") {
+		t.Fatal("mismatched tenant issuer accepted")
 	}
 }

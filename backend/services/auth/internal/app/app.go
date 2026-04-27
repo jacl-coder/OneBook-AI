@@ -843,9 +843,10 @@ func hasPassword(passwordHash string) bool {
 }
 
 func normalizeOAuthProvider(provider string) string {
-	switch strings.TrimSpace(strings.ToLower(provider)) {
-	case "google":
-		return "google"
+	normalized := strings.TrimSpace(strings.ToLower(provider))
+	switch normalized {
+	case "google", "microsoft":
+		return normalized
 	default:
 		return ""
 	}

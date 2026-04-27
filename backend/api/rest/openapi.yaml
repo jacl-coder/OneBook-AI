@@ -200,6 +200,47 @@ paths:
       responses:
         "302":
           description: Redirect to `/chat` on success or `/log-in/error` on failure
+  /api/auth/oauth/microsoft/start:
+    get:
+      tags: [auth]
+      summary: Start Microsoft OAuth login
+      description: Starts Microsoft Authorization Code Flow with PKCE and redirects to Microsoft identity platform.
+      responses:
+        "302":
+          description: Redirect to Microsoft authorization endpoint
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Microsoft OAuth is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/oauth/microsoft/callback:
+    get:
+      tags: [auth]
+      summary: Complete Microsoft OAuth login
+      description: Exchanges the authorization code, validates the ID token, sets OneBook session cookies, and redirects to the app.
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to `/chat` on success or `/log-in/error` on failure
   /api/auth/verification/send:
     post:
       tags: [auth]

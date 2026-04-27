@@ -1022,6 +1022,10 @@ export function LoginPage() {
     window.location.assign(new URL('/api/auth/oauth/google/start', env.apiBaseUrl).toString())
   }
 
+  const startMicrosoftOAuth = () => {
+    window.location.assign(new URL('/api/auth/oauth/microsoft/start', env.apiBaseUrl).toString())
+  }
+
   const renderSocialButtons = () => (
     <div className={loginTw.socialGroup} role="group" aria-label="选择登录选项">
       <button type="button" className={cx(loginTw.socialButton, focusRingClass)} onClick={startGoogleOAuth}>
@@ -1030,11 +1034,11 @@ export function LoginPage() {
         </span>
         <span>继续使用 Google 登录</span>
       </button>
-      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} disabled title="即将支持">
+      <button type="button" className={cx(loginTw.socialButton, focusRingClass)} onClick={startMicrosoftOAuth}>
         <span className={loginTw.socialIcon}>
           <img src={microsoftIconSvg} alt="" aria-hidden="true" className={loginTw.socialIconImg} />
         </span>
-        <span>Microsoft 登录即将支持</span>
+        <span>继续使用 Microsoft 登录</span>
       </button>
       <button
         type="button"

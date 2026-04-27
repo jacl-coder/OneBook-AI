@@ -20,6 +20,7 @@ import (
 
 const (
 	oauthProviderGoogle       = oauth.ProviderGoogle
+	oauthProviderMicrosoft    = oauth.ProviderMicrosoft
 	defaultOAuthStatePrefix   = "onebook:auth:oauth"
 	defaultOAuthStateTTL      = 10 * time.Minute
 	defaultOAuthCallbackError = "OAuth login failed. Please try again."
@@ -89,6 +90,10 @@ func (s *Server) handleGoogleOAuthStart(w http.ResponseWriter, r *http.Request) 
 	s.handleOAuthStart(w, r, oauthProviderGoogle)
 }
 
+func (s *Server) handleMicrosoftOAuthStart(w http.ResponseWriter, r *http.Request) {
+	s.handleOAuthStart(w, r, oauthProviderMicrosoft)
+}
+
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request, providerName string) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, r)
@@ -148,6 +153,10 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request, provid
 
 func (s *Server) handleGoogleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	s.handleOAuthCallback(w, r, oauthProviderGoogle)
+}
+
+func (s *Server) handleMicrosoftOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	s.handleOAuthCallback(w, r, oauthProviderMicrosoft)
 }
 
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request, providerName string) {

@@ -4,13 +4,11 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,17 +18,23 @@ import (
 )
 
 const (
-	ProviderGoogle     = "google"
-	googleAuthorizeURL = "https://accounts.google.com/o/oauth2/v2/auth"
-	googleTokenURL     = "https://oauth2.googleapis.com/token"
-	googleJWKSURL      = "https://www.googleapis.com/oauth2/v3/certs"
+	ProviderGoogle         = "google"
+	ProviderMicrosoft      = "microsoft"
+	googleAuthorizeURL     = "https://accounts.google.com/o/oauth2/v2/auth"
+	googleTokenURL         = "https://oauth2.googleapis.com/token"
+	googleJWKSURL          = "https://www.googleapis.com/oauth2/v3/certs"
+	defaultMicrosoftTenant = "common"
 )
 
 // Config contains OAuth provider credentials.
 type Config struct {
-	GoogleClientID     string
-	GoogleClientSecret string
-	GoogleRedirectURL  string
+	GoogleClientID        string
+	GoogleClientSecret    string
+	GoogleRedirectURL     string
+	MicrosoftClientID     string
+	MicrosoftClientSecret string
+	MicrosoftRedirectURL  string
+	MicrosoftTenant       string
 }
 
 // Provider implements provider-specific OAuth authorization, token exchange, and identity verification.
@@ -59,7 +63,8 @@ type Identity struct {
 type providerFactory func(Config) Provider
 
 var providerFactories = map[string]providerFactory{
-	ProviderGoogle: newGoogleProvider,
+	ProviderGoogle:    newGoogleProvider,
+	ProviderMicrosoft: newMicrosoftProvider,
 }
 
 type googleProvider struct {
@@ -196,87 +201,8 @@ func (p googleProvider) VerifyIDToken(ctx context.Context, rawToken, nonce strin
 	}, nil
 }
 
-type googleJWKS struct {
-	Keys []googleJWK `json:"keys"`
-}
-
-type googleJWK struct {
-	KID string   `json:"kid"`
-	KTY string   `json:"kty"`
-	N   string   `json:"n"`
-	E   string   `json:"e"`
-	X5C []string `json:"x5c"`
-}
-
 func (p googleProvider) publicKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, googleJWKSURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := p.client().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("google jwks fetch failed: status=%d", resp.StatusCode)
-	}
-	var jwks googleJWKS
-	if err := json.Unmarshal(body, &jwks); err != nil {
-		return nil, err
-	}
-	for _, key := range jwks.Keys {
-		if key.KID != kid {
-			continue
-		}
-		return key.publicKey()
-	}
-	return nil, errors.New("google jwks kid not found")
-}
-
-func (key googleJWK) publicKey() (*rsa.PublicKey, error) {
-	if len(key.X5C) > 0 {
-		rawCert, err := base64.StdEncoding.DecodeString(key.X5C[0])
-		if err != nil {
-			return nil, err
-		}
-		cert, err := x509.ParseCertificate(rawCert)
-		if err != nil {
-			return nil, err
-		}
-		pub, ok := cert.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("google cert public key is not rsa")
-		}
-		return pub, nil
-	}
-	if strings.TrimSpace(key.KTY) != "" && !strings.EqualFold(key.KTY, "RSA") {
-		return nil, fmt.Errorf("google jwk key type %q is not rsa", key.KTY)
-	}
-	if strings.TrimSpace(key.N) == "" || strings.TrimSpace(key.E) == "" {
-		return nil, errors.New("google jwk missing rsa key material")
-	}
-	modulus, err := base64.RawURLEncoding.DecodeString(key.N)
-	if err != nil {
-		return nil, fmt.Errorf("decode google jwk modulus: %w", err)
-	}
-	exponent, err := base64.RawURLEncoding.DecodeString(key.E)
-	if err != nil {
-		return nil, fmt.Errorf("decode google jwk exponent: %w", err)
-	}
-	e := new(big.Int).SetBytes(exponent)
-	if !e.IsInt64() {
-		return nil, errors.New("google jwk exponent is too large")
-	}
-	eInt := int(e.Int64())
-	if eInt <= 1 {
-		return nil, errors.New("google jwk exponent is invalid")
-	}
-	return &rsa.PublicKey{
-		N: new(big.Int).SetBytes(modulus),
-		E: eInt,
-	}, nil
+	return fetchRSAPublicKey(ctx, p.client(), googleJWKSURL, kid, ProviderGoogle)
 }
 
 func pkceChallenge(verifier string) string {

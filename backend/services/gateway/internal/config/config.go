@@ -47,6 +47,10 @@ type FileConfig struct {
 	OAuthGoogleClientID        string   `yaml:"oauthGoogleClientId"`
 	OAuthGoogleClientSecret    string   `yaml:"oauthGoogleClientSecret"`
 	OAuthGoogleRedirectURL     string   `yaml:"oauthGoogleRedirectUrl"`
+	OAuthMicrosoftClientID     string   `yaml:"oauthMicrosoftClientId"`
+	OAuthMicrosoftClientSecret string   `yaml:"oauthMicrosoftClientSecret"`
+	OAuthMicrosoftRedirectURL  string   `yaml:"oauthMicrosoftRedirectUrl"`
+	OAuthMicrosoftTenant       string   `yaml:"oauthMicrosoftTenant"`
 	OAuthStateRedisPrefix      string   `yaml:"oauthStateRedisPrefix"`
 	OAuthAppBaseURL            string   `yaml:"oauthAppBaseUrl"`
 }
@@ -168,6 +172,18 @@ func Load(path string) (FileConfig, error) {
 	}
 	if v := os.Getenv("OAUTH_GOOGLE_REDIRECT_URL"); v != "" {
 		cfg.OAuthGoogleRedirectURL = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_MICROSOFT_CLIENT_ID"); v != "" {
+		cfg.OAuthMicrosoftClientID = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_MICROSOFT_CLIENT_SECRET"); v != "" {
+		cfg.OAuthMicrosoftClientSecret = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_MICROSOFT_REDIRECT_URL"); v != "" {
+		cfg.OAuthMicrosoftRedirectURL = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OAUTH_MICROSOFT_TENANT"); v != "" {
+		cfg.OAuthMicrosoftTenant = strings.TrimSpace(v)
 	}
 	if v := os.Getenv("OAUTH_STATE_REDIS_PREFIX"); v != "" {
 		cfg.OAuthStateRedisPrefix = strings.TrimSpace(v)

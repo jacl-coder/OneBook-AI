@@ -130,7 +130,7 @@ OneBook-AI/
 ├── backend/                    # 后端 Go monorepo
 │   ├── services/               # 各微服务（独立可运行）
 │   │   ├── gateway/            # 统一入口、鉴权、限流、路由、OAuth start/callback
-│   │   │   └── internal/oauth/ # OAuth provider adapter（当前 Google）
+│   │   │   └── internal/oauth/ # OAuth provider adapter（当前 Google / Microsoft）
 │   │   ├── auth/               # 认证、用户管理、Eval Worker、审计
 │   │   │   └── internal/verify/# 邮件/短信验证码 provider adapter（console/Resend/Aliyun）
 │   │   ├── book/               # 书籍元数据、MinIO 存储
@@ -191,7 +191,7 @@ OneBook-AI/
 
 - 统一对外入口：所有 `/api/*` 路由在此鉴权后转发到下游服务。
 - 通过 Gateway 下游调用时使用**内部短时效服务 JWT**（RS256，校验 `iss/aud/exp`）。
-- OAuth 登录入口：`/api/auth/oauth/google/start` 与 `/api/auth/oauth/google/callback`。Gateway 持有 OAuth state/nonce/PKCE 上下文，provider 具体实现位于 `backend/services/gateway/internal/oauth`。
+- OAuth 登录入口：`/api/auth/oauth/{provider}/start` 与 `/api/auth/oauth/{provider}/callback`。当前支持 `google`、`microsoft`。Gateway 持有 OAuth state/nonce/PKCE 上下文，provider 具体实现位于 `backend/services/gateway/internal/oauth`。
 - 提供管理员后台聚合接口（`/api/admin/*`）。
 - 对外 CORS：`CORS_ALLOWED_ORIGINS` + `CORS_ALLOW_CREDENTIALS`。
 - `/healthz` 健康检查。
@@ -303,6 +303,8 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | POST | `/api/auth/password/reset/complete` | 忘记密码 — 完成重置 |
 | GET | `/api/auth/oauth/google/start` | 开始 Google OAuth 登录 |
 | GET | `/api/auth/oauth/google/callback` | Google OAuth 回调 |
+| GET | `/api/auth/oauth/microsoft/start` | 开始 Microsoft OAuth 登录 |
+| GET | `/api/auth/oauth/microsoft/callback` | Microsoft OAuth 回调 |
 | POST | `/api/auth/refresh` | 刷新 Access Token（依赖 Cookie，无需 Body） |
 | POST | `/api/auth/logout` | 登出 |
 | GET | `/api/auth/jwks` | 获取公钥 JWKS |
@@ -464,6 +466,10 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `OAUTH_GOOGLE_CLIENT_ID` | — | Google OAuth Client ID |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | — | Google OAuth Client Secret |
 | `OAUTH_GOOGLE_REDIRECT_URL` | `http://localhost:8081/api/auth/oauth/google/callback` | Google OAuth Gateway 回调地址 |
+| `OAUTH_MICROSOFT_CLIENT_ID` | — | Microsoft OAuth Application Client ID |
+| `OAUTH_MICROSOFT_CLIENT_SECRET` | — | Microsoft OAuth Client Secret |
+| `OAUTH_MICROSOFT_REDIRECT_URL` | `http://localhost:8081/api/auth/oauth/microsoft/callback` | Microsoft OAuth Gateway 回调地址 |
+| `OAUTH_MICROSOFT_TENANT` | `common` | Microsoft OAuth tenant：`common` / `organizations` / `consumers` / tenant ID |
 | `OAUTH_STATE_REDIS_PREFIX` | `onebook:auth:oauth` | OAuth state Redis key 前缀 |
 | `OAUTH_APP_BASE_URL` | `http://localhost:5173` | OAuth 成功/失败后回跳的前端 base URL |
 | `LOGS_DIR` | `backend/logs` | 日志文件目录 |
@@ -635,7 +641,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - **重放检测**：检测到旧 Refresh Token 重放后，撤销整个 token family，强制重新登录。
 - **Redis 原子 CAS**：防止并发请求下同一 Refresh Token 双成功。
 - **验证码投递**：Auth 通过 `verify.Sender` 抽象邮件/短信 provider；本地 `console` 只记录脱敏目标和用途，不输出明文验证码。
-- **OAuth 登录**：Gateway 通过 `oauth.Provider` 抽象第三方登录 provider；当前只注册 Google，使用 server-side Authorization Code Flow + PKCE + state + nonce。
+- **OAuth 登录**：Gateway 通过 `oauth.Provider` 抽象第三方登录 provider；当前注册 Google 和 Microsoft，使用 server-side Authorization Code Flow + PKCE + state + nonce。
 
 ### 密码
 
