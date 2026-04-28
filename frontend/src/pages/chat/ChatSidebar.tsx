@@ -72,20 +72,33 @@ const sidebarTw = {
   sidebarThreadTitle:
     'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] leading-[34px] font-normal',
   sidebarAccountPanel:
-    'sticky bottom-0 z-30 grid gap-[6px] bg-[#f9f9f9] p-2 pt-2 shadow-[0_-18px_26px_rgba(249,249,249,0.92)]',
+    'sticky bottom-0 z-30 bg-[#f9f9f9] p-2 pt-2 shadow-[0_-18px_26px_rgba(249,249,249,0.92)]',
   sidebarAccountCard:
-    'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border-0 bg-transparent p-2 hover:bg-[#ececec]',
+    'group/profile grid min-h-11 w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-[#ececec] focus-visible:bg-[#ececec] focus-visible:outline-none',
   sidebarAvatar:
-    'inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-[9999px] border-0 bg-[#0d0d0d] p-0 text-[12px] font-semibold text-white',
+    'inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-[9999px] border-0 bg-[#0d0d0d] p-0 text-[11px] font-semibold text-white',
   sidebarAvatarImg: 'h-full w-full object-cover',
   sidebarAccountMeta: 'grid min-w-0',
   sidebarAccountEmail:
-    'overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-4',
+    'overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-5 text-[#171717]',
+  sidebarProfileMenu:
+    'absolute bottom-full left-2 right-2 mb-2 grid gap-2 rounded-[14px] border border-[rgba(0,0,0,0.10)] bg-white p-2 shadow-[0_16px_48px_rgba(0,0,0,0.16)]',
+  sidebarProfileMenuHeader:
+    'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[10px] px-2 py-2',
+  sidebarProfileMenuAvatar:
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d0d0d] text-[13px] font-semibold text-white',
+  sidebarProfileMenuName: 'truncate text-[13px] font-medium leading-5 text-[#171717]',
+  sidebarProfileMenuSub: 'truncate text-[12px] leading-4 text-[#777]',
   sidebarLogoutButton:
-    'cursor-pointer rounded-[8px] border-0 bg-transparent px-[6px] py-1 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
-  sidebarProfileRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-1 px-1',
+    'h-8 cursor-pointer rounded-[8px] border-0 bg-transparent px-2 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
+  sidebarProfileRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
   sidebarProfileInput:
     'h-8 min-w-0 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-2 text-[12px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  sidebarMenuButton:
+    'flex h-9 w-full cursor-pointer items-center justify-start rounded-[10px] border-0 bg-transparent px-2 text-left text-[13px] text-[#171717] hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-55',
+  sidebarMenuDanger:
+    'text-[#a4161a] hover:bg-[#fff1f1]',
+  sidebarMenuDivider: 'h-px bg-[rgba(0,0,0,0.08)]',
   sidebarUploadError: 'px-1 text-[11px] leading-4 text-[#a4161a]',
 } as const
 
@@ -160,9 +173,11 @@ export function ChatSidebar({
   const sessionUser = useSessionStore((state) => state.user)
   const setSession = useSessionStore((state) => state.setSession)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [displayNameDraft, setDisplayNameDraft] = useState(sessionUser?.displayName ?? '')
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const displayName = sessionUser?.displayName?.trim() || accountEmail
   const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
   const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
@@ -173,6 +188,29 @@ export function ChatSidebar({
       if (previewUrl) URL.revokeObjectURL(previewUrl)
     }
   }, [previewUrl])
+
+  useEffect(() => {
+    if (!isProfileMenuOpen) return undefined
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsProfileMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isProfileMenuOpen])
 
   const avatarMutation = useMutation({
     mutationFn: uploadMyAvatar,
@@ -464,43 +502,73 @@ export function ChatSidebar({
         </div>
 
               <div className={sidebarTw.sidebarAccountPanel}>
-          <div className={sidebarTw.sidebarAccountCard}>
-            <button
-              type="button"
-              className={sidebarTw.sidebarAvatar}
-              aria-label="上传头像"
-              disabled={avatarMutation.isPending}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
-            </button>
-            <div className={sidebarTw.sidebarAccountMeta}>
-              <span className={sidebarTw.sidebarAccountEmail} title={accountEmail}>{displayName}</span>
-              <span className={sidebarTw.roleMuted}>{accountRoleLabel}</span>
-            </div>
-            <button type="button" className={sidebarTw.sidebarLogoutButton} onClick={onLogout}>
-              退出
-            </button>
-          </div>
-          <div className={sidebarTw.sidebarProfileRow}>
-            <input
-              className={sidebarTw.sidebarProfileInput}
-              value={displayNameDraft}
-              maxLength={80}
-              placeholder="显示名"
-              onChange={(event) => setDisplayNameDraft(event.target.value)}
-            />
-            <button
-              type="button"
-              className={sidebarTw.sidebarLogoutButton}
-              disabled={profileMutation.isPending}
-              onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
-            >
-              保存
-            </button>
-          </div>
-          {uploadError ? <div className={sidebarTw.sidebarUploadError}>{uploadError}</div> : null}
-        </div>
+                <div ref={profileMenuRef} className="relative">
+                  {isProfileMenuOpen ? (
+                    <div className={sidebarTw.sidebarProfileMenu} role="menu">
+                      <div className={sidebarTw.sidebarProfileMenuHeader}>
+                        <span className={sidebarTw.sidebarProfileMenuAvatar} aria-hidden="true">
+                          {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
+                        </span>
+                        <span className={sidebarTw.sidebarAccountMeta}>
+                          <span className={sidebarTw.sidebarProfileMenuName}>{displayName}</span>
+                          <span className={sidebarTw.sidebarProfileMenuSub}>{accountEmail || accountRoleLabel}</span>
+                        </span>
+                      </div>
+                      <div className={sidebarTw.sidebarProfileRow}>
+                        <input
+                          className={sidebarTw.sidebarProfileInput}
+                          value={displayNameDraft}
+                          maxLength={80}
+                          placeholder="显示名"
+                          onChange={(event) => setDisplayNameDraft(event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className={sidebarTw.sidebarLogoutButton}
+                          disabled={profileMutation.isPending}
+                          onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
+                        >
+                          保存
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className={sidebarTw.sidebarMenuButton}
+                        disabled={avatarMutation.isPending}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        更换头像
+                      </button>
+                      {uploadError ? <div className={sidebarTw.sidebarUploadError}>{uploadError}</div> : null}
+                      <div className={sidebarTw.sidebarMenuDivider} />
+                      <button
+                        type="button"
+                        className={cx(sidebarTw.sidebarMenuButton, sidebarTw.sidebarMenuDanger)}
+                        onClick={onLogout}
+                      >
+                        退出登录
+                      </button>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={sidebarTw.sidebarAccountCard}
+                    aria-label={`${displayName}，打开个人资料菜单`}
+                    aria-haspopup="menu"
+                    aria-expanded={isProfileMenuOpen}
+                    data-state={isProfileMenuOpen ? 'open' : 'closed'}
+                    onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                  >
+                    <span className={sidebarTw.sidebarAvatar} aria-hidden="true">
+                      {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
+                    </span>
+                    <span className={sidebarTw.sidebarAccountMeta}>
+                      <span className={sidebarTw.sidebarAccountEmail} title={displayName}>{displayName}</span>
+                      <span className={sidebarTw.roleMuted}>{accountRoleLabel}</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
