@@ -72,6 +72,9 @@ type Store interface {
 	GetUserByIdentity(identityType domain.IdentityType, identifier string) (domain.User, bool, error)
 	GetUserByProviderIdentity(provider, identifier string) (domain.User, bool, error)
 	GetUserByID(id string) (domain.User, bool, error)
+	ListUserIdentities(userIDs []string) (map[string][]domain.UserIdentity, error)
+	DeleteUserIdentity(userID string, identityType domain.IdentityType) error
+	DeleteUser(userID string) error
 	ListUsers() ([]domain.User, error)
 	ListUsersWithOptions(UserListOptions) ([]domain.User, int, error)
 	UserCount() (int, error)

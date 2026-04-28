@@ -1063,13 +1063,55 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		writeJSON(w, http.StatusOK, item)
 		return
 	}
+	if r.Method == http.MethodDelete && action == "" {
+		before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		books, err := s.books.ListBooks(util.RequestIDFromRequest(r), ctx.AccessToken, bookclient.ListBooksParams{OwnerID: id})
+		if err != nil {
+			writeBookError(w, r, err)
+			return
+		}
+		deletedBookIDs := make([]string, 0, len(books))
+		for _, book := range books {
+			if err := s.books.DeleteBook(util.RequestIDFromRequest(r), ctx.AccessToken, book.ID); err != nil {
+				writeBookError(w, r, err)
+				return
+			}
+			deletedBookIDs = append(deletedBookIDs, book.ID)
+		}
+		if err := s.auth.AdminDeleteUser(util.RequestIDFromRequest(r), ctx.AccessToken, id); err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		if err := s.writeAdminAuditLog(r, ctx, authclient.AdminAuditLogCreateRequest{
+			Action:     "admin.user.delete",
+			TargetType: "user",
+			TargetID:   id,
+			Before:     toMap(before),
+			After: map[string]any{
+				"deleted":        true,
+				"deletedBookIds": deletedBookIDs,
+			},
+			RequestID: util.RequestIDFromRequest(r),
+			IP:        util.ClientIP(r, s.trustedProxies),
+			UserAgent: strings.TrimSpace(r.UserAgent()),
+		}); err != nil {
+			writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to write admin audit log", "ADMIN_AUDIT_WRITE_FAILED")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "deletedBookIds": deletedBookIDs})
+		return
+	}
 	if r.Method == http.MethodPost && (action == "disable" || action == "enable") {
 		before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
 		}
-		var updated domain.User
+		var updated domain.AdminUser
 		if action == "disable" {
 			updated, err = s.auth.AdminDisableUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
 		} else {
@@ -1122,8 +1164,8 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		}
 		status = &parsed
 	}
-	if role == nil && status == nil {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "role or status is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
+	if role == nil && status == nil && req.Email == nil && req.Phone == nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "role, status, email, or phone is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
 		return
 	}
 	before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
@@ -1131,7 +1173,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		writeAuthError(w, r, err)
 		return
 	}
-	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status)
+	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status, req.Email, req.Phone)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -1575,8 +1617,10 @@ type updateBookRequest struct {
 }
 
 type adminUserUpdateRequest struct {
-	Role   string `json:"role"`
-	Status string `json:"status"`
+	Role   string  `json:"role"`
+	Status string  `json:"status"`
+	Email  *string `json:"email"`
+	Phone  *string `json:"phone"`
 }
 
 func tokenFromCookie(r *http.Request, name string) string {

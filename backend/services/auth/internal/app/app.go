@@ -481,24 +481,36 @@ func (a *App) ListUsers() ([]domain.User, error) {
 }
 
 // ListUsersWithOptions returns users with filtering and pagination.
-func (a *App) ListUsersWithOptions(opts store.UserListOptions) ([]domain.User, int, error) {
-	return a.store.ListUsersWithOptions(opts)
+func (a *App) ListUsersWithOptions(opts store.UserListOptions) ([]domain.AdminUser, int, error) {
+	users, total, err := a.store.ListUsersWithOptions(opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	adminUsers, err := a.adminUsersFromUsers(users)
+	if err != nil {
+		return nil, 0, err
+	}
+	return adminUsers, total, nil
 }
 
 // AdminGetUser returns a single user by id.
-func (a *App) AdminGetUser(userID string) (domain.User, error) {
+func (a *App) AdminGetUser(userID string) (domain.AdminUser, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return domain.User{}, fmt.Errorf("user id required")
+		return domain.AdminUser{}, fmt.Errorf("user id required")
 	}
 	user, ok, err := a.store.GetUserByID(userID)
 	if err != nil {
-		return domain.User{}, fmt.Errorf("fetch user: %w", err)
+		return domain.AdminUser{}, fmt.Errorf("fetch user: %w", err)
 	}
 	if !ok {
-		return domain.User{}, fmt.Errorf("user not found")
+		return domain.AdminUser{}, fmt.Errorf("user not found")
 	}
-	return user, nil
+	adminUsers, err := a.adminUsersFromUsers([]domain.User{user})
+	if err != nil {
+		return domain.AdminUser{}, err
+	}
+	return adminUsers[0], nil
 }
 
 // UpdateMyEmail updates the current user's email.
@@ -647,21 +659,124 @@ func (a *App) issueTokens(userID string) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
-// AdminUpdateUser allows admins to change role/status.
-func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.UserRole, status *domain.UserStatus) (domain.User, error) {
+func (a *App) adminUsersFromUsers(users []domain.User) ([]domain.AdminUser, error) {
+	userIDs := make([]string, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+	identitiesByUser, err := a.store.ListUserIdentities(userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fetch user identities: %w", err)
+	}
+	items := make([]domain.AdminUser, 0, len(users))
+	for _, user := range users {
+		email := ""
+		phone := ""
+		for _, identity := range identitiesByUser[user.ID] {
+			switch identity.Type {
+			case domain.IdentityEmail:
+				if email == "" {
+					email = identity.Identifier
+				}
+			case domain.IdentityPhone:
+				if phone == "" {
+					phone = identity.Identifier
+				}
+			}
+		}
+		if email == "" && strings.Contains(user.Email, "@") {
+			email = user.Email
+		}
+		if phone == "" && user.Email != "" && !strings.Contains(user.Email, "@") {
+			phone = user.Email
+		}
+		items = append(items, domain.AdminUser{
+			ID:        user.ID,
+			Email:     email,
+			Phone:     phone,
+			Role:      user.Role,
+			Status:    user.Status,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		})
+	}
+	return items, nil
+}
+
+func currentUserContactIdentities(identities []domain.UserIdentity, user domain.User) (string, string) {
+	email := ""
+	phone := ""
+	for _, identity := range identities {
+		switch identity.Type {
+		case domain.IdentityEmail:
+			if email == "" {
+				email = identity.Identifier
+			}
+		case domain.IdentityPhone:
+			if phone == "" {
+				phone = identity.Identifier
+			}
+		}
+	}
+	if email == "" && strings.Contains(user.Email, "@") {
+		email = user.Email
+	}
+	if phone == "" && user.Email != "" && !strings.Contains(user.Email, "@") {
+		phone = user.Email
+	}
+	return email, phone
+}
+
+func hasRemainingLoginIdentity(identities []domain.UserIdentity, replacingEmail bool, replacingPhone bool, finalEmail string, finalPhone string) bool {
+	if finalEmail != "" || finalPhone != "" {
+		return true
+	}
+	for _, identity := range identities {
+		switch identity.Type {
+		case domain.IdentityOAuth:
+			return true
+		case domain.IdentityEmail:
+			if !replacingEmail {
+				return true
+			}
+		case domain.IdentityPhone:
+			if !replacingPhone {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func adminVerifiedIdentity(userID string, identityType domain.IdentityType, provider string, identifier string, now time.Time) domain.UserIdentity {
+	return domain.UserIdentity{
+		ID:         util.NewID(),
+		UserID:     userID,
+		Type:       identityType,
+		Provider:   provider,
+		Identifier: identifier,
+		VerifiedAt: &now,
+		IsPrimary:  true,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+}
+
+// AdminUpdateUser allows admins to change user profile, role, and status.
+func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string) (domain.AdminUser, error) {
 	target, ok, err := a.store.GetUserByID(userID)
 	if err != nil {
-		return domain.User{}, fmt.Errorf("fetch user: %w", err)
+		return domain.AdminUser{}, fmt.Errorf("fetch user: %w", err)
 	}
 	if !ok {
-		return domain.User{}, fmt.Errorf("user not found")
+		return domain.AdminUser{}, fmt.Errorf("user not found")
 	}
 	if target.ID == admin.ID {
 		if role != nil && *role != admin.Role {
-			return domain.User{}, fmt.Errorf("cannot change own role")
+			return domain.AdminUser{}, fmt.Errorf("cannot change own role")
 		}
 		if status != nil && *status == domain.StatusDisabled {
-			return domain.User{}, fmt.Errorf("cannot disable self")
+			return domain.AdminUser{}, fmt.Errorf("cannot disable self")
 		}
 	}
 	if role != nil {
@@ -670,16 +785,108 @@ func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.Use
 	if status != nil {
 		target.Status = *status
 	}
+	identitiesByUser, err := a.store.ListUserIdentities([]string{target.ID})
+	if err != nil {
+		return domain.AdminUser{}, fmt.Errorf("fetch user identities: %w", err)
+	}
+	finalEmail, finalPhone := currentUserContactIdentities(identitiesByUser[target.ID], target)
+	var normalizedEmail string
+	var normalizedPhone string
+	if email != nil {
+		normalizedEmail, err = normalizeAdminEmail(*email)
+		if err != nil {
+			return domain.AdminUser{}, err
+		}
+		if normalizedEmail != "" {
+			existing, ok, err := a.store.GetUserByIdentity(domain.IdentityEmail, normalizedEmail)
+			if err != nil {
+				return domain.AdminUser{}, fmt.Errorf("check email identity: %w", err)
+			}
+			if ok && existing.ID != target.ID {
+				return domain.AdminUser{}, ErrIdentifierAlreadyExists
+			}
+		}
+		finalEmail = normalizedEmail
+	}
+	if phone != nil {
+		normalizedPhone, err = normalizeAdminPhone(*phone)
+		if err != nil {
+			return domain.AdminUser{}, err
+		}
+		if normalizedPhone != "" {
+			existing, ok, err := a.store.GetUserByIdentity(domain.IdentityPhone, normalizedPhone)
+			if err != nil {
+				return domain.AdminUser{}, fmt.Errorf("check phone identity: %w", err)
+			}
+			if ok && existing.ID != target.ID {
+				return domain.AdminUser{}, ErrIdentifierAlreadyExists
+			}
+		}
+		finalPhone = normalizedPhone
+	}
+	if (email != nil || phone != nil) && !hasRemainingLoginIdentity(identitiesByUser[target.ID], email != nil, phone != nil, finalEmail, finalPhone) {
+		return domain.AdminUser{}, fmt.Errorf("user must have at least one login identity")
+	}
 	target.UpdatedAt = time.Now().UTC()
+	target.Email = finalEmail
+	if target.Email == "" {
+		target.Email = finalPhone
+	}
 	if err := a.store.SaveUser(target); err != nil {
-		return domain.User{}, fmt.Errorf("update user: %w", err)
+		return domain.AdminUser{}, fmt.Errorf("update user: %w", err)
+	}
+	if email != nil {
+		if normalizedEmail == "" {
+			if err := a.store.DeleteUserIdentity(target.ID, domain.IdentityEmail); err != nil {
+				return domain.AdminUser{}, fmt.Errorf("delete email identity: %w", err)
+			}
+		} else if err := a.store.SaveUserIdentity(adminVerifiedIdentity(target.ID, domain.IdentityEmail, "", normalizedEmail, target.UpdatedAt)); err != nil {
+			return domain.AdminUser{}, fmt.Errorf("update email identity: %w", err)
+		}
+	}
+	if phone != nil {
+		if normalizedPhone == "" {
+			if err := a.store.DeleteUserIdentity(target.ID, domain.IdentityPhone); err != nil {
+				return domain.AdminUser{}, fmt.Errorf("delete phone identity: %w", err)
+			}
+		} else if err := a.store.SaveUserIdentity(adminVerifiedIdentity(target.ID, domain.IdentityPhone, "", normalizedPhone, target.UpdatedAt)); err != nil {
+			return domain.AdminUser{}, fmt.Errorf("update phone identity: %w", err)
+		}
 	}
 	if status != nil && *status == domain.StatusDisabled {
 		if err := a.revokeAllUserTokens(target.ID, target.UpdatedAt); err != nil {
-			return domain.User{}, fmt.Errorf("revoke disabled user tokens: %w", err)
+			return domain.AdminUser{}, fmt.Errorf("revoke disabled user tokens: %w", err)
 		}
 	}
-	return target, nil
+	adminUsers, err := a.adminUsersFromUsers([]domain.User{target})
+	if err != nil {
+		return domain.AdminUser{}, err
+	}
+	return adminUsers[0], nil
+}
+
+func (a *App) AdminDeleteUser(admin domain.User, userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fmt.Errorf("user id required")
+	}
+	target, ok, err := a.store.GetUserByID(userID)
+	if err != nil {
+		return fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	if target.ID == admin.ID {
+		return fmt.Errorf("cannot delete self")
+	}
+	if err := a.revokeAllUserTokens(target.ID, time.Now().UTC()); err != nil {
+		return fmt.Errorf("revoke deleted user tokens: %w", err)
+	}
+	if err := a.store.DeleteUser(target.ID); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
 }
 
 // SaveAdminAuditLog persists an admin audit event.
@@ -862,4 +1069,38 @@ func normalizeOAuthEmail(email string) string {
 		return ""
 	}
 	return strings.ToLower(parsed.Address)
+}
+
+func normalizeAdminEmail(email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return "", nil
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return "", fmt.Errorf("email format is invalid")
+	}
+	return email, nil
+}
+
+func normalizeAdminPhone(phone string) (string, error) {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, phone)
+	if digits == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(digits, "0086") {
+		digits = strings.TrimPrefix(digits, "0086")
+	}
+	if strings.HasPrefix(digits, "86") && len(digits) == 13 {
+		digits = strings.TrimPrefix(digits, "86")
+	}
+	if len(digits) != 11 || !strings.HasPrefix(digits, "1") {
+		return "", fmt.Errorf("phone format is invalid")
+	}
+	return "+86" + digits, nil
 }

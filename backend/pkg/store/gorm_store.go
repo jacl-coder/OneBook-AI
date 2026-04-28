@@ -389,6 +389,63 @@ func (s *GormStore) GetUserByID(id string) (domain.User, bool, error) {
 	return userFromModel(model), true, nil
 }
 
+// ListUserIdentities returns identities grouped by user ID.
+func (s *GormStore) ListUserIdentities(userIDs []string) (map[string][]domain.UserIdentity, error) {
+	result := make(map[string][]domain.UserIdentity, len(userIDs))
+	ids := make([]string, 0, len(userIDs))
+	seen := map[string]struct{}{}
+	for _, id := range userIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+		result[id] = nil
+	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var models []UserIdentityModel
+	if err := s.db.Where("user_id IN ?", ids).Order("is_primary DESC, created_at ASC").Find(&models).Error; err != nil {
+		return nil, err
+	}
+	for _, model := range models {
+		identity := userIdentityFromModel(model)
+		result[identity.UserID] = append(result[identity.UserID], identity)
+	}
+	return result, nil
+}
+
+func (s *GormStore) DeleteUserIdentity(userID string, identityType domain.IdentityType) error {
+	return s.db.Delete(&UserIdentityModel{}, "user_id = ? AND type = ?", strings.TrimSpace(userID), string(identityType)).Error
+}
+
+func (s *GormStore) DeleteUser(userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&UserIdentityModel{}, "user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&MessageModel{}, "user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&ConversationModel{}, "user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&UserModel{}, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // ListUsers returns all users ordered by created_at.
 func (s *GormStore) ListUsers() ([]domain.User, error) {
 	var models []UserModel
@@ -409,7 +466,12 @@ func (s *GormStore) ListUsersWithOptions(opts UserListOptions) ([]domain.User, i
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
 		like := "%" + strings.ToLower(query) + "%"
-		tx = tx.Where("LOWER(email) LIKE ? OR LOWER(id) LIKE ?", like, like)
+		tx = tx.Where(
+			"LOWER(email) LIKE ? OR LOWER(id) LIKE ? OR EXISTS (SELECT 1 FROM user_identity_models ui WHERE ui.user_id = user_models.id AND LOWER(ui.identifier) LIKE ?)",
+			like,
+			like,
+			like,
+		)
 	}
 	role := strings.TrimSpace(strings.ToLower(opts.Role))
 	if role != "" {

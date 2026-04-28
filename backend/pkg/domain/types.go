@@ -77,6 +77,16 @@ type User struct {
 	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
+type AdminUser struct {
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	Phone     string     `json:"phone"`
+	Role      UserRole   `json:"role"`
+	Status    UserStatus `json:"status"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+}
+
 type UserIdentity struct {
 	ID         string       `json:"id"`
 	UserID     string       `json:"userId"`

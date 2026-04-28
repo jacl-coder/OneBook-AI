@@ -945,12 +945,16 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		writeJSON(w, http.StatusOK, target)
 		return
 	}
+	if r.Method == http.MethodDelete && action == "" {
+		s.handleAdminDeleteUser(w, r, user, id)
+		return
+	}
 	if r.Method == http.MethodPost && (action == "disable" || action == "enable") {
 		status := domain.StatusDisabled
 		if action == "enable" {
 			status = domain.StatusActive
 		}
-		updated, err := s.app.AdminUpdateUser(user, id, nil, &status)
+		updated, err := s.app.AdminUpdateUser(user, id, nil, &status, nil, nil)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -985,16 +989,24 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		}
 		status = &parsed
 	}
-	if role == nil && status == nil {
-		writeError(w, http.StatusBadRequest, "role or status is required")
+	if role == nil && status == nil && req.Email == nil && req.Phone == nil {
+		writeError(w, http.StatusBadRequest, "role, status, email, or phone is required")
 		return
 	}
-	updated, err := s.app.AdminUpdateUser(user, id, role, status)
+	updated, err := s.app.AdminUpdateUser(user, id, role, status, req.Email, req.Phone)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request, user domain.User, id string) {
+	if err := s.app.AdminDeleteUser(user, id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (s *Server) handleAdminAuditLogs(w http.ResponseWriter, r *http.Request, user domain.User) {
@@ -1255,8 +1267,10 @@ type changePasswordRequest struct {
 }
 
 type adminUserUpdateRequest struct {
-	Role   string `json:"role"`
-	Status string `json:"status"`
+	Role   string  `json:"role"`
+	Status string  `json:"status"`
+	Email  *string `json:"email"`
+	Phone  *string `json:"phone"`
 }
 
 type adminAuditLogCreateRequest struct {

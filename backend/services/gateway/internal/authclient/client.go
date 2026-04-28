@@ -206,7 +206,7 @@ func (c *Client) JWKS(requestID string) ([]store.JWK, error) {
 	return resp.Keys, nil
 }
 
-func (c *Client) AdminListUsers(requestID, token string) ([]domain.User, error) {
+func (c *Client) AdminListUsers(requestID, token string) ([]domain.AdminUser, error) {
 	resp, err := c.AdminListUsersWithOptions(requestID, token, AdminListUsersOptions{})
 	if err != nil {
 		return nil, err
@@ -225,12 +225,12 @@ type AdminListUsersOptions struct {
 }
 
 type PagedUsersResponse struct {
-	Items      []domain.User `json:"items"`
-	Count      int           `json:"count"`
-	Page       int           `json:"page"`
-	PageSize   int           `json:"pageSize"`
-	Total      int           `json:"total"`
-	TotalPages int           `json:"totalPages"`
+	Items      []domain.AdminUser `json:"items"`
+	Count      int                `json:"count"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"pageSize"`
+	Total      int                `json:"total"`
+	TotalPages int                `json:"totalPages"`
 }
 
 func (c *Client) AdminListUsersWithOptions(requestID, token string, opts AdminListUsersOptions) (PagedUsersResponse, error) {
@@ -274,45 +274,56 @@ func (c *Client) AdminListUsersWithOptions(requestID, token string, opts AdminLi
 	}, nil
 }
 
-func (c *Client) AdminGetUser(requestID, token, userID string) (domain.User, error) {
-	var user domain.User
+func (c *Client) AdminGetUser(requestID, token, userID string) (domain.AdminUser, error) {
+	var user domain.AdminUser
 	path := fmt.Sprintf("/auth/admin/users/%s", userID)
 	if err := c.doJSON(http.MethodGet, path, requestID, token, nil, &user); err != nil {
-		return domain.User{}, err
+		return domain.AdminUser{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus) (domain.User, error) {
-	payload := map[string]string{}
+func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string) (domain.AdminUser, error) {
+	payload := map[string]any{}
 	if role != nil {
 		payload["role"] = string(*role)
 	}
 	if status != nil {
 		payload["status"] = string(*status)
 	}
-	var user domain.User
+	if email != nil {
+		payload["email"] = *email
+	}
+	if phone != nil {
+		payload["phone"] = *phone
+	}
+	var user domain.AdminUser
 	path := fmt.Sprintf("/auth/admin/users/%s", userID)
 	if err := c.doJSON(http.MethodPatch, path, requestID, token, payload, &user); err != nil {
-		return domain.User{}, err
+		return domain.AdminUser{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) AdminDisableUser(requestID, token, userID string) (domain.User, error) {
-	var user domain.User
+func (c *Client) AdminDeleteUser(requestID, token, userID string) error {
+	path := fmt.Sprintf("/auth/admin/users/%s", userID)
+	return c.doJSON(http.MethodDelete, path, requestID, token, nil, nil)
+}
+
+func (c *Client) AdminDisableUser(requestID, token, userID string) (domain.AdminUser, error) {
+	var user domain.AdminUser
 	path := fmt.Sprintf("/auth/admin/users/%s/disable", userID)
 	if err := c.doJSON(http.MethodPost, path, requestID, token, map[string]any{}, &user); err != nil {
-		return domain.User{}, err
+		return domain.AdminUser{}, err
 	}
 	return user, nil
 }
 
-func (c *Client) AdminEnableUser(requestID, token, userID string) (domain.User, error) {
-	var user domain.User
+func (c *Client) AdminEnableUser(requestID, token, userID string) (domain.AdminUser, error) {
+	var user domain.AdminUser
 	path := fmt.Sprintf("/auth/admin/users/%s/enable", userID)
 	if err := c.doJSON(http.MethodPost, path, requestID, token, map[string]any{}, &user); err != nil {
-		return domain.User{}, err
+		return domain.AdminUser{}, err
 	}
 	return user, nil
 }
@@ -760,12 +771,12 @@ type PasswordResetVerifyResponse struct {
 }
 
 type listUsersResponse struct {
-	Items      []domain.User `json:"items"`
-	Count      int           `json:"count"`
-	Page       int           `json:"page"`
-	PageSize   int           `json:"pageSize"`
-	Total      int           `json:"total"`
-	TotalPages int           `json:"totalPages"`
+	Items      []domain.AdminUser `json:"items"`
+	Count      int                `json:"count"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"pageSize"`
+	Total      int                `json:"total"`
+	TotalPages int                `json:"totalPages"`
 }
 
 type jwksResponse struct {

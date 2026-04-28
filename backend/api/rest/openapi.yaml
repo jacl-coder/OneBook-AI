@@ -1089,7 +1089,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/AdminUser"
         "401":
           description: Unauthorized
           content:
@@ -1110,7 +1110,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
       tags: [admin]
-      summary: Update user role or status (admin only)
+      summary: Update user profile, role, or status (admin only)
       security:
         - sessionCookieAuth: []
       parameters:
@@ -1131,7 +1131,57 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/AdminUser"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [admin]
+      summary: Delete user and queue owned books for cleanup (admin only)
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [deleted]
+                  deletedBookIds:
+                    type: array
+                    items:
+                      type: string
         "400":
           description: Invalid input
           content:
@@ -1174,7 +1224,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/AdminUser"
         "400":
           description: Invalid input
           content:
@@ -1211,7 +1261,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/AdminUser"
         "400":
           description: Invalid input
           content:
@@ -2100,12 +2150,43 @@ components:
     AdminUserUpdateRequest:
       type: object
       properties:
+        email:
+          type: string
+          description: Verified email identity. Send an empty string to remove it.
+        phone:
+          type: string
+          description: Verified phone identity. Send an empty string to remove it.
         role:
           type: string
           enum: [user, admin]
         status:
           type: string
           enum: [active, disabled]
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+          description: Verified email identity, empty when the user only has phone or OAuth identity.
+        phone:
+          type: string
+          description: Verified phone identity, empty when the user only has email or OAuth identity.
+        role:
+          type: string
+          enum: [user, admin]
+        status:
+          type: string
+          enum: [active, disabled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, email, phone, role, status, createdAt, updatedAt]
     User:
       type: object
       properties:
@@ -2407,7 +2488,7 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/User"
+            $ref: "#/components/schemas/AdminUser"
         count:
           type: integer
         page:
