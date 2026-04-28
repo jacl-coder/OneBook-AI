@@ -20,6 +20,8 @@ import (
 	"onebookai/services/auth/internal/verify"
 )
 
+const maxAvatarUploadBytes int64 = 5 * 1024 * 1024
+
 // Config wires required dependencies for the HTTP server.
 type Config struct {
 	App                            *app.App
@@ -173,7 +175,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/auth/jwks", s.handleJWKS)
 	s.mux.HandleFunc("/.well-known/jwks.json", s.handleJWKS)
 	s.mux.Handle("/auth/me", s.authenticated(s.handleMe))
+	s.mux.Handle("/auth/me/avatar", s.authenticated(s.handleMeAvatar))
 	s.mux.Handle("/auth/me/password", s.authenticated(s.handleChangePassword))
+	s.mux.Handle("/auth/users/", s.authenticated(s.handleUserAvatar))
 
 	// admin
 	s.mux.Handle("/auth/admin/users", s.adminOnly(s.handleAdminUsers))
@@ -313,7 +317,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, normErr.Error())
 		return
 	}
-	user, accessToken, refreshToken, err := s.app.LoginWithPasswordByIdentity(channel, identifier, req.Password)
+	user, accessToken, refreshToken, err := s.app.LoginWithPasswordByIdentity(channel, identifier, req.Password, s.loginActivity(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrPasswordNotSet):
@@ -402,6 +406,7 @@ func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
 		EmailVerified: req.EmailVerified,
 		DisplayName:   req.DisplayName,
 		AvatarURL:     req.AvatarURL,
+		LoginActivity: s.loginActivity(r),
 	})
 	if err != nil {
 		switch {
@@ -582,7 +587,7 @@ func (s *Server) handleVerificationVerify(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	user, accessToken, refreshToken, err := s.app.LoginByIdentity(channel, identifier)
+	user, accessToken, refreshToken, err := s.app.LoginByIdentity(channel, identifier, s.loginActivity(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrEmailAlreadyExists), errors.Is(err, app.ErrIdentifierAlreadyExists), errors.Is(err, app.ErrEmailAndPasswordRequired), errors.Is(err, app.ErrEmailRequired), isPasswordPolicyError(err):
@@ -817,11 +822,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
-		if req.Email == "" {
-			writeError(w, http.StatusBadRequest, "email is required")
+		if req.Email == nil && req.DisplayName == nil {
+			writeError(w, http.StatusBadRequest, "email or displayName is required")
 			return
 		}
-		updated, err := s.app.UpdateMyEmail(user, req.Email)
+		updated, err := s.app.UpdateMyProfile(user, req.Email, req.DisplayName)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -829,6 +834,54 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, user domain.Us
 		writeJSON(w, http.StatusOK, updated)
 	default:
 		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleMeAvatar(w http.ResponseWriter, r *http.Request, user domain.User) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarUploadBytes+1<<20)
+	if err := r.ParseMultipartForm(6 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+	updated, err := s.app.UploadUserAvatar(user, file, header.Filename)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request, user domain.User) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/auth/users/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "avatar" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	body, contentType, err := s.app.UserAvatar(parts[0])
+	if err != nil {
+		writeError(w, http.StatusNotFound, "avatar not found")
+		return
+	}
+	defer body.Close()
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if _, err := io.Copy(w, body); err != nil {
+		util.LoggerFromContext(r.Context()).Error("auth.avatar.copy_error", "err", err, "viewer_id", user.ID, "target_id", parts[0])
 	}
 }
 
@@ -865,6 +918,13 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, us
 	}
 	s.audit(r, "auth.password.change", "success", "user_id", user.ID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) loginActivity(r *http.Request) app.LoginActivity {
+	return app.LoginActivity{
+		IP:        util.ClientIP(r, s.trustedProxies),
+		UserAgent: strings.TrimSpace(r.UserAgent()),
+	}
 }
 
 // admin handlers
@@ -954,7 +1014,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		if action == "enable" {
 			status = domain.StatusActive
 		}
-		updated, err := s.app.AdminUpdateUser(user, id, nil, &status, nil, nil)
+		updated, err := s.app.AdminUpdateUser(user, id, nil, &status, nil, nil, nil, nil, nil)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -989,11 +1049,11 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, use
 		}
 		status = &parsed
 	}
-	if role == nil && status == nil && req.Email == nil && req.Phone == nil {
-		writeError(w, http.StatusBadRequest, "role, status, email, or phone is required")
+	if role == nil && status == nil && req.Email == nil && req.Phone == nil && req.DisplayName == nil && req.AvatarURL == nil && req.AdminNote == nil {
+		writeError(w, http.StatusBadRequest, "role, status, email, phone, displayName, avatarUrl, or adminNote is required")
 		return
 	}
-	updated, err := s.app.AdminUpdateUser(user, id, role, status, req.Email, req.Phone)
+	updated, err := s.app.AdminUpdateUser(user, id, role, status, req.Email, req.Phone, req.DisplayName, req.AvatarURL, req.AdminNote)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1258,7 +1318,8 @@ type logoutRequest struct {
 }
 
 type updateMeRequest struct {
-	Email string `json:"email"`
+	Email       *string `json:"email"`
+	DisplayName *string `json:"displayName"`
 }
 
 type changePasswordRequest struct {
@@ -1267,10 +1328,13 @@ type changePasswordRequest struct {
 }
 
 type adminUserUpdateRequest struct {
-	Role   string  `json:"role"`
-	Status string  `json:"status"`
-	Email  *string `json:"email"`
-	Phone  *string `json:"phone"`
+	Role        string  `json:"role"`
+	Status      string  `json:"status"`
+	Email       *string `json:"email"`
+	Phone       *string `json:"phone"`
+	DisplayName *string `json:"displayName"`
+	AvatarURL   *string `json:"avatarUrl"`
+	AdminNote   *string `json:"adminNote"`
 }
 
 type adminAuditLogCreateRequest struct {

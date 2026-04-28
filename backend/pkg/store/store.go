@@ -73,6 +73,10 @@ type Store interface {
 	GetUserByProviderIdentity(provider, identifier string) (domain.User, bool, error)
 	GetUserByID(id string) (domain.User, bool, error)
 	ListUserIdentities(userIDs []string) (map[string][]domain.UserIdentity, error)
+	SaveUserProfile(domain.UserProfile) error
+	GetUserProfile(userID string) (domain.UserProfile, bool, error)
+	ListUserProfiles(userIDs []string) (map[string]domain.UserProfile, error)
+	UpdateUserLoginActivity(userID, ip, userAgent string, at time.Time) error
 	DeleteUserIdentity(userID string, identityType domain.IdentityType) error
 	DeleteUser(userID string) error
 	ListUsers() ([]domain.User, error)

@@ -70,21 +70,50 @@ type Book struct {
 type User struct {
 	ID           string     `json:"id"`
 	Email        string     `json:"email"`
+	DisplayName  string     `json:"displayName,omitempty"`
+	AvatarURL    string     `json:"avatarUrl,omitempty"`
 	PasswordHash string     `json:"-"`
 	Role         UserRole   `json:"role"`
 	Status       UserStatus `json:"status"`
+	LastLoginAt  *time.Time `json:"lastLoginAt,omitempty"`
+	LoginCount   int        `json:"loginCount,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 type AdminUser struct {
-	ID        string     `json:"id"`
-	Email     string     `json:"email"`
-	Phone     string     `json:"phone"`
-	Role      UserRole   `json:"role"`
-	Status    UserStatus `json:"status"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	ID             string     `json:"id"`
+	Email          string     `json:"email"`
+	Phone          string     `json:"phone"`
+	DisplayName    string     `json:"displayName"`
+	AvatarURL      string     `json:"avatarUrl"`
+	AdminNote      string     `json:"adminNote"`
+	LoginMethods   []string   `json:"loginMethods"`
+	OAuthProviders []string   `json:"oauthProviders"`
+	EmailVerified  bool       `json:"emailVerified"`
+	PhoneVerified  bool       `json:"phoneVerified"`
+	PasswordSet    bool       `json:"passwordSet"`
+	LastLoginAt    *time.Time `json:"lastLoginAt,omitempty"`
+	LoginCount     int        `json:"loginCount"`
+	Role           UserRole   `json:"role"`
+	Status         UserStatus `json:"status"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
+type UserProfile struct {
+	UserID             string     `json:"userId"`
+	DisplayName        string     `json:"displayName"`
+	AvatarURL          string     `json:"avatarUrl"`
+	AvatarStorageKey   string     `json:"-"`
+	AvatarContentType  string     `json:"-"`
+	AdminNote          string     `json:"-"`
+	LastLoginAt        *time.Time `json:"lastLoginAt,omitempty"`
+	LoginCount         int        `json:"loginCount"`
+	LastLoginIP        string     `json:"-"`
+	LastLoginUserAgent string     `json:"-"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type UserIdentity struct {

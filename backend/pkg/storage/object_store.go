@@ -15,6 +15,7 @@ import (
 // ObjectStore provides access to object storage.
 type ObjectStore interface {
 	Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error
+	Get(ctx context.Context, key string) (io.ReadCloser, string, error)
 	PresignGet(ctx context.Context, key string, expiry time.Duration, filename string) (string, error)
 	Delete(ctx context.Context, key string) error
 }
@@ -58,6 +59,19 @@ func (m *MinioStore) Put(ctx context.Context, key string, r io.Reader, size int6
 		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
+}
+
+func (m *MinioStore) Get(ctx context.Context, key string) (io.ReadCloser, string, error) {
+	obj, err := m.client.GetObject(ctx, m.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", fmt.Errorf("get object: %w", err)
+	}
+	stat, err := obj.Stat()
+	if err != nil {
+		_ = obj.Close()
+		return nil, "", fmt.Errorf("stat object: %w", err)
+	}
+	return obj, stat.ContentType, nil
 }
 
 // PresignGet generates a pre-signed GET URL.

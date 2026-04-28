@@ -54,7 +54,7 @@ func NewGormStore(dsn string) (*GormStore, error) {
 		if err := tx.Exec(`DROP INDEX IF EXISTS uni_user_models_email;`).Error; err != nil {
 			return fmt.Errorf("drop legacy user email unique constraint index: %w", err)
 		}
-		if err := tx.AutoMigrate(&UserModel{}, &UserIdentityModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
+		if err := tx.AutoMigrate(&UserModel{}, &UserIdentityModel{}, &UserProfileModel{}, &BookModel{}, &ConversationModel{}, &MessageModel{}, &ChunkModel{}, &ChunkIndexStatusModel{}, &AdminAuditLogModel{}, &EvalDatasetModel{}, &EvalRunModel{}, &IdempotencyRecordModel{}, &OutboxMessageModel{}); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		if err := ensureUserIdentityIndexes(tx); err != nil {
@@ -420,6 +420,83 @@ func (s *GormStore) ListUserIdentities(userIDs []string) (map[string][]domain.Us
 	return result, nil
 }
 
+func (s *GormStore) SaveUserProfile(profile domain.UserProfile) error {
+	model := userProfileToModel(profile)
+	return s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"display_name", "avatar_url", "avatar_storage_key", "avatar_content_type", "admin_note", "last_login_at", "login_count", "last_login_ip", "last_login_user_agent", "updated_at"}),
+	}).Create(&model).Error
+}
+
+func (s *GormStore) GetUserProfile(userID string) (domain.UserProfile, bool, error) {
+	var model UserProfileModel
+	if err := s.db.First(&model, "user_id = ?", strings.TrimSpace(userID)).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.UserProfile{}, false, nil
+		}
+		return domain.UserProfile{}, false, err
+	}
+	return userProfileFromModel(model), true, nil
+}
+
+func (s *GormStore) ListUserProfiles(userIDs []string) (map[string]domain.UserProfile, error) {
+	result := make(map[string]domain.UserProfile, len(userIDs))
+	ids := make([]string, 0, len(userIDs))
+	seen := map[string]struct{}{}
+	for _, id := range userIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var models []UserProfileModel
+	if err := s.db.Where("user_id IN ?", ids).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	for _, model := range models {
+		profile := userProfileFromModel(model)
+		result[profile.UserID] = profile
+	}
+	return result, nil
+}
+
+func (s *GormStore) UpdateUserLoginActivity(userID, ip, userAgent string, at time.Time) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	model := UserProfileModel{
+		UserID:             userID,
+		LastLoginAt:        &at,
+		LoginCount:         1,
+		LastLoginIP:        strings.TrimSpace(ip),
+		LastLoginUserAgent: strings.TrimSpace(userAgent),
+		CreatedAt:          at,
+		UpdatedAt:          at,
+	}
+	return s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"last_login_at":         at,
+			"login_count":           gorm.Expr("login_count + 1"),
+			"last_login_ip":         strings.TrimSpace(ip),
+			"last_login_user_agent": strings.TrimSpace(userAgent),
+			"updated_at":            at,
+		}),
+	}).Create(&model).Error
+}
+
 func (s *GormStore) DeleteUserIdentity(userID string, identityType domain.IdentityType) error {
 	return s.db.Delete(&UserIdentityModel{}, "user_id = ? AND type = ?", strings.TrimSpace(userID), string(identityType)).Error
 }
@@ -431,6 +508,9 @@ func (s *GormStore) DeleteUser(userID string) error {
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&UserIdentityModel{}, "user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&UserProfileModel{}, "user_id = ?", userID).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(&MessageModel{}, "user_id = ?", userID).Error; err != nil {
@@ -467,7 +547,8 @@ func (s *GormStore) ListUsersWithOptions(opts UserListOptions) ([]domain.User, i
 	if query != "" {
 		like := "%" + strings.ToLower(query) + "%"
 		tx = tx.Where(
-			"LOWER(email) LIKE ? OR LOWER(id) LIKE ? OR EXISTS (SELECT 1 FROM user_identity_models ui WHERE ui.user_id = user_models.id AND LOWER(ui.identifier) LIKE ?)",
+			"LOWER(email) LIKE ? OR LOWER(id) LIKE ? OR EXISTS (SELECT 1 FROM user_identity_models ui WHERE ui.user_id = user_models.id AND LOWER(ui.identifier) LIKE ?) OR EXISTS (SELECT 1 FROM user_profile_models up WHERE up.user_id = user_models.id AND LOWER(up.display_name) LIKE ?)",
+			like,
 			like,
 			like,
 			like,
@@ -1673,6 +1754,40 @@ func userIdentityFromModel(m UserIdentityModel) domain.UserIdentity {
 		IsPrimary:  m.IsPrimary,
 		CreatedAt:  m.CreatedAt,
 		UpdatedAt:  m.UpdatedAt,
+	}
+}
+
+func userProfileToModel(profile domain.UserProfile) UserProfileModel {
+	return UserProfileModel{
+		UserID:             profile.UserID,
+		DisplayName:        strings.TrimSpace(profile.DisplayName),
+		AvatarURL:          strings.TrimSpace(profile.AvatarURL),
+		AvatarStorageKey:   strings.TrimSpace(profile.AvatarStorageKey),
+		AvatarContentType:  strings.TrimSpace(profile.AvatarContentType),
+		AdminNote:          strings.TrimSpace(profile.AdminNote),
+		LastLoginAt:        normalizeTimePtr(profile.LastLoginAt),
+		LoginCount:         profile.LoginCount,
+		LastLoginIP:        strings.TrimSpace(profile.LastLoginIP),
+		LastLoginUserAgent: strings.TrimSpace(profile.LastLoginUserAgent),
+		CreatedAt:          profile.CreatedAt,
+		UpdatedAt:          profile.UpdatedAt,
+	}
+}
+
+func userProfileFromModel(m UserProfileModel) domain.UserProfile {
+	return domain.UserProfile{
+		UserID:             m.UserID,
+		DisplayName:        m.DisplayName,
+		AvatarURL:          m.AvatarURL,
+		AvatarStorageKey:   m.AvatarStorageKey,
+		AvatarContentType:  m.AvatarContentType,
+		AdminNote:          m.AdminNote,
+		LastLoginAt:        m.LastLoginAt,
+		LoginCount:         m.LoginCount,
+		LastLoginIP:        m.LastLoginIP,
+		LastLoginUserAgent: m.LastLoginUserAgent,
+		CreatedAt:          m.CreatedAt,
+		UpdatedAt:          m.UpdatedAt,
 	}
 }
 

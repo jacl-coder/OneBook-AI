@@ -29,6 +29,11 @@ type FileConfig struct {
 	JWTIssuer                      string   `yaml:"jwtIssuer"`
 	JWTAudience                    string   `yaml:"jwtAudience"`
 	JWTLeeway                      string   `yaml:"jwtLeeway"`
+	MinioEndpoint                  string   `yaml:"minioEndpoint"`
+	MinioAccessKey                 string   `yaml:"minioAccessKey"`
+	MinioSecretKey                 string   `yaml:"minioSecretKey"`
+	MinioBucket                    string   `yaml:"minioBucket"`
+	MinioUseSSL                    bool     `yaml:"minioUseSSL"`
 	EvalStorageDir                 string   `yaml:"evalStorageDir"`
 	EvalWorkerPollInterval         string   `yaml:"evalWorkerPollInterval"`
 	SignupRateLimitPerMinute       int      `yaml:"signupRateLimitPerMinute"`
@@ -95,6 +100,21 @@ func Load(path string) (FileConfig, error) {
 	}
 	if v := os.Getenv("JWT_LEEWAY"); v != "" {
 		cfg.JWTLeeway = v
+	}
+	if v := os.Getenv("MINIO_ENDPOINT"); v != "" {
+		cfg.MinioEndpoint = v
+	}
+	if v := os.Getenv("MINIO_ACCESS_KEY"); v != "" {
+		cfg.MinioAccessKey = v
+	}
+	if v := os.Getenv("MINIO_SECRET_KEY"); v != "" {
+		cfg.MinioSecretKey = v
+	}
+	if v := os.Getenv("MINIO_BUCKET"); v != "" {
+		cfg.MinioBucket = v
+	}
+	if v := os.Getenv("MINIO_USE_SSL"); v == "true" {
+		cfg.MinioUseSSL = true
 	}
 	if v := os.Getenv("AUTH_REFRESH_TTL"); v != "" {
 		cfg.RefreshTTL = v

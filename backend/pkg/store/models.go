@@ -29,6 +29,21 @@ type UserIdentityModel struct {
 	UpdatedAt  time.Time  `gorm:"not null"`
 }
 
+type UserProfileModel struct {
+	UserID             string     `gorm:"primaryKey"`
+	DisplayName        string     `gorm:"not null;default:'';index"`
+	AvatarURL          string     `gorm:"not null;default:''"`
+	AvatarStorageKey   string     `gorm:"not null;default:'';index"`
+	AvatarContentType  string     `gorm:"not null;default:''"`
+	AdminNote          string     `gorm:"not null;default:''"`
+	LastLoginAt        *time.Time `gorm:"index"`
+	LoginCount         int        `gorm:"not null;default:0"`
+	LastLoginIP        string     `gorm:"not null;default:''"`
+	LastLoginUserAgent string     `gorm:"not null;default:''"`
+	CreatedAt          time.Time  `gorm:"not null"`
+	UpdatedAt          time.Time  `gorm:"not null"`
+}
+
 type BookModel struct {
 	ID                   string         `gorm:"primaryKey"`
 	OwnerID              string         `gorm:"not null;index"`

@@ -1,15 +1,21 @@
 package app
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/mail"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"onebookai/internal/util"
 	"onebookai/pkg/auth"
 	"onebookai/pkg/domain"
+	"onebookai/pkg/storage"
 	"onebookai/pkg/store"
 )
 
@@ -30,6 +36,12 @@ type Config struct {
 	Store               store.Store
 	Sessions            store.SessionStore
 	RefreshTokens       store.RefreshTokenStore
+	AvatarObjects       storage.ObjectStore
+	MinioEndpoint       string
+	MinioAccessKey      string
+	MinioSecretKey      string
+	MinioBucket         string
+	MinioUseSSL         bool
 	EvalStorageDir      string
 	EvalWorkerPoll      time.Duration
 }
@@ -39,9 +51,17 @@ type App struct {
 	store         store.Store
 	sessions      store.SessionStore
 	refreshTokens store.RefreshTokenStore
+	avatarObjects storage.ObjectStore
 	refreshTTL    time.Duration
 	evals         *evalCenter
 }
+
+type LoginActivity struct {
+	IP        string
+	UserAgent string
+}
+
+const maxAvatarUploadBytes int64 = 5 * 1024 * 1024
 
 type OAuthLoginInput struct {
 	Provider      string
@@ -50,6 +70,7 @@ type OAuthLoginInput struct {
 	EmailVerified bool
 	DisplayName   string
 	AvatarURL     string
+	LoginActivity LoginActivity
 }
 
 // New constructs the application with database storage and session management.
@@ -110,6 +131,15 @@ func New(cfg Config) (*App, error) {
 		refreshStore = store.NewRedisRefreshTokenStore(cfg.RedisAddr, cfg.RedisPassword)
 	}
 
+	avatarObjects := cfg.AvatarObjects
+	if avatarObjects == nil && strings.TrimSpace(cfg.MinioEndpoint) != "" && strings.TrimSpace(cfg.MinioBucket) != "" {
+		objStore, err := storage.NewMinioStore(cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioBucket, cfg.MinioUseSSL)
+		if err != nil {
+			return nil, fmt.Errorf("init avatar object store: %w", err)
+		}
+		avatarObjects = objStore
+	}
+
 	evals, err := newEvalCenter(dataStore, strings.TrimSpace(cfg.EvalStorageDir), cfg.EvalWorkerPoll)
 	if err != nil {
 		return nil, fmt.Errorf("init eval center: %w", err)
@@ -119,6 +149,7 @@ func New(cfg Config) (*App, error) {
 		store:         dataStore,
 		sessions:      sessionStore,
 		refreshTokens: refreshStore,
+		avatarObjects: avatarObjects,
 		refreshTTL:    cfg.RefreshTTL,
 		evals:         evals,
 	}, nil
@@ -218,10 +249,10 @@ func (a *App) SignUpPasswordlessWithVerifiedIdentity(identityType domain.Identit
 // Login validates credentials and issues a session token.
 func (a *App) Login(email, password string) (domain.User, string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	return a.LoginWithPasswordByIdentity(domain.IdentityEmail, email, password)
+	return a.LoginWithPasswordByIdentity(domain.IdentityEmail, email, password, LoginActivity{})
 }
 
-func (a *App) LoginWithPasswordByIdentity(identityType domain.IdentityType, identifier, password string) (domain.User, string, string, error) {
+func (a *App) LoginWithPasswordByIdentity(identityType domain.IdentityType, identifier, password string, activity LoginActivity) (domain.User, string, string, error) {
 	identifier = strings.TrimSpace(identifier)
 	if !isSupportedIdentityType(identityType) {
 		return domain.User{}, "", "", ErrInvalidCredentials
@@ -242,16 +273,16 @@ func (a *App) LoginWithPasswordByIdentity(identityType domain.IdentityType, iden
 	if !auth.CheckPassword(password, user.PasswordHash) {
 		return domain.User{}, "", "", ErrInvalidCredentials
 	}
-	return a.issueUserTokens(user)
+	return a.issueLoginTokens(user, activity)
 }
 
 // LoginByEmail issues a session token for an existing account.
 func (a *App) LoginByEmail(email string) (domain.User, string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	return a.LoginByIdentity(domain.IdentityEmail, email)
+	return a.LoginByIdentity(domain.IdentityEmail, email, LoginActivity{})
 }
 
-func (a *App) LoginByIdentity(identityType domain.IdentityType, identifier string) (domain.User, string, string, error) {
+func (a *App) LoginByIdentity(identityType domain.IdentityType, identifier string, activity LoginActivity) (domain.User, string, string, error) {
 	identifier = strings.TrimSpace(identifier)
 	if !isSupportedIdentityType(identityType) {
 		return domain.User{}, "", "", ErrInvalidCredentials
@@ -266,7 +297,7 @@ func (a *App) LoginByIdentity(identityType domain.IdentityType, identifier strin
 	if user.Status == domain.StatusDisabled {
 		return domain.User{}, "", "", ErrUserDisabled
 	}
-	return a.issueUserTokens(user)
+	return a.issueLoginTokens(user, activity)
 }
 
 func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, string, error) {
@@ -283,7 +314,10 @@ func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, st
 		if user.Status == domain.StatusDisabled {
 			return domain.User{}, "", "", ErrUserDisabled
 		}
-		return a.issueUserTokens(user)
+		if err := a.ensureUserProfile(user.ID, input.DisplayName, input.AvatarURL); err != nil {
+			return domain.User{}, "", "", err
+		}
+		return a.issueLoginTokens(user, input.LoginActivity)
 	}
 
 	now := time.Now().UTC()
@@ -317,12 +351,15 @@ func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, st
 						if existingUser.Status == domain.StatusDisabled {
 							return domain.User{}, "", "", ErrUserDisabled
 						}
-						return a.issueUserTokens(existingUser)
+						return a.issueLoginTokens(existingUser, input.LoginActivity)
 					}
 				}
 				return domain.User{}, "", "", fmt.Errorf("save oauth identity: %w", err)
 			}
-			return a.issueUserTokens(user)
+			if err := a.ensureUserProfile(user.ID, input.DisplayName, input.AvatarURL); err != nil {
+				return domain.User{}, "", "", err
+			}
+			return a.issueLoginTokens(user, input.LoginActivity)
 		}
 	}
 
@@ -334,7 +371,7 @@ func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, st
 	if count == 0 {
 		role = domain.RoleAdmin
 	}
-	user, err = a.createOAuthUser(provider, subject, email, input.EmailVerified, role)
+	user, err = a.createOAuthUser(provider, subject, email, input.EmailVerified, role, input.DisplayName, input.AvatarURL)
 	if err != nil {
 		if strings.Contains(err.Error(), "identity already exists") {
 			existingUser, found, fetchErr := a.store.GetUserByProviderIdentity(provider, subject)
@@ -345,21 +382,201 @@ func (a *App) CompleteOAuthLogin(input OAuthLoginInput) (domain.User, string, st
 				if existingUser.Status == domain.StatusDisabled {
 					return domain.User{}, "", "", ErrUserDisabled
 				}
-				return a.issueUserTokens(existingUser)
+				return a.issueLoginTokens(existingUser, input.LoginActivity)
 			}
 			return domain.User{}, "", "", ErrIdentifierAlreadyExists
 		}
 		return domain.User{}, "", "", err
 	}
-	return a.issueUserTokens(user)
+	return a.issueLoginTokens(user, input.LoginActivity)
 }
 
 func (a *App) issueUserTokens(user domain.User) (domain.User, string, string, error) {
+	user = a.userWithProfile(user, nil)
 	accessToken, refreshToken, err := a.issueTokens(user.ID)
 	if err != nil {
 		return domain.User{}, "", "", err
 	}
 	return user, accessToken, refreshToken, nil
+}
+
+func (a *App) issueLoginTokens(user domain.User, activity LoginActivity) (domain.User, string, string, error) {
+	now := time.Now().UTC()
+	if err := a.store.UpdateUserLoginActivity(user.ID, activity.IP, activity.UserAgent, now); err != nil {
+		return domain.User{}, "", "", fmt.Errorf("record login activity: %w", err)
+	}
+	profile, ok, err := a.store.GetUserProfile(user.ID)
+	if err != nil {
+		return domain.User{}, "", "", fmt.Errorf("fetch profile: %w", err)
+	}
+	if !ok {
+		profile = domain.UserProfile{UserID: user.ID, LastLoginAt: &now, LoginCount: 1, CreatedAt: now, UpdatedAt: now}
+	}
+	return a.issueUserTokens(a.userWithProfile(user, &profile))
+}
+
+func (a *App) userWithProfile(user domain.User, profile *domain.UserProfile) domain.User {
+	if profile == nil {
+		fetched, ok, err := a.store.GetUserProfile(user.ID)
+		if err == nil && ok {
+			profile = &fetched
+		}
+	}
+	if profile == nil {
+		return user
+	}
+	user.DisplayName = profile.DisplayName
+	user.AvatarURL = effectiveAvatarURL(user.ID, *profile)
+	user.LastLoginAt = profile.LastLoginAt
+	user.LoginCount = profile.LoginCount
+	return user
+}
+
+func (a *App) ensureUserProfile(userID, displayName, avatarURL string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	profile, ok, err := a.store.GetUserProfile(userID)
+	if err != nil {
+		return fmt.Errorf("fetch profile: %w", err)
+	}
+	if !ok {
+		return a.store.SaveUserProfile(domain.UserProfile{
+			UserID:      userID,
+			DisplayName: sanitizeDisplayName(displayName),
+			AvatarURL:   normalizeAvatarURL(avatarURL),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+	}
+	changed := false
+	if strings.TrimSpace(profile.DisplayName) == "" {
+		if next := sanitizeDisplayName(displayName); next != "" {
+			profile.DisplayName = next
+			changed = true
+		}
+	}
+	if strings.TrimSpace(profile.AvatarURL) == "" && strings.TrimSpace(profile.AvatarStorageKey) == "" {
+		if next := normalizeAvatarURL(avatarURL); next != "" {
+			profile.AvatarURL = next
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	profile.UpdatedAt = now
+	return a.store.SaveUserProfile(profile)
+}
+
+func (a *App) UpdateMyProfile(user domain.User, email *string, displayName *string) (domain.User, error) {
+	if email != nil {
+		updated, err := a.UpdateMyEmail(user, *email)
+		if err != nil {
+			return domain.User{}, err
+		}
+		user = updated
+	}
+	if displayName != nil {
+		profile, err := a.profileForUpdate(user.ID)
+		if err != nil {
+			return domain.User{}, err
+		}
+		profile.DisplayName = sanitizeDisplayName(*displayName)
+		profile.UpdatedAt = time.Now().UTC()
+		if err := a.store.SaveUserProfile(profile); err != nil {
+			return domain.User{}, fmt.Errorf("update profile: %w", err)
+		}
+	}
+	return a.AdminlessUser(user.ID)
+}
+
+func (a *App) AdminlessUser(userID string) (domain.User, error) {
+	user, ok, err := a.store.GetUserByID(userID)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("fetch user: %w", err)
+	}
+	if !ok {
+		return domain.User{}, fmt.Errorf("user not found")
+	}
+	return a.userWithProfile(user, nil), nil
+}
+
+func (a *App) UploadUserAvatar(user domain.User, r io.Reader, filename string) (domain.User, error) {
+	if a.avatarObjects == nil {
+		return domain.User{}, fmt.Errorf("avatar storage is not configured")
+	}
+	limited := &io.LimitedReader{R: r, N: maxAvatarUploadBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("read avatar: %w", err)
+	}
+	if int64(len(data)) > maxAvatarUploadBytes {
+		return domain.User{}, fmt.Errorf("avatar exceeds 5MB limit")
+	}
+	contentType, ext, err := avatarContentType(data, filename)
+	if err != nil {
+		return domain.User{}, err
+	}
+	profile, err := a.profileForUpdate(user.ID)
+	if err != nil {
+		return domain.User{}, err
+	}
+	oldKey := strings.TrimSpace(profile.AvatarStorageKey)
+	key := fmt.Sprintf("avatars/%s/%s%s", user.ID, util.NewID(), ext)
+	if err := a.avatarObjects.Put(context.Background(), key, bytes.NewReader(data), int64(len(data)), contentType); err != nil {
+		return domain.User{}, err
+	}
+	now := time.Now().UTC()
+	profile.AvatarStorageKey = key
+	profile.AvatarContentType = contentType
+	profile.UpdatedAt = now
+	if err := a.store.SaveUserProfile(profile); err != nil {
+		_ = a.avatarObjects.Delete(context.Background(), key)
+		return domain.User{}, fmt.Errorf("save avatar profile: %w", err)
+	}
+	if oldKey != "" && oldKey != key {
+		_ = a.avatarObjects.Delete(context.Background(), oldKey)
+	}
+	return a.AdminlessUser(user.ID)
+}
+
+func (a *App) UserAvatar(userID string) (io.ReadCloser, string, error) {
+	if a.avatarObjects == nil {
+		return nil, "", fmt.Errorf("avatar storage is not configured")
+	}
+	profile, ok, err := a.store.GetUserProfile(userID)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch profile: %w", err)
+	}
+	if !ok || strings.TrimSpace(profile.AvatarStorageKey) == "" {
+		return nil, "", fmt.Errorf("avatar not found")
+	}
+	body, contentType, err := a.avatarObjects.Get(context.Background(), profile.AvatarStorageKey)
+	if err != nil {
+		return nil, "", err
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = profile.AvatarContentType
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	return body, contentType, nil
+}
+
+func (a *App) profileForUpdate(userID string) (domain.UserProfile, error) {
+	now := time.Now().UTC()
+	profile, ok, err := a.store.GetUserProfile(userID)
+	if err != nil {
+		return domain.UserProfile{}, fmt.Errorf("fetch profile: %w", err)
+	}
+	if ok {
+		return profile, nil
+	}
+	return domain.UserProfile{UserID: userID, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 // UserFromToken resolves a user from a session token.
@@ -375,7 +592,7 @@ func (a *App) UserFromToken(token string) (domain.User, bool) {
 	if user.Status == domain.StatusDisabled {
 		return domain.User{}, false
 	}
-	return user, true
+	return a.userWithProfile(user, nil), true
 }
 
 // Logout invalidates access token and optional refresh token.
@@ -547,7 +764,7 @@ func (a *App) UpdateMyEmail(user domain.User, newEmail string) (domain.User, err
 	}); err != nil {
 		return domain.User{}, fmt.Errorf("update email identity: %w", err)
 	}
-	return user, nil
+	return a.userWithProfile(user, nil), nil
 }
 
 // ChangePassword updates the user's password after verifying the current password.
@@ -668,19 +885,51 @@ func (a *App) adminUsersFromUsers(users []domain.User) ([]domain.AdminUser, erro
 	if err != nil {
 		return nil, fmt.Errorf("fetch user identities: %w", err)
 	}
+	profilesByUser, err := a.store.ListUserProfiles(userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fetch user profiles: %w", err)
+	}
 	items := make([]domain.AdminUser, 0, len(users))
 	for _, user := range users {
 		email := ""
 		phone := ""
+		loginMethods := []string{}
+		oauthProviders := []string{}
+		emailVerified := false
+		phoneVerified := false
+		seenMethods := map[string]struct{}{}
+		seenProviders := map[string]struct{}{}
 		for _, identity := range identitiesByUser[user.ID] {
 			switch identity.Type {
 			case domain.IdentityEmail:
 				if email == "" {
 					email = identity.Identifier
 				}
+				emailVerified = emailVerified || identity.VerifiedAt != nil
+				if _, ok := seenMethods["email"]; !ok {
+					loginMethods = append(loginMethods, "email")
+					seenMethods["email"] = struct{}{}
+				}
 			case domain.IdentityPhone:
 				if phone == "" {
 					phone = identity.Identifier
+				}
+				phoneVerified = phoneVerified || identity.VerifiedAt != nil
+				if _, ok := seenMethods["phone"]; !ok {
+					loginMethods = append(loginMethods, "phone")
+					seenMethods["phone"] = struct{}{}
+				}
+			case domain.IdentityOAuth:
+				provider := strings.TrimSpace(identity.Provider)
+				if provider != "" {
+					if _, ok := seenProviders[provider]; !ok {
+						oauthProviders = append(oauthProviders, provider)
+						seenProviders[provider] = struct{}{}
+					}
+					if _, ok := seenMethods[provider]; !ok {
+						loginMethods = append(loginMethods, provider)
+						seenMethods[provider] = struct{}{}
+					}
 				}
 			}
 		}
@@ -690,14 +939,25 @@ func (a *App) adminUsersFromUsers(users []domain.User) ([]domain.AdminUser, erro
 		if phone == "" && user.Email != "" && !strings.Contains(user.Email, "@") {
 			phone = user.Email
 		}
+		profile := profilesByUser[user.ID]
 		items = append(items, domain.AdminUser{
-			ID:        user.ID,
-			Email:     email,
-			Phone:     phone,
-			Role:      user.Role,
-			Status:    user.Status,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
+			ID:             user.ID,
+			Email:          email,
+			Phone:          phone,
+			DisplayName:    profile.DisplayName,
+			AvatarURL:      effectiveAvatarURL(user.ID, profile),
+			AdminNote:      profile.AdminNote,
+			LoginMethods:   loginMethods,
+			OAuthProviders: oauthProviders,
+			EmailVerified:  emailVerified,
+			PhoneVerified:  phoneVerified,
+			PasswordSet:    hasPassword(user.PasswordHash),
+			LastLoginAt:    profile.LastLoginAt,
+			LoginCount:     profile.LoginCount,
+			Role:           user.Role,
+			Status:         user.Status,
+			CreatedAt:      user.CreatedAt,
+			UpdatedAt:      user.UpdatedAt,
 		})
 	}
 	return items, nil
@@ -763,7 +1023,7 @@ func adminVerifiedIdentity(userID string, identityType domain.IdentityType, prov
 }
 
 // AdminUpdateUser allows admins to change user profile, role, and status.
-func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string) (domain.AdminUser, error) {
+func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string, displayName *string, avatarURL *string, adminNote *string) (domain.AdminUser, error) {
 	target, ok, err := a.store.GetUserByID(userID)
 	if err != nil {
 		return domain.AdminUser{}, fmt.Errorf("fetch user: %w", err)
@@ -784,6 +1044,19 @@ func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.Use
 	}
 	if status != nil {
 		target.Status = *status
+	}
+	profile, err := a.profileForUpdate(target.ID)
+	if err != nil {
+		return domain.AdminUser{}, err
+	}
+	if displayName != nil {
+		profile.DisplayName = sanitizeDisplayName(*displayName)
+	}
+	if avatarURL != nil && strings.TrimSpace(profile.AvatarStorageKey) == "" {
+		profile.AvatarURL = normalizeAvatarURL(*avatarURL)
+	}
+	if adminNote != nil {
+		profile.AdminNote = strings.TrimSpace(*adminNote)
 	}
 	identitiesByUser, err := a.store.ListUserIdentities([]string{target.ID})
 	if err != nil {
@@ -834,6 +1107,12 @@ func (a *App) AdminUpdateUser(admin domain.User, userID string, role *domain.Use
 	}
 	if err := a.store.SaveUser(target); err != nil {
 		return domain.AdminUser{}, fmt.Errorf("update user: %w", err)
+	}
+	if displayName != nil || avatarURL != nil || adminNote != nil {
+		profile.UpdatedAt = target.UpdatedAt
+		if err := a.store.SaveUserProfile(profile); err != nil {
+			return domain.AdminUser{}, fmt.Errorf("update profile: %w", err)
+		}
 	}
 	if email != nil {
 		if normalizedEmail == "" {
@@ -997,7 +1276,7 @@ func (a *App) createUserWithIdentity(identityType domain.IdentityType, identifie
 	return user, nil
 }
 
-func (a *App) createOAuthUser(provider, subject, email string, emailVerified bool, role domain.UserRole) (domain.User, error) {
+func (a *App) createOAuthUser(provider, subject, email string, emailVerified bool, role domain.UserRole, displayName string, avatarURL string) (domain.User, error) {
 	now := time.Now().UTC()
 	displayEmail := ""
 	if emailVerified {
@@ -1037,6 +1316,9 @@ func (a *App) createOAuthUser(provider, subject, email string, emailVerified boo
 	}
 	if err := a.store.SaveUserWithIdentities(user, identities); err != nil {
 		return domain.User{}, fmt.Errorf("save oauth user identities: %w", err)
+	}
+	if err := a.ensureUserProfile(user.ID, displayName, avatarURL); err != nil {
+		return domain.User{}, err
 	}
 	return user, nil
 }
@@ -1103,4 +1385,60 @@ func normalizeAdminPhone(phone string) (string, error) {
 		return "", fmt.Errorf("phone format is invalid")
 	}
 	return "+86" + digits, nil
+}
+
+func sanitizeDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 80 {
+		value = value[:80]
+	}
+	return value
+}
+
+func normalizeAvatarURL(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 2048 {
+		return ""
+	}
+	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "/") {
+		return value
+	}
+	return ""
+}
+
+func effectiveAvatarURL(userID string, profile domain.UserProfile) string {
+	if strings.TrimSpace(profile.AvatarStorageKey) != "" {
+		return "/api/users/" + strings.TrimSpace(userID) + "/avatar"
+	}
+	return strings.TrimSpace(profile.AvatarURL)
+}
+
+func avatarContentType(data []byte, filename string) (string, string, error) {
+	if len(data) == 0 {
+		return "", "", fmt.Errorf("avatar file is empty")
+	}
+	detected := httpDetectContentType(data)
+	switch detected {
+	case "image/jpeg":
+		return detected, ".jpg", nil
+	case "image/png":
+		return detected, ".png", nil
+	case "image/gif":
+		return detected, ".gif", nil
+	case "image/webp":
+		return detected, ".webp", nil
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == ".webp" && bytes.HasPrefix(data, []byte("RIFF")) && len(data) > 12 && string(data[8:12]) == "WEBP" {
+		return "image/webp", ".webp", nil
+	}
+	return "", "", fmt.Errorf("avatar must be jpg, png, webp, or gif")
+}
+
+func httpDetectContentType(data []byte) string {
+	sniff := data
+	if len(sniff) > 512 {
+		sniff = sniff[:512]
+	}
+	return http.DetectContentType(sniff)
 }

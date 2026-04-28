@@ -225,7 +225,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/jwks", s.handleJWKS)
 	s.mux.HandleFunc("/.well-known/jwks.json", s.handleJWKS)
 	s.mux.Handle("/api/users/me", s.authenticated(s.handleMe))
+	s.mux.Handle("/api/users/me/avatar", s.authenticated(s.handleMeAvatar))
 	s.mux.Handle("/api/users/me/password", s.authenticated(s.handleChangePassword))
+	s.mux.Handle("/api/users/", s.authenticated(s.handleUserAvatar))
 
 	// books & chats (auth required)
 	s.mux.Handle("/api/books", s.authenticated(s.handleBooks))
@@ -701,11 +703,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, ctx authContex
 			writeErrorWithCode(w, r, http.StatusBadRequest, "invalid request payload", "AUTH_INVALID_REQUEST")
 			return
 		}
-		if req.Email == "" {
-			writeErrorWithCode(w, r, http.StatusBadRequest, "email is required", "AUTH_EMAIL_REQUIRED")
+		if req.Email == nil && req.DisplayName == nil {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "email or displayName is required", "AUTH_PROFILE_FIELDS_REQUIRED")
 			return
 		}
-		updated, err := s.auth.UpdateMe(util.RequestIDFromRequest(r), ctx.AccessToken, req.Email)
+		updated, err := s.auth.UpdateMe(util.RequestIDFromRequest(r), ctx.AccessToken, req.Email, req.DisplayName)
 		if err != nil {
 			writeAuthError(w, r, err)
 			return
@@ -714,6 +716,54 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, ctx authContex
 	default:
 		methodNotAllowed(w, r)
 	}
+}
+
+func (s *Server) handleMeAvatar(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 6<<20)
+	if err := r.ParseMultipartForm(6 << 20); err != nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "invalid multipart form", "AUTH_AVATAR_INVALID")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "file is required", "AUTH_AVATAR_REQUIRED")
+		return
+	}
+	defer file.Close()
+	updated, err := s.auth.UploadAvatar(util.RequestIDFromRequest(r), ctx.AccessToken, header.Filename, file)
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, r)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "avatar" {
+		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "AUTH_AVATAR_NOT_FOUND")
+		return
+	}
+	data, contentType, err := s.auth.UserAvatar(util.RequestIDFromRequest(r), ctx.AccessToken, parts[0])
+	if err != nil {
+		writeAuthError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	_, _ = w.Write(data)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1164,8 +1214,8 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		}
 		status = &parsed
 	}
-	if role == nil && status == nil && req.Email == nil && req.Phone == nil {
-		writeErrorWithCode(w, r, http.StatusBadRequest, "role, status, email, or phone is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
+	if role == nil && status == nil && req.Email == nil && req.Phone == nil && req.DisplayName == nil && req.AvatarURL == nil && req.AdminNote == nil {
+		writeErrorWithCode(w, r, http.StatusBadRequest, "role, status, email, phone, displayName, avatarUrl, or adminNote is required", "ADMIN_UPDATE_FIELDS_REQUIRED")
 		return
 	}
 	before, err := s.auth.AdminGetUser(util.RequestIDFromRequest(r), ctx.AccessToken, id)
@@ -1173,7 +1223,7 @@ func (s *Server) handleAdminUserByID(w http.ResponseWriter, r *http.Request, ctx
 		writeAuthError(w, r, err)
 		return
 	}
-	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status, req.Email, req.Phone)
+	updated, err := s.auth.AdminUpdateUser(util.RequestIDFromRequest(r), ctx.AccessToken, id, role, status, req.Email, req.Phone, req.DisplayName, req.AvatarURL, req.AdminNote)
 	if err != nil {
 		writeAuthError(w, r, err)
 		return
@@ -1602,7 +1652,8 @@ type signupCompleteRequest struct {
 }
 
 type updateMeRequest struct {
-	Email string `json:"email"`
+	Email       *string `json:"email"`
+	DisplayName *string `json:"displayName"`
 }
 
 type changePasswordRequest struct {
@@ -1617,10 +1668,13 @@ type updateBookRequest struct {
 }
 
 type adminUserUpdateRequest struct {
-	Role   string  `json:"role"`
-	Status string  `json:"status"`
-	Email  *string `json:"email"`
-	Phone  *string `json:"phone"`
+	Role        string  `json:"role"`
+	Status      string  `json:"status"`
+	Email       *string `json:"email"`
+	Phone       *string `json:"phone"`
+	DisplayName *string `json:"displayName"`
+	AvatarURL   *string `json:"avatarUrl"`
+	AdminNote   *string `json:"adminNote"`
 }
 
 func tokenFromCookie(r *http.Request, name string) string {

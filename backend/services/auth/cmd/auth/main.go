@@ -60,6 +60,11 @@ func main() {
 		JWTIssuer:           cfg.JWTIssuer,
 		JWTAudience:         cfg.JWTAudience,
 		JWTLeeway:           jwtLeeway,
+		MinioEndpoint:       cfg.MinioEndpoint,
+		MinioAccessKey:      cfg.MinioAccessKey,
+		MinioSecretKey:      cfg.MinioSecretKey,
+		MinioBucket:         cfg.MinioBucket,
+		MinioUseSSL:         cfg.MinioUseSSL,
 		EvalStorageDir:      cfg.EvalStorageDir,
 		EvalWorkerPoll:      evalWorkerPoll,
 	})

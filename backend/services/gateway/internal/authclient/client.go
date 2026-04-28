@@ -181,13 +181,44 @@ func (c *Client) Me(requestID, token string) (domain.User, error) {
 	return user, nil
 }
 
-func (c *Client) UpdateMe(requestID, token, email string) (domain.User, error) {
-	payload := map[string]string{"email": email}
+func (c *Client) UpdateMe(requestID, token string, email *string, displayName *string) (domain.User, error) {
+	payload := map[string]string{}
+	if email != nil {
+		payload["email"] = *email
+	}
+	if displayName != nil {
+		payload["displayName"] = *displayName
+	}
 	var user domain.User
 	if err := c.doJSON(http.MethodPatch, "/auth/me", requestID, token, payload, &user); err != nil {
 		return domain.User{}, err
 	}
 	return user, nil
+}
+
+func (c *Client) UploadAvatar(requestID, token, filename string, r io.Reader) (domain.User, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return domain.User{}, err
+	}
+	if _, err := io.Copy(part, r); err != nil {
+		return domain.User{}, err
+	}
+	if err := writer.Close(); err != nil {
+		return domain.User{}, err
+	}
+	var user domain.User
+	if _, err := c.doBody(http.MethodPost, "/auth/me/avatar", requestID, token, "", body, writer.FormDataContentType(), &user); err != nil {
+		return domain.User{}, err
+	}
+	return user, nil
+}
+
+func (c *Client) UserAvatar(requestID, token, userID string) ([]byte, string, error) {
+	path := fmt.Sprintf("/auth/users/%s/avatar", url.PathEscape(userID))
+	return c.doBytes(http.MethodGet, path, requestID, token)
 }
 
 func (c *Client) ChangePassword(requestID, token, currentPassword, newPassword string) error {
@@ -283,7 +314,7 @@ func (c *Client) AdminGetUser(requestID, token, userID string) (domain.AdminUser
 	return user, nil
 }
 
-func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string) (domain.AdminUser, error) {
+func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.UserRole, status *domain.UserStatus, email *string, phone *string, displayName *string, avatarURL *string, adminNote *string) (domain.AdminUser, error) {
 	payload := map[string]any{}
 	if role != nil {
 		payload["role"] = string(*role)
@@ -296,6 +327,15 @@ func (c *Client) AdminUpdateUser(requestID, token, userID string, role *domain.U
 	}
 	if phone != nil {
 		payload["phone"] = *phone
+	}
+	if displayName != nil {
+		payload["displayName"] = *displayName
+	}
+	if avatarURL != nil {
+		payload["avatarUrl"] = *avatarURL
+	}
+	if adminNote != nil {
+		payload["adminNote"] = *adminNote
 	}
 	var user domain.AdminUser
 	path := fmt.Sprintf("/auth/admin/users/%s", userID)

@@ -540,7 +540,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
       tags: [auth]
-      summary: Update current user email
+      summary: Update current user profile
       security:
         - sessionCookieAuth: []
       parameters:
@@ -575,6 +575,86 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/users/me/avatar:
+    post:
+      tags: [auth]
+      summary: Upload current user avatar
+      security:
+        - sessionCookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/users/{id}/avatar:
+    get:
+      tags: [auth]
+      summary: Get proxied user avatar
+      security:
+        - sessionCookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Avatar image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Avatar not found
           content:
             application/json:
               schema:
@@ -2133,7 +2213,9 @@ components:
         email:
           type: string
           format: email
-      required: [email]
+        displayName:
+          type: string
+          maxLength: 80
     ChangePasswordRequest:
       type: object
       properties:
@@ -2156,6 +2238,15 @@ components:
         phone:
           type: string
           description: Verified phone identity. Send an empty string to remove it.
+        displayName:
+          type: string
+          maxLength: 80
+        avatarUrl:
+          type: string
+          description: External avatar URL used when no uploaded avatar exists.
+        adminNote:
+          type: string
+          description: Private admin-only note.
         role:
           type: string
           enum: [user, admin]
@@ -2174,6 +2265,31 @@ components:
         phone:
           type: string
           description: Verified phone identity, empty when the user only has email or OAuth identity.
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+        adminNote:
+          type: string
+        loginMethods:
+          type: array
+          items:
+            type: string
+        oauthProviders:
+          type: array
+          items:
+            type: string
+        emailVerified:
+          type: boolean
+        phoneVerified:
+          type: boolean
+        passwordSet:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        loginCount:
+          type: integer
         role:
           type: string
           enum: [user, admin]
@@ -2186,7 +2302,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, email, phone, role, status, createdAt, updatedAt]
+      required: [id, email, phone, displayName, avatarUrl, adminNote, loginMethods, oauthProviders, emailVerified, phoneVerified, passwordSet, loginCount, role, status, createdAt, updatedAt]
     User:
       type: object
       properties:
@@ -2195,6 +2311,15 @@ components:
         email:
           type: string
           format: email
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+        lastLoginAt:
+          type: string
+          format: date-time
+        loginCount:
+          type: integer
         role:
           type: string
           enum: [user, admin]
