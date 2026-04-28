@@ -413,7 +413,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO 地址 |
 | `MINIO_ACCESS_KEY` | `onebook` | MinIO 访问密钥 |
 | `MINIO_SECRET_KEY` | `onebook123` | MinIO 密钥 |
-| `MINIO_BUCKET` | `onebook` | MinIO Bucket |
+| `MINIO_BUCKET` | `onebook` | MinIO Bucket（书籍文件和用户头像） |
 | `MINIO_USE_SSL` | `false` | 是否使用 SSL |
 | `ONEBOOK_INTERNAL_JWT_PRIVATE_KEY_PATH` | `secrets/internal-jwt/private.pem` | 内部服务 JWT 私钥 |
 | `ONEBOOK_INTERNAL_JWT_PUBLIC_KEY_PATH` | `secrets/internal-jwt/public.pem` | 内部服务 JWT 公钥 |
