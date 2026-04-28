@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 	"time"
@@ -138,12 +139,35 @@ func (p microsoftProvider) VerifyIDToken(ctx context.Context, rawToken, nonce st
 	if subject == "" {
 		return Identity{}, errors.New("microsoft id token subject missing")
 	}
+	email, emailVerified := microsoftEmailFromClaims(claims)
 	return Identity{
 		Subject:       subject,
-		Email:         claimString(claims, "email"),
-		EmailVerified: claimBool(claims, "email_verified"),
+		Email:         email,
+		EmailVerified: emailVerified,
 		Name:          claimString(claims, "name"),
 	}, nil
+}
+
+func microsoftEmailFromClaims(claims jwt.MapClaims) (string, bool) {
+	for _, key := range []string{"email", "mail", "preferred_username", "upn"} {
+		email := normalizedEmailClaim(claimString(claims, key))
+		if email != "" {
+			return email, true
+		}
+	}
+	return "", false
+}
+
+func normalizedEmailClaim(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	address, err := mail.ParseAddress(value)
+	if err != nil || address.Address != value {
+		return ""
+	}
+	return address.Address
 }
 
 func (p microsoftProvider) publicKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {

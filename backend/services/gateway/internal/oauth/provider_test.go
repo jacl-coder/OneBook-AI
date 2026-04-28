@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestRSAJWKPublicKeyFromModulusExponent(t *testing.T) {
@@ -61,5 +63,45 @@ func TestValidMicrosoftIssuer(t *testing.T) {
 	}
 	if validMicrosoftIssuer("https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0", "22222222-2222-2222-2222-222222222222", "11111111-1111-1111-1111-111111111111") {
 		t.Fatal("mismatched tenant issuer accepted")
+	}
+}
+
+func TestMicrosoftEmailFromClaims(t *testing.T) {
+	tests := []struct {
+		name  string
+		claim jwt.MapClaims
+		want  string
+		ok    bool
+	}{
+		{
+			name:  "email claim",
+			claim: map[string]any{"email": "User@Example.com"},
+			want:  "user@example.com",
+			ok:    true,
+		},
+		{
+			name:  "preferred username fallback",
+			claim: map[string]any{"preferred_username": "User@Example.com"},
+			want:  "user@example.com",
+			ok:    true,
+		},
+		{
+			name:  "upn fallback",
+			claim: map[string]any{"upn": "User@Example.com"},
+			want:  "user@example.com",
+			ok:    true,
+		},
+		{
+			name:  "non email preferred username ignored",
+			claim: map[string]any{"preferred_username": "user-name"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := microsoftEmailFromClaims(tt.claim)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("microsoftEmailFromClaims() = %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
