@@ -91,10 +91,6 @@ const sidebarTw = {
   sidebarProfileMenuSub: 'truncate text-[12px] leading-4 text-[#777]',
   sidebarLogoutButton:
     'h-8 cursor-pointer rounded-[8px] border-0 bg-transparent px-2 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
-  sidebarProfileEditor: 'mx-1.5 grid gap-2 rounded-[10px] bg-[#f7f7f7] p-2',
-  sidebarProfileRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
-  sidebarProfileInput:
-    'h-8 min-w-0 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-2 text-[12px] outline-none focus:border-[rgba(0,0,0,0.28)]',
   sidebarMenuButton:
     'mx-1.5 grid min-h-9 w-[calc(100%-12px)] cursor-pointer grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border-0 bg-transparent px-2 text-left text-[13px] text-[#171717] hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-55',
   sidebarMenuIcon:
@@ -104,6 +100,35 @@ const sidebarTw = {
     'text-[#a4161a] hover:bg-[#fff1f1]',
   sidebarMenuDivider: 'mx-4 my-1 h-px bg-[rgba(0,0,0,0.08)]',
   sidebarUploadError: 'px-1 text-[11px] leading-4 text-[#a4161a]',
+  dialogOverlay:
+    'fixed inset-0 z-[70] grid place-items-center bg-black/35 px-4 py-6',
+  dialogPanel:
+    'flex max-h-[min(720px,calc(100vh-32px))] w-full max-w-md flex-col overflow-hidden rounded-[16px] bg-white text-left shadow-[0_24px_80px_rgba(0,0,0,0.24)] focus:outline-none',
+  dialogHeader: 'flex min-h-[52px] items-center justify-between px-4 py-2.5',
+  dialogTitle: 'text-[18px] font-normal leading-7 text-[#171717]',
+  dialogClose:
+    'inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border-0 bg-transparent text-[#6f6f6f] hover:bg-[#f1f1f1] focus-visible:bg-[#f1f1f1] focus-visible:outline-none',
+  dialogBody: 'grow overflow-y-auto px-4 pb-4 pt-1',
+  dialogForm: 'flex flex-col',
+  dialogAvatarSection: 'flex flex-col items-center py-6',
+  dialogAvatarButton:
+    'relative -m-1 inline-flex rounded-full border-0 bg-transparent p-1 hover:bg-[#f1f1f1] focus-visible:bg-[#f1f1f1] focus-visible:outline-none disabled:opacity-60',
+  dialogAvatar:
+    'inline-flex h-32 w-32 items-center justify-center overflow-hidden rounded-full bg-[#0d0d0d] text-[42px] font-semibold text-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]',
+  dialogAvatarBadge:
+    'absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-[#ececec] text-[#444] shadow-[0_0_0_1px_rgba(0,0,0,0.12)]',
+  dialogField:
+    'my-1 rounded-[6px] border border-[rgba(0,0,0,0.16)] px-3 py-2 shadow-none focus-within:border-[#171717] focus-within:ring-1 focus-within:ring-[#171717]',
+  dialogLabel: 'block text-[12px] font-normal leading-4 text-[#171717]',
+  dialogInput:
+    'mt-1 block w-full border-0 bg-transparent p-0 text-[14px] leading-5 text-[#171717] outline-none placeholder:text-[#8a8a8a] disabled:text-[#737373]',
+  dialogHint: 'mt-2 text-center text-[12px] leading-4 text-[#777]',
+  dialogError: 'mt-3 rounded-[10px] border border-[#f4b0b4] bg-[#fff5f6] px-3 py-2 text-[12px] text-[#9f1820]',
+  dialogActions: 'mt-5 flex justify-end gap-2',
+  dialogButton:
+    'inline-flex h-9 cursor-pointer items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.12)] px-4 text-[14px] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-55',
+  dialogPrimary:
+    'border-[#171717] bg-[#171717] text-white hover:bg-[#2f2f2f]',
 } as const
 
 export type SidebarThreadItem = {
@@ -182,7 +207,7 @@ export function ChatSidebar({
   const [uploadError, setUploadError] = useState('')
   const [displayNameDraft, setDisplayNameDraft] = useState(sessionUser?.displayName ?? '')
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
-  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false)
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false)
   const displayName = sessionUser?.displayName?.trim() || accountEmail
   const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
   const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
@@ -206,7 +231,6 @@ export function ChatSidebar({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsProfileMenuOpen(false)
-        setIsProfileEditorOpen(false)
       }
     }
 
@@ -218,12 +242,24 @@ export function ChatSidebar({
     }
   }, [isProfileMenuOpen])
 
+  useEffect(() => {
+    if (!isProfileDialogOpen) return undefined
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsProfileDialogOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isProfileDialogOpen])
+
   const avatarMutation = useMutation({
     mutationFn: uploadMyAvatar,
     onSuccess: (user) => {
       setUploadError('')
       setSession({ user })
-      setIsProfileEditorOpen(false)
     },
     onError: (error) => {
       setUploadError(getApiErrorMessage(error, '头像上传失败，请稍后重试。'))
@@ -236,6 +272,7 @@ export function ChatSidebar({
     onSuccess: (user) => {
       setUploadError('')
       setSession({ user })
+      setIsProfileDialogOpen(false)
     },
     onError: (error) => {
       setUploadError(getApiErrorMessage(error, '资料更新失败，请稍后重试。'))
@@ -249,6 +286,13 @@ export function ChatSidebar({
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl(URL.createObjectURL(file))
     void avatarMutation.mutateAsync(file)
+  }
+
+  function openProfileDialog() {
+    setDisplayNameDraft(sessionUser?.displayName ?? '')
+    setUploadError('')
+    setIsProfileMenuOpen(false)
+    setIsProfileDialogOpen(true)
   }
 
   return (
@@ -545,8 +589,7 @@ export function ChatSidebar({
                       <button
                         type="button"
                         className={sidebarTw.sidebarMenuButton}
-                        aria-expanded={isProfileEditorOpen}
-                        onClick={() => setIsProfileEditorOpen((prev) => !prev)}
+                        onClick={openProfileDialog}
                       >
                         <span className={sidebarTw.sidebarMenuIcon} aria-hidden="true">
                           <svg viewBox="0 0 20 20" className="h-5 w-5">
@@ -556,32 +599,11 @@ export function ChatSidebar({
                         </span>
                         <span>个人资料</span>
                         <span className={sidebarTw.sidebarMenuTrailing} aria-hidden="true">
-                          <svg viewBox="0 0 20 20" className={cx('h-4 w-4 transition-transform', isProfileEditorOpen && 'rotate-90')}>
+                          <svg viewBox="0 0 20 20" className="h-4 w-4">
                             <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         </span>
                       </button>
-                      {isProfileEditorOpen ? (
-                        <div className={sidebarTw.sidebarProfileEditor}>
-                          <div className={sidebarTw.sidebarProfileRow}>
-                            <input
-                              className={sidebarTw.sidebarProfileInput}
-                              value={displayNameDraft}
-                              maxLength={80}
-                              placeholder="显示名"
-                              onChange={(event) => setDisplayNameDraft(event.target.value)}
-                            />
-                            <button
-                              type="button"
-                              className={sidebarTw.sidebarLogoutButton}
-                              disabled={profileMutation.isPending}
-                              onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
-                            >
-                              保存
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
                       <div className={sidebarTw.sidebarMenuDivider} />
                       <button
                         type="button"
@@ -621,6 +643,108 @@ export function ChatSidebar({
           )}
         </div>
       </aside>
+
+      {isProfileDialogOpen ? (
+        <div
+          className={sidebarTw.dialogOverlay}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsProfileDialogOpen(false)
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-dialog-title"
+            className={sidebarTw.dialogPanel}
+            tabIndex={-1}
+          >
+            <header className={sidebarTw.dialogHeader}>
+              <h2 id="profile-dialog-title" className={sidebarTw.dialogTitle}>编辑个人资料</h2>
+              <button
+                type="button"
+                className={sidebarTw.dialogClose}
+                aria-label="关闭"
+                onClick={() => setIsProfileDialogOpen(false)}
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true" className="h-5 w-5">
+                  <path d="M5.5 5.5 14.5 14.5M14.5 5.5 5.5 14.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+              </button>
+            </header>
+            <div className={sidebarTw.dialogBody}>
+              <form
+                className={sidebarTw.dialogForm}
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void profileMutation.mutateAsync({ displayName: displayNameDraft })
+                }}
+              >
+                <div className={sidebarTw.dialogAvatarSection}>
+                  <button
+                    type="button"
+                    className={sidebarTw.dialogAvatarButton}
+                    aria-label="更新个人资料照片"
+                    aria-busy={avatarMutation.isPending}
+                    disabled={avatarMutation.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <span className={sidebarTw.dialogAvatar}>
+                      {avatarUrl ? <img src={avatarUrl} alt={displayName} className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
+                    </span>
+                    <span className={sidebarTw.dialogAvatarBadge} aria-hidden="true">
+                      <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]">
+                        <path d="M4.5 6.5h2l1-1.5h5l1 1.5h2a1.5 1.5 0 0 1 1.5 1.5v5.5A1.5 1.5 0 0 1 15.5 15h-11A1.5 1.5 0 0 1 3 13.5V8a1.5 1.5 0 0 1 1.5-1.5Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                        <circle cx="10" cy="10.8" r="2.3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+                <label className={sidebarTw.dialogField}>
+                  <span className={sidebarTw.dialogLabel}>显示名称</span>
+                  <input
+                    className={sidebarTw.dialogInput}
+                    value={displayNameDraft}
+                    maxLength={80}
+                    placeholder={displayName}
+                    autoComplete="off"
+                    onChange={(event) => setDisplayNameDraft(event.target.value)}
+                  />
+                </label>
+                <label className={sidebarTw.dialogField}>
+                  <span className={sidebarTw.dialogLabel}>账号</span>
+                  <input
+                    className={sidebarTw.dialogInput}
+                    value={accountEmail || '未绑定邮箱'}
+                    disabled
+                    readOnly
+                  />
+                </label>
+                <p className={sidebarTw.dialogHint}>个人资料有助于你在 OneBook AI 中识别当前账号。</p>
+                {uploadError ? <div className={sidebarTw.dialogError}>{uploadError}</div> : null}
+                <div className={sidebarTw.dialogActions}>
+                  <button
+                    type="button"
+                    className={sidebarTw.dialogButton}
+                    onClick={() => setIsProfileDialogOpen(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className={cx(sidebarTw.dialogButton, sidebarTw.dialogPrimary)}
+                    disabled={profileMutation.isPending}
+                  >
+                    保存
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }
