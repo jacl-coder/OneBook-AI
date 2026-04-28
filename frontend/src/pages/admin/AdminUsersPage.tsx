@@ -10,6 +10,7 @@ import {
   type AdminUser,
   type ListAdminUsersParams,
 } from '@/features/admin/api/admin'
+import { resolveApiAssetURL } from '@/shared/lib/http/assets'
 
 const usersTw = {
   panel: 'rounded-[14px] border border-[rgba(0,0,0,0.08)] bg-white p-4',
@@ -21,7 +22,7 @@ const usersTw = {
   button:
     'inline-flex h-9 items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.12)] px-3 text-[13px] hover:bg-[#f4f4f4]',
   tableWrap: 'mt-4 overflow-auto rounded-[12px] border border-[rgba(0,0,0,0.08)]',
-  table: 'min-w-[920px] w-full border-collapse text-left',
+  table: 'min-w-[1120px] w-full border-collapse text-left',
   th: 'border-b border-[rgba(0,0,0,0.08)] bg-[#fafafa] px-3 py-2 text-[12px] font-medium text-[#666]',
   td: 'border-b border-[rgba(0,0,0,0.06)] px-3 py-2 text-[13px]',
   actions: 'inline-flex items-center gap-2',
@@ -37,6 +38,17 @@ const usersTw = {
   modalGrid: 'mt-4 grid gap-3',
   modalSection: 'mt-4 grid gap-3 border-t border-[rgba(0,0,0,0.08)] pt-4',
   label: 'grid gap-1 text-[12px] font-medium text-[#555]',
+  textarea:
+    'min-h-[72px] rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-[13px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  userCell: 'flex min-w-0 items-center gap-2',
+  avatar:
+    'inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#222] text-[12px] font-semibold text-white',
+  avatarImg: 'h-full w-full object-cover',
+  userMeta: 'grid min-w-0 gap-[2px]',
+  userName: 'truncate text-[13px] font-medium text-[#222]',
+  userSub: 'truncate text-[11px] text-[#777]',
+  tags: 'inline-flex flex-wrap gap-1',
+  tag: 'rounded-[9999px] bg-[#f0f0f0] px-2 py-[2px] text-[11px] text-[#555]',
   segmented: 'grid grid-cols-2 gap-2',
   segmentBtn:
     'h-9 rounded-[10px] border border-[rgba(0,0,0,0.12)] px-3 text-[13px] hover:bg-[#f5f5f5] disabled:opacity-50',
@@ -64,6 +76,9 @@ export function AdminUsersPage() {
   const [editForm, setEditForm] = useState({
     email: '',
     phone: '',
+    displayName: '',
+    avatarUrl: '',
+    adminNote: '',
     role: 'user' as AdminUser['role'],
     status: 'active' as AdminUser['status'],
   })
@@ -80,15 +95,21 @@ export function AdminUsersPage() {
       id,
       email,
       phone,
+      displayName,
+      avatarUrl,
+      adminNote,
       role,
       status,
     }: {
       id: string
       email?: string
       phone?: string
+      displayName?: string
+      avatarUrl?: string
+      adminNote?: string
       role?: 'user' | 'admin'
       status?: 'active' | 'disabled'
-    }) => updateAdminUser(id, { email, phone, role, status }),
+    }) => updateAdminUser(id, { email, phone, displayName, avatarUrl, adminNote, role, status }),
     onSuccess: async () => {
       setErrorText('')
       setEditingUser(null)
@@ -121,6 +142,9 @@ export function AdminUsersPage() {
     setEditForm({
       email: user.email ?? '',
       phone: user.phone ?? '',
+      displayName: user.displayName ?? '',
+      avatarUrl: user.avatarUrl ?? '',
+      adminNote: user.adminNote ?? '',
       role: user.role,
       status: user.status,
     })
@@ -179,11 +203,13 @@ export function AdminUsersPage() {
         <table className={usersTw.table}>
           <thead>
             <tr>
-              <th className={usersTw.th}>用户ID</th>
+              <th className={usersTw.th}>用户</th>
               <th className={usersTw.th}>邮箱</th>
               <th className={usersTw.th}>手机号</th>
+              <th className={usersTw.th}>登录方式</th>
               <th className={usersTw.th}>角色</th>
               <th className={usersTw.th}>状态</th>
+              <th className={usersTw.th}>最近登录</th>
               <th className={usersTw.th}>创建时间</th>
               <th className={usersTw.th}>操作</th>
             </tr>
@@ -191,27 +217,52 @@ export function AdminUsersPage() {
           <tbody>
             {usersQuery.isLoading ? (
               <tr>
-                <td className={usersTw.td} colSpan={7}>
+                <td className={usersTw.td} colSpan={9}>
                   正在加载...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td className={usersTw.td} colSpan={7}>
+                <td className={usersTw.td} colSpan={9}>
                   暂无数据
                 </td>
               </tr>
             ) : (
               items.map((item) => {
                 const userLabel = item.email || item.phone || item.id
+                const displayName = item.displayName || userLabel
+                const avatarLetter = displayName.slice(0, 1).toUpperCase()
+                const avatarUrl = resolveApiAssetURL(item.avatarUrl)
 
                 return (
                   <tr key={item.id}>
-                    <td className={usersTw.td}>{item.id}</td>
+                    <td className={usersTw.td}>
+                      <div className={usersTw.userCell}>
+                        <span className={usersTw.avatar} aria-hidden="true">
+                          {avatarUrl ? <img src={avatarUrl} alt="" className={usersTw.avatarImg} /> : avatarLetter}
+                        </span>
+                        <span className={usersTw.userMeta}>
+                          <span className={usersTw.userName}>{displayName}</span>
+                          <span className={usersTw.userSub}>{item.id}</span>
+                        </span>
+                      </div>
+                    </td>
                     <td className={usersTw.td}>{item.email || '-'}</td>
                     <td className={usersTw.td}>{item.phone || '-'}</td>
+                    <td className={usersTw.td}>
+                      <span className={usersTw.tags}>
+                        {(item.loginMethods.length ? item.loginMethods : ['-']).map((method) => (
+                          <span key={method} className={usersTw.tag}>
+                            {method}
+                          </span>
+                        ))}
+                      </span>
+                    </td>
                     <td className={usersTw.td}>{item.role}</td>
                     <td className={usersTw.td}>{item.status}</td>
+                    <td className={usersTw.td}>
+                      {item.lastLoginAt ? new Date(item.lastLoginAt).toLocaleString() : '-'}
+                    </td>
                     <td className={usersTw.td}>{new Date(item.createdAt).toLocaleString()}</td>
                     <td className={usersTw.td}>
                       <div className={usersTw.actions}>
@@ -288,6 +339,24 @@ export function AdminUsersPage() {
             <div className="mt-1 break-all text-[12px] text-[#777]">{editingUser.id}</div>
             <div className={usersTw.modalGrid}>
               <label className={usersTw.label}>
+                显示名
+                <input
+                  className={usersTw.input}
+                  value={editForm.displayName}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, displayName: event.target.value }))}
+                  placeholder="用户显示名"
+                />
+              </label>
+              <label className={usersTw.label}>
+                头像 URL
+                <input
+                  className={usersTw.input}
+                  value={editForm.avatarUrl}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, avatarUrl: event.target.value }))}
+                  placeholder="用户未上传头像时使用"
+                />
+              </label>
+              <label className={usersTw.label}>
                 邮箱
                 <input
                   className={usersTw.input}
@@ -303,6 +372,17 @@ export function AdminUsersPage() {
                   value={editForm.phone}
                   onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))}
                   placeholder="留空则移除手机号登录"
+                />
+              </label>
+            </div>
+            <div className={usersTw.modalSection}>
+              <label className={usersTw.label}>
+                管理员备注
+                <textarea
+                  className={usersTw.textarea}
+                  value={editForm.adminNote}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, adminNote: event.target.value }))}
+                  placeholder="仅后台可见"
                 />
               </label>
             </div>
@@ -366,6 +446,9 @@ export function AdminUsersPage() {
                     id: editingUser.id,
                     email: editForm.email,
                     phone: editForm.phone,
+                    displayName: editForm.displayName,
+                    avatarUrl: editForm.avatarUrl,
+                    adminNote: editForm.adminNote,
                     role: editForm.role,
                     status: editForm.status,
                   })

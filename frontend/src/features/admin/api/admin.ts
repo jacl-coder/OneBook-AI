@@ -5,6 +5,12 @@ import type { BookFormat, BookLanguage, BookPrimaryCategory } from '@/features/l
 
 export type AdminUser = AuthUser & {
   phone: string
+  adminNote: string
+  loginMethods: string[]
+  oauthProviders: string[]
+  emailVerified: boolean
+  phoneVerified: boolean
+  passwordSet: boolean
   createdAt: string
   updatedAt: string
 }
@@ -177,6 +183,9 @@ export type ListAdminAuditLogsParams = {
 export type AdminUserUpdatePayload = {
   email?: string
   phone?: string
+  displayName?: string
+  avatarUrl?: string
+  adminNote?: string
   role?: 'user' | 'admin'
   status?: 'active' | 'disabled'
 }

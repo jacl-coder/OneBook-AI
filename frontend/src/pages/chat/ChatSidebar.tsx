@@ -1,8 +1,13 @@
-import type { RefObject } from 'react'
+import type { ChangeEvent, RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
 import onebookLogoMark from '@/assets/brand/onebook-logo-mark.svg'
+import { getApiErrorMessage, updateMe, uploadMyAvatar } from '@/features/auth/api/auth'
+import { useSessionStore } from '@/features/auth/store/session'
 import { CHAT_ICON_SPRITE_URL } from '@/pages/chat/shared'
+import { resolveApiAssetURL } from '@/shared/lib/http/assets'
 
 const cx = (...values: Array<string | false | null | undefined>) =>
   values.filter(Boolean).join(' ')
@@ -57,12 +62,17 @@ const sidebarTw = {
   sidebarAccountCard:
     'mt-[6px] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-white p-2',
   sidebarAvatar:
-    'inline-flex h-7 w-7 items-center justify-center rounded-[9999px] bg-[#0d0d0d] text-[12px] font-semibold text-white',
+    'inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-[9999px] border-0 bg-[#0d0d0d] p-0 text-[12px] font-semibold text-white',
+  sidebarAvatarImg: 'h-full w-full object-cover',
   sidebarAccountMeta: 'grid min-w-0',
   sidebarAccountEmail:
     'overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-4',
   sidebarLogoutButton:
     'cursor-pointer rounded-[8px] border-0 bg-transparent px-[6px] py-1 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
+  sidebarProfileRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-1 px-1',
+  sidebarProfileInput:
+    'h-8 min-w-0 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-2 text-[12px] outline-none focus:border-[rgba(0,0,0,0.28)]',
+  sidebarUploadError: 'px-1 text-[11px] leading-4 text-[#a4161a]',
 } as const
 
 export type SidebarThreadItem = {
@@ -131,7 +141,53 @@ export function ChatSidebar({
   scrollAreaLabel,
   libraryButtonRef,
 }: ChatSidebarProps) {
-  const avatarLetter = accountEmail.slice(0, 1).toUpperCase()
+  const sessionUser = useSessionStore((state) => state.user)
+  const setSession = useSessionStore((state) => state.setSession)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const [displayNameDraft, setDisplayNameDraft] = useState(sessionUser?.displayName ?? '')
+  const displayName = sessionUser?.displayName?.trim() || accountEmail
+  const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
+  const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  const avatarMutation = useMutation({
+    mutationFn: uploadMyAvatar,
+    onSuccess: (user) => {
+      setUploadError('')
+      setSession({ user })
+    },
+    onError: (error) => {
+      setUploadError(getApiErrorMessage(error, '头像上传失败，请稍后重试。'))
+      setPreviewUrl('')
+    },
+  })
+
+  const profileMutation = useMutation({
+    mutationFn: updateMe,
+    onSuccess: (user) => {
+      setUploadError('')
+      setSession({ user })
+    },
+    onError: (error) => {
+      setUploadError(getApiErrorMessage(error, '资料更新失败，请稍后重试。'))
+    },
+  })
+
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(URL.createObjectURL(file))
+    void avatarMutation.mutateAsync(file)
+  }
 
   return (
     <>
@@ -339,17 +395,48 @@ export function ChatSidebar({
 
         <div className={sidebarTw.sidebarAccountPanel}>
           <div className={sidebarTw.sidebarAccountCard}>
-            <span className={sidebarTw.sidebarAvatar} aria-hidden="true">
-              {avatarLetter}
-            </span>
+            <button
+              type="button"
+              className={sidebarTw.sidebarAvatar}
+              aria-label="上传头像"
+              disabled={avatarMutation.isPending}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
             <div className={sidebarTw.sidebarAccountMeta}>
-              <span className={sidebarTw.sidebarAccountEmail}>{accountEmail}</span>
+              <span className={sidebarTw.sidebarAccountEmail} title={accountEmail}>{displayName}</span>
               <span className={sidebarTw.roleMuted}>{accountRoleLabel}</span>
             </div>
             <button type="button" className={sidebarTw.sidebarLogoutButton} onClick={onLogout}>
               退出
             </button>
           </div>
+          <div className={sidebarTw.sidebarProfileRow}>
+            <input
+              className={sidebarTw.sidebarProfileInput}
+              value={displayNameDraft}
+              maxLength={80}
+              placeholder="显示名"
+              onChange={(event) => setDisplayNameDraft(event.target.value)}
+            />
+            <button
+              type="button"
+              className={sidebarTw.sidebarLogoutButton}
+              disabled={profileMutation.isPending}
+              onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
+            >
+              保存
+            </button>
+          </div>
+          {uploadError ? <div className={sidebarTw.sidebarUploadError}>{uploadError}</div> : null}
         </div>
       </aside>
     </>

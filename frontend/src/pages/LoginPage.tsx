@@ -673,14 +673,7 @@ export function LoginPage() {
         clearOtpContext()
         clearResetToken()
         setPassword('')
-        setSession({
-          user: {
-            id: auth.user.id,
-            email: auth.user.email,
-            role: auth.user.role,
-            status: auth.user.status,
-          },
-        })
+        setSession({ user: auth.user })
         navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
         return
       }
@@ -688,14 +681,7 @@ export function LoginPage() {
       const auth = await login({ identifier: stepEmail.trim(), password: password.trim() })
       clearOtpContext()
       clearResetToken()
-      setSession({
-        user: {
-          id: auth.user.id,
-          email: auth.user.email,
-          role: auth.user.role,
-          status: auth.user.status,
-        },
-      })
+      setSession({ user: auth.user })
       navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
     } catch (error) {
       const code = getApiErrorCode(error)
@@ -867,14 +853,7 @@ export function LoginPage() {
       }
       clearOtpContext()
       clearResetToken()
-      setSession({
-        user: {
-          id: auth.user.id,
-          email: auth.user.email,
-          role: auth.user.role,
-          status: auth.user.status,
-        },
-      })
+      setSession({ user: auth.user })
       navigate(auth.user.role === 'admin' ? '/admin' : '/chat')
     } catch (error) {
       setVerifyErrorText(getVerificationErrorMessage(error, 'Verification failed. Please try again.'))

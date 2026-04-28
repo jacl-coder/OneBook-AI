@@ -53,6 +53,11 @@ export type AuthResponse = {
   user: BackendUser
 }
 
+export type UpdateMePayload = {
+  email?: string
+  displayName?: string
+}
+
 export type OtpSendResponse = {
   challengeId: string
   expiresInSeconds: number
@@ -144,6 +149,18 @@ export async function verifyPasswordReset(
 
 export async function completePasswordReset(payload: PasswordResetCompleteRequest): Promise<void> {
   await http.post('/api/auth/password/reset/complete', payload)
+}
+
+export async function updateMe(payload: UpdateMePayload): Promise<BackendUser> {
+  const { data } = await http.patch<BackendUser>('/api/users/me', payload)
+  return data
+}
+
+export async function uploadMyAvatar(file: File): Promise<BackendUser> {
+  const form = new FormData()
+  form.set('file', file)
+  const { data } = await http.post<BackendUser>('/api/users/me/avatar', form)
+  return data
 }
 
 export async function logout(): Promise<void> {

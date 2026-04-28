@@ -1,8 +1,10 @@
-import { useCallback } from 'react'
+import { useCallback, useRef, useState, type ChangeEvent } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
-import { logout } from '@/features/auth/api/auth'
+import { getApiErrorMessage, logout, uploadMyAvatar } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
+import { resolveApiAssetURL } from '@/shared/lib/http/assets'
 
 const uiSansStyle = {
   fontFamily:
@@ -19,6 +21,10 @@ const layoutTw = {
     'inline-flex h-9 items-center rounded-[10px] px-3 text-[14px] text-[#232323] hover:bg-[#ececec] aria-[current=page]:bg-[#e7e7e7]',
   accountCard:
     'grid gap-1 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-white p-3 text-[12px] text-[#4f4f4f]',
+  avatar:
+    'mb-1 inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-0 bg-[#222] p-0 text-[13px] font-semibold text-white',
+  avatarImg: 'h-full w-full object-cover',
+  notice: 'text-[11px] leading-4 text-[#a4161a]',
   logout:
     'mt-2 inline-flex h-8 items-center justify-center rounded-[8px] border border-[rgba(0,0,0,0.12)] text-[12px] hover:bg-[#f4f4f4]',
   main: 'grid h-full min-h-0 grid-rows-[52px_minmax(0,1fr)]',
@@ -30,7 +36,30 @@ const layoutTw = {
 export function AdminLayout() {
   const navigate = useNavigate()
   const sessionUser = useSessionStore((state) => state.user)
+  const setSession = useSessionStore((state) => state.setSession)
   const clearSession = useSessionStore((state) => state.clearSession)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [errorText, setErrorText] = useState('')
+  const avatarLetter = (sessionUser?.displayName || sessionUser?.email || 'A').slice(0, 1).toUpperCase()
+  const avatarUrl = resolveApiAssetURL(sessionUser?.avatarUrl)
+
+  const avatarMutation = useMutation({
+    mutationFn: uploadMyAvatar,
+    onSuccess: (user) => {
+      setErrorText('')
+      setSession({ user })
+    },
+    onError: (error) => {
+      setErrorText(getApiErrorMessage(error, '头像上传失败。'))
+    },
+  })
+
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    void avatarMutation.mutateAsync(file)
+  }
 
   const handleLogout = useCallback(async () => {
     try {
@@ -72,8 +101,25 @@ export function AdminLayout() {
 
         <div className={layoutTw.accountCard}>
           <span className="text-[11px] text-[#757575]">当前账号</span>
-          <span className="truncate text-[12px] text-[#0d0d0d]">{sessionUser?.email ?? '-'}</span>
+          <button
+            type="button"
+            className={layoutTw.avatar}
+            aria-label="上传头像"
+            disabled={avatarMutation.isPending}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {avatarUrl ? <img src={avatarUrl} alt="" className={layoutTw.avatarImg} /> : avatarLetter}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+          <span className="truncate text-[12px] text-[#0d0d0d]">{sessionUser?.displayName || sessionUser?.email || '-'}</span>
           <span className="text-[11px] text-[#757575]">管理员</span>
+          {errorText ? <span className={layoutTw.notice}>{errorText}</span> : null}
           <button type="button" className={layoutTw.logout} onClick={() => void handleLogout()}>
             退出登录
           </button>

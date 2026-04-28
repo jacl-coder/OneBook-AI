@@ -3,6 +3,10 @@ import { create } from 'zustand'
 export type AuthUser = {
   id: string
   email: string
+  displayName?: string
+  avatarUrl?: string
+  lastLoginAt?: string
+  loginCount?: number
   role: 'user' | 'admin'
   status: 'active' | 'disabled'
 }
@@ -29,6 +33,10 @@ function readStoredSession(): StoredSession | null {
       user: {
         id: user.id,
         email: user.email,
+        displayName: typeof user.displayName === 'string' ? user.displayName : '',
+        avatarUrl: typeof user.avatarUrl === 'string' ? user.avatarUrl : '',
+        lastLoginAt: typeof user.lastLoginAt === 'string' ? user.lastLoginAt : undefined,
+        loginCount: typeof user.loginCount === 'number' ? user.loginCount : 0,
         role: user.role,
         status: user.status,
       },
