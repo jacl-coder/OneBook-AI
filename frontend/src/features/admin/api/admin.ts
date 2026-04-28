@@ -26,6 +26,10 @@ export type AdminBook = {
   tags: string[]
   format: BookFormat | ''
   language: BookLanguage
+  documentType?: string
+  documentSummary?: string
+  firstPageText?: string
+  keywords?: string[]
   status: AdminBookStatus
   errorMessage?: string
   sizeBytes: number

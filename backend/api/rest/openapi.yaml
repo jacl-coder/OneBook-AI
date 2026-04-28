@@ -2357,6 +2357,19 @@ components:
         language:
           type: string
           enum: [zh, en, other, unknown]
+        documentType:
+          type: string
+          description: Inferred document-level type used by overview routing.
+        documentSummary:
+          type: string
+          description: Inferred document-level summary.
+        firstPageText:
+          type: string
+          description: Extracted first-page or leading text for overview questions.
+        keywords:
+          type: array
+          items:
+            type: string
         status:
           type: string
           enum: [queued, processing, ready, failed]

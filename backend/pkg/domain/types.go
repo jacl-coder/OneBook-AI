@@ -53,6 +53,10 @@ type Book struct {
 	Tags                 []string   `json:"tags"`
 	Format               string     `json:"format"`
 	Language             string     `json:"language"`
+	DocumentType         string     `json:"documentType,omitempty"`
+	DocumentSummary      string     `json:"documentSummary,omitempty"`
+	FirstPageText        string     `json:"firstPageText,omitempty"`
+	Keywords             []string   `json:"keywords,omitempty"`
 	StorageKey           string     `json:"-"`
 	Status               BookStatus `json:"status"`
 	ErrorMessage         string     `json:"errorMessage,omitempty"`
@@ -65,6 +69,13 @@ type Book struct {
 	CleanupAttempts      int        `json:"cleanupAttempts,omitempty"`
 	CleanupUpdatedAt     *time.Time `json:"cleanupUpdatedAt,omitempty"`
 	ProcessingGeneration int64      `json:"-"`
+}
+
+type BookDocumentProfile struct {
+	DocumentType    string
+	DocumentSummary string
+	FirstPageText   string
+	Keywords        []string
 }
 
 type User struct {

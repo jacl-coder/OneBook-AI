@@ -53,6 +53,10 @@ type BookModel struct {
 	Tags                 datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
 	Format               string         `gorm:"not null;default:'';index"`
 	Language             string         `gorm:"not null;default:'unknown';index"`
+	DocumentType         string         `gorm:"not null;default:'';index"`
+	DocumentSummary      string         `gorm:"type:text;not null;default:''"`
+	FirstPageText        string         `gorm:"type:text;not null;default:''"`
+	Keywords             datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
 	StorageKey           string
 	Status               string `gorm:"not null"`
 	ErrorMessage         string

@@ -12,6 +12,7 @@ type queryRoute string
 
 const (
 	queryRouteRAG              queryRoute = "rag"
+	queryRouteDocumentOverview queryRoute = "document_overview"
 	queryRouteHistoryOnly      queryRoute = "history_only"
 	queryRouteOutOfScopeReject queryRoute = "out_of_scope_reject"
 )
@@ -29,10 +30,65 @@ func decideQueryRoute(question string, history []domain.Message) queryRouteDecis
 	if hasRecentAssistantReply(history) && isHistoryOnlyFollowUp(normalized) {
 		return queryRouteDecision{Route: queryRouteHistoryOnly, Reason: "follow_up"}
 	}
+	if isDocumentOverviewQuestion(normalized) {
+		return queryRouteDecision{Route: queryRouteDocumentOverview, Reason: "document_overview"}
+	}
 	if isClearlyOutOfScopeRealtime(normalized) && !hasDocumentAnchor(normalized) && !looksLikeConversationReference(normalized) {
 		return queryRouteDecision{Route: queryRouteOutOfScopeReject, Reason: "out_of_scope_realtime"}
 	}
 	return queryRouteDecision{Route: queryRouteRAG, Reason: "default"}
+}
+
+func isDocumentOverviewQuestion(question string) bool {
+	if question == "" {
+		return false
+	}
+	exact := []string{
+		"这是什么",
+		"这个是什么",
+		"这是啥",
+		"这是干什么的",
+		"这个文件是什么",
+		"这份文件是什么",
+		"这是什么文件",
+		"这是什么资料",
+		"这份资料是什么",
+		"这个pdf是什么",
+		"这本书讲什么",
+		"这本书是什么",
+		"这份文档讲什么",
+		"这个文档讲什么",
+		"总结一下",
+		"概括一下",
+		"简介一下",
+	}
+	for _, item := range exact {
+		if question == normalizeRouterText(item) {
+			return true
+		}
+	}
+	if len([]rune(question)) > 40 {
+		return false
+	}
+	patterns := []string{
+		"这是什么",
+		"这个文件",
+		"这份文件",
+		"这个文档",
+		"这份文档",
+		"这份资料",
+		"总结",
+		"概括",
+		"简介",
+		"讲什么",
+		"主要内容",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(question, normalizeRouterText(pattern)) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeRouterText(text string) string {

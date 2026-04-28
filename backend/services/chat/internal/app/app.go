@@ -313,6 +313,11 @@ func (a *App) askQuestion(
 		if err != nil {
 			return domain.Answer{}, false, err
 		}
+	case queryRouteDocumentOverview:
+		answerText, citations, abstained, err = a.answerDocumentOverview(ctx, book, question, onChunk)
+		if err != nil {
+			return domain.Answer{}, false, err
+		}
 	case queryRouteOutOfScopeReject:
 		if a.abstainEnabled {
 			answerText = outOfScopeAbstainAnswer

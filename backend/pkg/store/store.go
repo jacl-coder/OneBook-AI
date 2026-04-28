@@ -86,6 +86,7 @@ type Store interface {
 	// books
 	SaveBook(domain.Book) error
 	SaveBookAndOutbox(domain.Book, *domain.IdempotencyRecord, *domain.OutboxMessage) error
+	UpdateBookDocumentProfile(id string, profile domain.BookDocumentProfile) error
 	SetStatus(id string, status domain.BookStatus, errMsg string) error
 	SetStatusIfGeneration(id string, generation int64, status domain.BookStatus, errMsg string) (bool, error)
 	ListBooks() ([]domain.Book, error)

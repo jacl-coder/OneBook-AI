@@ -596,7 +596,7 @@ func (s *GormStore) SaveBook(b domain.Book) error {
 	model := bookToModel(b)
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
+		DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "document_type", "document_summary", "first_page_text", "keywords", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
 	}).Create(&model).Error
 }
 
@@ -605,7 +605,7 @@ func (s *GormStore) SaveBookAndOutbox(book domain.Book, record *domain.Idempoten
 		model := bookToModel(book)
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
+			DoUpdates: clause.AssignmentColumns([]string{"owner_id", "title", "original_filename", "primary_category", "tags", "format", "language", "document_type", "document_summary", "first_page_text", "keywords", "storage_key", "status", "error_message", "size_bytes", "updated_at", "deleted_at", "cleanup_status", "cleanup_error", "cleanup_attempts", "cleanup_updated_at", "processing_generation"}),
 		}).Create(&model).Error; err != nil {
 			return err
 		}
@@ -622,6 +622,19 @@ func (s *GormStore) SaveBookAndOutbox(book domain.Book, record *domain.Idempoten
 		}
 		return nil
 	})
+}
+
+func (s *GormStore) UpdateBookDocumentProfile(id string, profile domain.BookDocumentProfile) error {
+	keywords, _ := marshalStringSliceJSON(profile.Keywords)
+	return s.db.Model(&BookModel{}).
+		Where("id = ? AND deleted_at IS NULL", strings.TrimSpace(id)).
+		Updates(map[string]any{
+			"document_type":    strings.TrimSpace(profile.DocumentType),
+			"document_summary": strings.TrimSpace(profile.DocumentSummary),
+			"first_page_text":  strings.TrimSpace(profile.FirstPageText),
+			"keywords":         keywords,
+			"updated_at":       time.Now().UTC(),
+		}).Error
 }
 
 // SetStatus updates book status/error.
@@ -1807,6 +1820,7 @@ func userIdentityConflictTargetWhere(identity domain.UserIdentity) clause.Where 
 
 func bookToModel(b domain.Book) BookModel {
 	tags, _ := marshalStringSliceJSON(b.Tags)
+	keywords, _ := marshalStringSliceJSON(b.Keywords)
 	return BookModel{
 		ID:                   b.ID,
 		OwnerID:              b.OwnerID,
@@ -1816,6 +1830,10 @@ func bookToModel(b domain.Book) BookModel {
 		Tags:                 tags,
 		Format:               string(domain.NormalizeBookFormat(b.Format)),
 		Language:             string(domain.NormalizeBookLanguage(b.Language)),
+		DocumentType:         strings.TrimSpace(b.DocumentType),
+		DocumentSummary:      strings.TrimSpace(b.DocumentSummary),
+		FirstPageText:        strings.TrimSpace(b.FirstPageText),
+		Keywords:             keywords,
 		StorageKey:           b.StorageKey,
 		Status:               string(b.Status),
 		ErrorMessage:         b.ErrorMessage,
@@ -1833,6 +1851,7 @@ func bookToModel(b domain.Book) BookModel {
 
 func bookFromModel(m BookModel) domain.Book {
 	tags, _ := unmarshalStringSliceJSON(m.Tags)
+	keywords, _ := unmarshalStringSliceJSON(m.Keywords)
 	return domain.Book{
 		ID:                   m.ID,
 		OwnerID:              m.OwnerID,
@@ -1842,6 +1861,10 @@ func bookFromModel(m BookModel) domain.Book {
 		Tags:                 tags,
 		Format:               string(domain.NormalizeBookFormat(m.Format)),
 		Language:             string(domain.NormalizeBookLanguage(m.Language)),
+		DocumentType:         strings.TrimSpace(m.DocumentType),
+		DocumentSummary:      strings.TrimSpace(m.DocumentSummary),
+		FirstPageText:        strings.TrimSpace(m.FirstPageText),
+		Keywords:             keywords,
 		StorageKey:           m.StorageKey,
 		Status:               domain.BookStatus(m.Status),
 		ErrorMessage:         m.ErrorMessage,

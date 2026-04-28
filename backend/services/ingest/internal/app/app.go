@@ -290,6 +290,11 @@ func (a *App) process(ctx context.Context, job queue.JobStatus) error {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
 	}
+	profile := buildBookDocumentProfile(fileInfo.Filename, blocks)
+	if err := a.store.UpdateBookDocumentProfile(job.BookID, profile); err != nil {
+		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
+		return err
+	}
 	if err := a.store.ReplaceChunks(job.BookID, domainChunks); err != nil {
 		_ = a.bookClient.UpdateStatus(ctx, job.BookID, generation, domain.StatusFailed, err.Error())
 		return err
@@ -444,6 +449,135 @@ func enrichChunkMetadata(base map[string]string, bookID string, chunkIndex, chun
 	out["content_runes"] = strconv.Itoa(len([]rune(content)))
 	out["content_sha256"] = sha256Hex(content)
 	return out
+}
+
+func buildBookDocumentProfile(filename string, blocks []chunkPayload) domain.BookDocumentProfile {
+	firstPage := firstMeaningfulBlockText(blocks)
+	overviewText := strings.TrimSpace(filename + "\n" + firstPage + "\n" + joinLeadingBlockText(blocks, 4))
+	return domain.BookDocumentProfile{
+		DocumentType:    inferDocumentType(filename, overviewText),
+		DocumentSummary: summarizeDocument(filename, overviewText),
+		FirstPageText:   limitRunes(firstPage, 2400),
+		Keywords:        extractDocumentKeywords(filename, overviewText),
+	}
+}
+
+func firstMeaningfulBlockText(blocks []chunkPayload) string {
+	for _, block := range blocks {
+		if strings.TrimSpace(block.Metadata["page"]) == "1" {
+			if text := strings.TrimSpace(block.Content); text != "" {
+				return text
+			}
+		}
+	}
+	for _, block := range blocks {
+		if text := strings.TrimSpace(block.Content); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func joinLeadingBlockText(blocks []chunkPayload, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	parts := make([]string, 0, limit)
+	for _, block := range blocks {
+		text := strings.TrimSpace(block.Content)
+		if text == "" {
+			continue
+		}
+		parts = append(parts, text)
+		if len(parts) >= limit {
+			break
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func inferDocumentType(filename, text string) string {
+	haystack := strings.ToLower(filename + "\n" + text)
+	typeRule := []struct {
+		kind  string
+		terms []string
+	}{
+		{kind: "internship_certificate", terms: []string{"实习证明", "实习单位", "实习时间", "实习期表现"}},
+		{kind: "certificate", terms: []string{"证明", "兹证明", "特此证明"}},
+		{kind: "resume", terms: []string{"简历", "resume", "工作经历", "教育经历"}},
+		{kind: "contract", terms: []string{"合同", "协议", "甲方", "乙方"}},
+		{kind: "invoice", terms: []string{"发票", "invoice", "税号", "价税合计"}},
+		{kind: "report", terms: []string{"报告", "report", "摘要", "结论"}},
+		{kind: "book", terms: []string{"目录", "contents", "chapter", "preface"}},
+	}
+	for _, rule := range typeRule {
+		score := 0
+		for _, term := range rule.terms {
+			if strings.Contains(haystack, strings.ToLower(term)) {
+				score++
+			}
+		}
+		if score > 0 {
+			return rule.kind
+		}
+	}
+	return "document"
+}
+
+func summarizeDocument(filename, text string) string {
+	text = normalizeSummaryText(text)
+	filename = strings.TrimSpace(filename)
+	if text == "" {
+		return strings.TrimSpace(filename)
+	}
+	if filename != "" {
+		return limitRunes(strings.TrimSpace(filename+"： "+text), 520)
+	}
+	return limitRunes(text, 520)
+}
+
+func normalizeSummaryText(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func extractDocumentKeywords(filename, text string) []string {
+	candidates := []string{
+		strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+	}
+	for _, term := range []string{"实习证明", "实习", "工程研发", "兰州理工大学", "证明", "合同", "简历", "报告"} {
+		if strings.Contains(text, term) || strings.Contains(filename, term) {
+			candidates = append(candidates, term)
+		}
+	}
+	out := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+	for _, item := range candidates {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+		if len(out) >= 8 {
+			break
+		}
+	}
+	return out
+}
+
+func limitRunes(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if limit <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 func sha256Hex(text string) string {

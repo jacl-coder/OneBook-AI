@@ -32,6 +32,13 @@ func TestDecideQueryRouteKeepsBookAnchoredQuestionInRAG(t *testing.T) {
 	}
 }
 
+func TestDecideQueryRouteDocumentOverview(t *testing.T) {
+	decision := decideQueryRoute("这是什么", nil)
+	if decision.Route != queryRouteDocumentOverview {
+		t.Fatalf("expected document_overview route, got %s", decision.Route)
+	}
+}
+
 func TestLatestAssistantSourcesReturnsMostRecentAssistantSources(t *testing.T) {
 	history := []domain.Message{
 		{Role: "assistant", Content: "old", Sources: []domain.Source{{Label: "[1]"}}},

@@ -11,6 +11,10 @@ export type LibraryBook = {
   tags: string[]
   format: BookFormat | ''
   language: BookLanguage
+  documentType?: string
+  documentSummary?: string
+  firstPageText?: string
+  keywords?: string[]
   status: BookStatus
   errorMessage?: string
   sizeBytes: number
