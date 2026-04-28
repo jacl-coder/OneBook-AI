@@ -489,7 +489,7 @@ func (s *GormStore) UpdateUserLoginActivity(userID, ip, userAgent string, at tim
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"last_login_at":         at,
-			"login_count":           gorm.Expr("login_count + 1"),
+			"login_count":           gorm.Expr("user_profile_models.login_count + 1"),
 			"last_login_ip":         strings.TrimSpace(ip),
 			"last_login_user_agent": strings.TrimSpace(userAgent),
 			"updated_at":            at,
