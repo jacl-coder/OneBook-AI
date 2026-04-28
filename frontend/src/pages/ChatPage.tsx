@@ -18,13 +18,16 @@ import {
   conversationQueryKeys,
   createEmptyThread,
   createMessageId,
+  deleteConversation,
   fetchConversationSummaries,
   generateSmartThreadTitle,
   getThreadPreview,
   headingPool,
   nowTimestamp,
   quickActions,
+  renameConversation,
   type ConversationSummary,
+  type RetrievalDebug,
   useChatSidebarState,
   type ListBooksResponse,
   updateThreadAndMoveTop,
@@ -151,7 +154,19 @@ const chatTw = {
     'grid min-w-[190px] max-w-[280px] cursor-pointer gap-[3px] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white px-[11px] py-[9px] text-left transition-colors duration-150 hover:bg-[#f8f8f8]',
   sourceCardTitle: 'text-[12px] leading-4 text-[#1b1b1b]',
   sourceCardLocation: 'text-[11px] leading-[14px] text-[#6f6f6f]',
+  sourceCardReason: 'text-[11px] leading-[14px] text-[#4f6f54]',
   sourceCardSnippet: 'text-[11px] leading-[15px] text-[#7b7b7b]',
+  debugPanel:
+    'rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#fafafa] px-3 py-2 text-[12px] leading-5 text-[#4f4f4f]',
+  debugSummary: 'cursor-pointer select-none text-[12px] font-medium text-[#333]',
+  debugGrid: 'mt-2 grid gap-1',
+  debugMono: 'break-words font-mono text-[11px] leading-[17px] text-[#5f5f5f]',
+  documentInsight:
+    'mx-auto mb-5 grid w-full max-w-[48rem] gap-2 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-[#fbfbfb] px-3 py-3 text-[12px] text-[#5f5f5f]',
+  documentInsightTitle: 'text-[13px] font-medium text-[#1b1b1b]',
+  documentInsightText: 'line-clamp-3 leading-5',
+  documentPillRow: 'flex flex-wrap gap-1.5',
+  documentPill: 'inline-flex rounded-full bg-[#eeeeee] px-2 py-[3px] text-[11px] text-[#4f4f4f]',
   assistantTypingRow: 'grid w-full items-start gap-3',
   assistantTypingBubble: 'inline-flex h-8 w-[64px] items-center justify-center gap-[6px] rounded-[9999px] bg-white/85',
   typingDotOne: 'h-1.5 w-1.5 rounded-[9999px] bg-[#7d7d7d] [animation:chatgpt-app-bounce_1.2s_infinite_ease-in-out]',
@@ -207,7 +222,24 @@ type ConversationMessage = {
     label: string
     location: string
     snippet?: string
+    sourceReason?: string
+    evidenceType?: string
   }>
+  metadata?: {
+    answerTrace?: {
+      queryPlan?: {
+        route?: string
+        questionType?: string
+        standaloneQuestion?: string
+        retrievalQueries?: string[]
+        requiredEvidenceCount?: number
+      }
+      selectedEvidence?: RetrievalDebug['selectedEvidence']
+      validationResult?: {
+        reason?: string
+      }
+    }
+  }
   createdAt: string
 }
 
@@ -223,10 +255,41 @@ function pickNextHeading(current?: string) {
   return source[Math.floor(Math.random() * source.length)]
 }
 
+function debugFromMessageMetadata(metadata?: ConversationMessage['metadata']): RetrievalDebug | undefined {
+  const trace = metadata?.answerTrace
+  const plan = trace?.queryPlan
+  if (!trace && !plan) return undefined
+  return {
+    language: '',
+    queries: plan?.retrievalQueries ?? [],
+    route: plan?.route,
+    questionType: plan?.questionType,
+    standaloneQuestion: plan?.standaloneQuestion,
+    requiredEvidenceCount: plan?.requiredEvidenceCount,
+    selectedEvidence: trace?.selectedEvidence,
+    selectedChunkIds: trace?.selectedEvidence?.map((item) => item.chunkId).filter(Boolean),
+    validationReason: trace?.validationResult?.reason,
+  }
+}
+
+function evidenceReasonLabel(reason?: string, evidenceType?: string): string {
+  const type = evidenceType?.trim()
+  const sourceReason = reason?.trim()
+  if (type === 'structured_fact') return '结构化事实命中'
+  if (type === 'previous_citation') return '沿用上一轮证据'
+  if (type === 'document_overview') return '文档画像'
+  if (type === 'document_profile') return '文档画像摘要'
+  if (sourceReason === 'document profile summary') return '文档画像摘要'
+  if (sourceReason === 'ranked as relevant evidence') return '重排相关证据'
+  if (sourceReason === 'hybrid retrieval') return '混合检索命中'
+  return sourceReason || type || ''
+}
+
 type ChatRequestPayload = {
   conversationId?: string
   bookId: string
   question: string
+  debug?: boolean
 }
 
 type ChatStreamChunkEvent = {
@@ -484,6 +547,7 @@ export function ChatPage() {
         id: thread.id,
         title: thread.title,
         active: thread.id === activeThreadId,
+        bookId: thread.bookId,
       })),
     [filteredThreads, activeThreadId],
   )
@@ -614,7 +678,10 @@ export function ChatPage() {
           label: source.label,
           location: source.location,
           snippet: source.snippet,
+          sourceReason: source.sourceReason,
+          evidenceType: source.evidenceType,
         })),
+        debug: debugFromMessageMetadata(message.metadata),
       }))
       const latestTime = mappedMessages[mappedMessages.length - 1]?.createdAt ?? nowTimestamp()
       setThreads((previous) => {
@@ -805,6 +872,7 @@ export function ChatPage() {
         conversationId: requestConversationID || undefined,
         bookId: selectedBookId,
         question: trimmedPrompt,
+        debug: import.meta.env.DEV,
       }, idempotencyKey, abortController.signal, (delta) => {
         if (requestId !== pendingAskIdRef.current) return
         setThreads((previous) =>
@@ -841,13 +909,16 @@ export function ChatPage() {
             message.id === assistantMessageId
               ? {
                   ...message,
-                  text: data.abstained ? `${data.answer}\n\n当前回答未通过证据门槛，系统已按拒答处理。` : data.answer,
+                  text: data.answer,
                   createdAt: assistantMessageCreatedAt,
                   sources: data.citations.map((source) => ({
                     label: source.label,
                     location: source.location,
                     snippet: source.snippet,
+                    sourceReason: source.sourceReason,
+                    evidenceType: source.evidenceType,
                   })),
+                  debug: data.retrievalDebug,
                 }
               : message,
           ),
@@ -980,6 +1051,68 @@ export function ChatPage() {
     setIsSidebarOpen(false)
     setTimeout(() => authEditorRef.current?.focus(), 0)
   }
+
+  const handleRenameThread = useCallback(
+    async (threadId: string, currentTitle: string) => {
+      const nextTitle = window.prompt('重命名对话', currentTitle)?.trim()
+      if (!nextTitle || nextTitle === currentTitle) return
+      try {
+        const conversation = await renameConversation(threadId, { title: nextTitle })
+        setThreads((previous) =>
+          previous.map((thread) =>
+            thread.id === threadId
+              ? {
+                  ...thread,
+                  title: conversation.title || nextTitle,
+                  updatedAt: Date.parse(conversation.updatedAt) || nowTimestamp(),
+                }
+              : thread,
+          ),
+        )
+        if (sessionUser) {
+          await queryClient.invalidateQueries({ queryKey: conversationQueryKeys.list(sessionUser.id, 100) })
+        }
+      } catch (error) {
+        setThreadLoadErrorText(getApiErrorMessage(error, '重命名对话失败，请稍后重试。'))
+      }
+    },
+    [queryClient, sessionUser],
+  )
+
+  const handleDeleteThread = useCallback(
+    async (threadId: string) => {
+      const target = threads.find((thread) => thread.id === threadId)
+      if (!target) return
+      const confirmed = window.confirm(`删除“${target.title}”吗？此操作不可撤销。`)
+      if (!confirmed) return
+      try {
+        await deleteConversation(threadId)
+        setThreads((previous) => {
+          const next = previous.filter((thread) => thread.id !== threadId)
+          return next.length ? next : [createEmptyThread()]
+        })
+        if (activeThreadId === threadId) {
+          setActiveThreadId('')
+          navigate('/chat')
+        }
+        if (sessionUser) {
+          await queryClient.invalidateQueries({ queryKey: conversationQueryKeys.list(sessionUser.id, 100) })
+        }
+      } catch (error) {
+        setThreadLoadErrorText(getApiErrorMessage(error, '删除对话失败，请稍后重试。'))
+      }
+    },
+    [activeThreadId, navigate, queryClient, sessionUser, threads],
+  )
+
+  const handleOpenThreadBook = useCallback(
+    (bookId: string) => {
+      setSelectedBookId(bookId)
+      navigate(`/chat?bookId=${encodeURIComponent(bookId)}`)
+      setIsSidebarOpen(false)
+    },
+    [navigate, setIsSidebarOpen],
+  )
 
   const handleLogout = async () => {
     try {
@@ -1177,6 +1310,9 @@ export function ChatPage() {
           onToggleHistoryExpanded={toggleHistoryExpanded}
           threads={sidebarThreads}
           onThreadClick={handleThreadSelect}
+          onRenameThread={(threadId, title) => void handleRenameThread(threadId, title)}
+          onDeleteThread={(threadId) => void handleDeleteThread(threadId)}
+          onOpenThreadBook={handleOpenThreadBook}
           onNewChatClick={handleCreateConversation}
           onLibraryClick={handleOpenLibraryManagement}
           newChatShortcutKeys={newChatShortcutKeys}
@@ -1244,6 +1380,30 @@ export function ChatPage() {
                           </div>
                         ) : null}
 
+                        {selectedBook ? (
+                          <section className={chatTw.documentInsight} aria-label="当前文档画像">
+                            <div className={chatTw.documentInsightTitle}>
+                              {selectedBook.title}
+                              {selectedBook.documentType ? ` · ${selectedBook.documentType}` : ''}
+                            </div>
+                            {selectedBook.documentSummary ? (
+                              <p className={chatTw.documentInsightText}>{selectedBook.documentSummary}</p>
+                            ) : null}
+                            <div className={chatTw.documentPillRow}>
+                              {(selectedBook.keywords ?? []).slice(0, 5).map((keyword) => (
+                                <span key={keyword} className={chatTw.documentPill}>
+                                  {keyword}
+                                </span>
+                              ))}
+                              {(selectedBook.documentEntities ?? []).slice(0, 5).map((entity) => (
+                                <span key={`${entity.type}-${entity.value}`} className={chatTw.documentPill}>
+                                  {entity.label || entity.type}: {entity.value}
+                                </span>
+                              ))}
+                            </div>
+                          </section>
+                        ) : null}
+
                         {activeThread.messages.map((message) =>
                           message.role === 'user' ? (
                             <article key={message.id} className={chatTw.messageUserRow}>
@@ -1261,10 +1421,33 @@ export function ChatPage() {
                                       <button key={`${source.label}-${source.location}`} type="button" className={chatTw.sourceCard}>
                                         <span className={chatTw.sourceCardTitle}>{source.label}</span>
                                         <span className={chatTw.sourceCardLocation}>{source.location}</span>
+                                        {evidenceReasonLabel(source.sourceReason, source.evidenceType) ? (
+                                          <span className={chatTw.sourceCardReason}>
+                                            {evidenceReasonLabel(source.sourceReason, source.evidenceType)}
+                                          </span>
+                                        ) : null}
                                         {source.snippet ? <span className={chatTw.sourceCardSnippet}>{source.snippet}</span> : null}
                                       </button>
                                     ))}
                                   </div>
+                                ) : null}
+                                {import.meta.env.DEV && message.debug ? (
+                                  <details className={chatTw.debugPanel}>
+                                    <summary className={chatTw.debugSummary}>调试信息</summary>
+                                    <div className={chatTw.debugGrid}>
+                                      <div>route: {message.debug.route || '-'}</div>
+                                      <div>questionType: {message.debug.questionType || '-'}</div>
+                                      <div>standalone: {message.debug.standaloneQuestion || '-'}</div>
+                                      <div>requiredEvidence: {message.debug.requiredEvidenceCount ?? '-'}</div>
+                                      <div>validation: {message.debug.validationReason || '-'}</div>
+                                      {message.debug.queries?.length ? (
+                                        <div className={chatTw.debugMono}>queries: {message.debug.queries.join(' | ')}</div>
+                                      ) : null}
+                                      {message.debug.selectedChunkIds?.length ? (
+                                        <div className={chatTw.debugMono}>chunks: {message.debug.selectedChunkIds.join(', ')}</div>
+                                      ) : null}
+                                    </div>
+                                  </details>
                                 ) : null}
                               </div>
                             </article>

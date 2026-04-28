@@ -186,6 +186,39 @@ func (c *Client) ListConversationMessages(requestID, token, conversationID strin
 	return resp.Items, nil
 }
 
+func (c *Client) RenameConversation(requestID, token, conversationID, title string) (domain.Conversation, error) {
+	payload := renameConversationRequest{Title: strings.TrimSpace(title)}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return domain.Conversation{}, err
+	}
+	endpoint := fmt.Sprintf("%s/conversations/%s", c.baseURL, url.PathEscape(strings.TrimSpace(conversationID)))
+	req, err := http.NewRequest(http.MethodPatch, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return domain.Conversation{}, err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	req.Header.Set("Content-Type", "application/json")
+
+	var conversation domain.Conversation
+	if err := c.do(req, &conversation); err != nil {
+		return domain.Conversation{}, err
+	}
+	return conversation, nil
+}
+
+func (c *Client) DeleteConversation(requestID, token, conversationID string) error {
+	endpoint := fmt.Sprintf("%s/conversations/%s", c.baseURL, url.PathEscape(strings.TrimSpace(conversationID)))
+	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	addAuthHeader(req, token)
+	addRequestIDHeader(req, requestID)
+	return c.do(req, nil)
+}
+
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -232,4 +265,8 @@ type chatRequest struct {
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
 	Debug          bool   `json:"debug,omitempty"`
+}
+
+type renameConversationRequest struct {
+	Title string `json:"title"`
 }

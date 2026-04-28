@@ -1,0 +1,20 @@
+{"id":"internship_certificate_001","document":"赖新鹏实习证明.pdf","turn":1,"question":"这是什么,主要写的什么","questionType":"overview","expectedAnswerContains":["实习证明","赖新鹏","工程研发"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_002","document":"赖新鹏实习证明.pdf","turn":2,"question":"学生是谁","questionType":"single_fact","history":["这是什么,主要写的什么"],"expectedStandaloneContains":["实习证明","学生姓名"],"expectedAnswerContains":["赖新鹏"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_003","document":"赖新鹏实习证明.pdf","turn":3,"question":"实习时间是什么","questionType":"single_fact","expectedAnswerContains":["2024 年 8 月 1 日","2024 年 12 月 30 日"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_004","document":"赖新鹏实习证明.pdf","turn":4,"question":"什么时候开始实习","questionType":"single_fact","expectedAnswerContains":["2024 年 8 月 1 日"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_005","document":"赖新鹏实习证明.pdf","turn":5,"question":"什么时候结束实习","questionType":"single_fact","expectedAnswerContains":["2024 年 12 月 30 日"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_006","document":"赖新鹏实习证明.pdf","turn":6,"question":"在哪个部门","questionType":"single_fact","expectedAnswerContains":["工程研发"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_007","document":"赖新鹏实习证明.pdf","turn":7,"question":"岗位是什么","questionType":"single_fact","expectedAnswerContains":["工程研发"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_008","document":"赖新鹏实习证明.pdf","turn":8,"question":"学校是哪一个","questionType":"single_fact","expectedAnswerContains":["兰州理工大学"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_009","document":"赖新鹏实习证明.pdf","turn":9,"question":"性别是什么","questionType":"single_fact","expectedAnswerContains":["男"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_010","document":"赖新鹏实习证明.pdf","turn":10,"question":"证明日期是什么","questionType":"single_fact","expectedAnswerContains":["2025 年 1 月 3 日"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_011","document":"赖新鹏实习证明.pdf","turn":11,"question":"总结这份证明","questionType":"summary","expectedAnswerContains":["实习证明","赖新鹏","实习时间","工程研发"],"expectedCitationCountMin":2}
+{"id":"internship_certificate_012","document":"赖新鹏实习证明.pdf","turn":12,"question":"主要内容是什么","questionType":"summary","expectedAnswerContains":["学生","实习","部门"],"expectedCitationCountMin":2}
+{"id":"internship_certificate_013","document":"赖新鹏实习证明.pdf","turn":13,"question":"有哪些关键人物","questionType":"single_fact","expectedAnswerContains":["赖新鹏"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_014","document":"赖新鹏实习证明.pdf","turn":14,"question":"有哪些关键时间","questionType":"summary","expectedAnswerContains":["2024 年 8 月 1 日","2024 年 12 月 30 日","2025 年 1 月 3 日"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_015","document":"赖新鹏实习证明.pdf","turn":15,"question":"这个证明有什么用途","questionType":"analysis","expectedAnswerContains":["证明","实习"],"expectedCitationCountMin":2}
+{"id":"internship_certificate_016","document":"赖新鹏实习证明.pdf","turn":16,"question":"为什么他表现好","questionType":"analysis","expectedAnswerContains":["团队意识","沟通协作"],"expectedCitationCountMin":1}
+{"id":"internship_certificate_017","document":"赖新鹏实习证明.pdf","turn":17,"question":"他拿了多少工资","questionType":"single_fact","expectedAbstain":true,"expectedMissingEvidenceContains":["工资","薪资"],"expectedCitationCountMin":0}
+{"id":"internship_certificate_018","document":"赖新鹏实习证明.pdf","turn":18,"question":"实习单位叫什么","questionType":"single_fact","expectedAbstain":true,"expectedMissingEvidenceContains":["单位名称"],"expectedCitationCountMin":0}
+{"id":"internship_certificate_019","document":"赖新鹏实习证明.pdf","turn":19,"question":"这个人的联系方式是什么","questionType":"single_fact","expectedAbstain":true,"expectedMissingEvidenceContains":["联系方式"],"expectedCitationCountMin":0}
+{"id":"internship_certificate_020","document":"赖新鹏实习证明.pdf","turn":20,"question":"明天北京天气怎么样","questionType":"out_of_scope","expectedAbstain":true,"expectedMissingEvidenceContains":["超出当前上传文档"],"expectedCitationCountMin":0}

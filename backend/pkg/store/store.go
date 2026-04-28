@@ -107,6 +107,7 @@ type Store interface {
 	GetConversation(id string) (domain.Conversation, bool, error)
 	ListConversationsByUser(userID string, limit int) ([]domain.Conversation, error)
 	UpdateConversation(id string, title string, lastMessageAt time.Time) error
+	DeleteConversation(id string) error
 	AppendConversationMessage(conversationID string, msg domain.Message) error
 	ListConversationMessages(conversationID string, limit int) ([]domain.Message, error)
 	SaveConversationExchange(domain.Conversation, bool, domain.Message, domain.Message, *domain.IdempotencyRecord) error

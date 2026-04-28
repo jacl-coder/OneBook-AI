@@ -626,14 +626,18 @@ func (s *GormStore) SaveBookAndOutbox(book domain.Book, record *domain.Idempoten
 
 func (s *GormStore) UpdateBookDocumentProfile(id string, profile domain.BookDocumentProfile) error {
 	keywords, _ := marshalStringSliceJSON(profile.Keywords)
+	entities, _ := json.Marshal(profile.Entities)
+	facts, _ := json.Marshal(profile.Facts)
 	return s.db.Model(&BookModel{}).
 		Where("id = ? AND deleted_at IS NULL", strings.TrimSpace(id)).
 		Updates(map[string]any{
-			"document_type":    strings.TrimSpace(profile.DocumentType),
-			"document_summary": strings.TrimSpace(profile.DocumentSummary),
-			"first_page_text":  strings.TrimSpace(profile.FirstPageText),
-			"keywords":         keywords,
-			"updated_at":       time.Now().UTC(),
+			"document_type":     strings.TrimSpace(profile.DocumentType),
+			"document_summary":  strings.TrimSpace(profile.DocumentSummary),
+			"first_page_text":   strings.TrimSpace(profile.FirstPageText),
+			"keywords":          keywords,
+			"document_entities": entities,
+			"document_facts":    facts,
+			"updated_at":        time.Now().UTC(),
 		}).Error
 }
 
@@ -936,6 +940,20 @@ func (s *GormStore) UpdateConversation(id string, title string, lastMessageAt ti
 		updates["last_message_at"] = lastMessageAt.UTC()
 	}
 	return s.db.Model(&ConversationModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteConversation deletes one conversation and its messages.
+func (s *GormStore) DeleteConversation(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&MessageModel{}, "conversation_id = ?", id).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&ConversationModel{}, "id = ?", id).Error
+	})
 }
 
 // AppendMessage records a message.
@@ -1821,6 +1839,8 @@ func userIdentityConflictTargetWhere(identity domain.UserIdentity) clause.Where 
 func bookToModel(b domain.Book) BookModel {
 	tags, _ := marshalStringSliceJSON(b.Tags)
 	keywords, _ := marshalStringSliceJSON(b.Keywords)
+	entities, _ := json.Marshal(b.DocumentEntities)
+	facts, _ := json.Marshal(b.DocumentFacts)
 	return BookModel{
 		ID:                   b.ID,
 		OwnerID:              b.OwnerID,
@@ -1834,6 +1854,8 @@ func bookToModel(b domain.Book) BookModel {
 		DocumentSummary:      strings.TrimSpace(b.DocumentSummary),
 		FirstPageText:        strings.TrimSpace(b.FirstPageText),
 		Keywords:             keywords,
+		DocumentEntities:     entities,
+		DocumentFacts:        facts,
 		StorageKey:           b.StorageKey,
 		Status:               string(b.Status),
 		ErrorMessage:         b.ErrorMessage,
@@ -1852,6 +1874,14 @@ func bookToModel(b domain.Book) BookModel {
 func bookFromModel(m BookModel) domain.Book {
 	tags, _ := unmarshalStringSliceJSON(m.Tags)
 	keywords, _ := unmarshalStringSliceJSON(m.Keywords)
+	var entities []domain.DocumentEntity
+	var facts []domain.DocumentFact
+	if len(m.DocumentEntities) > 0 {
+		_ = json.Unmarshal(m.DocumentEntities, &entities)
+	}
+	if len(m.DocumentFacts) > 0 {
+		_ = json.Unmarshal(m.DocumentFacts, &facts)
+	}
 	return domain.Book{
 		ID:                   m.ID,
 		OwnerID:              m.OwnerID,
@@ -1865,6 +1895,8 @@ func bookFromModel(m BookModel) domain.Book {
 		DocumentSummary:      strings.TrimSpace(m.DocumentSummary),
 		FirstPageText:        strings.TrimSpace(m.FirstPageText),
 		Keywords:             keywords,
+		DocumentEntities:     entities,
+		DocumentFacts:        facts,
 		StorageKey:           m.StorageKey,
 		Status:               domain.BookStatus(m.Status),
 		ErrorMessage:         m.ErrorMessage,
@@ -1965,6 +1997,7 @@ func messageToModel(msg domain.Message) MessageModel {
 		conversationID = &value
 	}
 	rawSources, _ := json.Marshal(msg.Sources)
+	rawMetadata, _ := json.Marshal(msg.Metadata)
 	return MessageModel{
 		ID:             msg.ID,
 		ConversationID: conversationID,
@@ -1973,6 +2006,7 @@ func messageToModel(msg domain.Message) MessageModel {
 		Role:           msg.Role,
 		Content:        msg.Content,
 		Sources:        rawSources,
+		Metadata:       rawMetadata,
 		CreatedAt:      msg.CreatedAt,
 	}
 }
@@ -1986,6 +2020,10 @@ func messageFromModel(m MessageModel) domain.Message {
 	if len(m.Sources) > 0 {
 		_ = json.Unmarshal(m.Sources, &sources)
 	}
+	var metadata domain.MessageMetadata
+	if len(m.Metadata) > 0 {
+		_ = json.Unmarshal(m.Metadata, &metadata)
+	}
 	return domain.Message{
 		ID:             m.ID,
 		ConversationID: conversationID,
@@ -1994,6 +2032,7 @@ func messageFromModel(m MessageModel) domain.Message {
 		Role:           m.Role,
 		Content:        m.Content,
 		Sources:        sources,
+		Metadata:       metadata,
 		CreatedAt:      m.CreatedAt,
 	}
 }

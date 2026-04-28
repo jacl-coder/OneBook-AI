@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -397,6 +398,20 @@ func (a *App) buildRetrievalChunks(bookID string, blocks []chunkPayload) []domai
 			continue
 		}
 		blockMeta := cloneMetadata(block.Metadata)
+		if strings.TrimSpace(blockMeta["page"]) == "1" {
+			blockMeta["is_first_page"] = "true"
+		}
+		if entities := extractDocumentEntities("", blockContent, strings.TrimSpace(blockMeta["page"]), strings.TrimSpace(blockMeta["source_ref"])); len(entities) > 0 {
+			if raw, err := json.Marshal(entities); err == nil {
+				blockMeta["entities"] = string(raw)
+			}
+		}
+		if facts := extractDocumentFacts(blockContent, strings.TrimSpace(blockMeta["page"]), strings.TrimSpace(blockMeta["source_ref"])); len(facts) > 0 {
+			if raw, err := json.Marshal(facts); err == nil {
+				blockMeta["facts"] = string(raw)
+				blockMeta["has_structured_facts"] = "true"
+			}
+		}
 		chunkFamily := strings.TrimSpace(blockMeta["chunk_family"])
 		if chunkFamily == "" {
 			chunkFamily = sha256Hex(strings.TrimSpace(blockMeta["source_ref"]) + "\n" + blockContent)
@@ -459,7 +474,63 @@ func buildBookDocumentProfile(filename string, blocks []chunkPayload) domain.Boo
 		DocumentSummary: summarizeDocument(filename, overviewText),
 		FirstPageText:   limitRunes(firstPage, 2400),
 		Keywords:        extractDocumentKeywords(filename, overviewText),
+		Entities:        extractDocumentEntities(filename, overviewText, "1", "page:1"),
+		Facts:           extractDocumentFacts(overviewText, "1", "page:1"),
 	}
+}
+
+func extractDocumentEntities(filename string, text string, page string, sourceRef string) []domain.DocumentEntity {
+	text = normalizeSummaryText(filename + "\n" + text)
+	candidates := make([]domain.DocumentEntity, 0, 12)
+	if name := firstRegexSubmatch(text, `学生\s*([\p{Han}]{2,4})`); name != "" {
+		candidates = append(candidates, domain.DocumentEntity{Type: "person", Value: name, Label: "学生", Page: page})
+	}
+	if school := firstRegexSubmatch(text, `([\p{Han}]{2,30}(?:大学|学院|学校))\s*学校`); school != "" {
+		candidates = append(candidates, domain.DocumentEntity{Type: "organization", Value: school, Label: "学校", Page: page})
+	}
+	if department := firstRegexSubmatch(text, `([\p{Han}A-Za-z0-9]{2,20})\s*部门`); department != "" {
+		candidates = append(candidates, domain.DocumentEntity{Type: "department", Value: department, Label: "部门", Page: page})
+	}
+	if position := firstRegexSubmatch(text, `([\p{Han}A-Za-z0-9]{2,20})\s*岗位`); position != "" {
+		candidates = append(candidates, domain.DocumentEntity{Type: "position", Value: position, Label: "岗位", Page: page})
+	}
+	for _, date := range allRegexSubmatches(text, `\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日`, 6) {
+		candidates = append(candidates, domain.DocumentEntity{Type: "date", Value: normalizeChineseDate(date), Label: "日期", Page: page})
+	}
+	if idNumber := firstRegexSubmatch(text, `\d{12,18}`); idNumber != "" {
+		candidates = append(candidates, domain.DocumentEntity{Type: "identity_number", Value: idNumber, Label: "编号", Page: page})
+	}
+	return dedupeDocumentEntities(candidates, sourceRef)
+}
+
+func extractDocumentFacts(text string, page string, sourceRef string) []domain.DocumentFact {
+	text = normalizeSummaryText(text)
+	facts := make([]domain.DocumentFact, 0, 12)
+	if name := firstRegexSubmatch(text, `学生\s*([\p{Han}]{2,4})`); name != "" {
+		facts = append(facts, domain.DocumentFact{Key: "student_name", Value: name, Label: "学生姓名", Page: page, SourceRef: sourceRef})
+	}
+	if gender := firstRegexSubmatch(text, `性别\s*([\p{Han}A-Za-z]{1,8})`); gender != "" {
+		facts = append(facts, domain.DocumentFact{Key: "gender", Value: gender, Label: "性别", Page: page, SourceRef: sourceRef})
+	}
+	if school := firstRegexSubmatch(text, `([\p{Han}]{2,30}(?:大学|学院|学校))\s*学校`); school != "" {
+		facts = append(facts, domain.DocumentFact{Key: "school", Value: school, Label: "学校", Page: page, SourceRef: sourceRef})
+	}
+	if department := firstRegexSubmatch(text, `([\p{Han}A-Za-z0-9]{2,20})\s*部门`); department != "" {
+		facts = append(facts, domain.DocumentFact{Key: "department", Value: department, Label: "部门", Page: page, SourceRef: sourceRef})
+	}
+	if position := firstRegexSubmatch(text, `([\p{Han}A-Za-z0-9]{2,20})\s*岗位`); position != "" {
+		facts = append(facts, domain.DocumentFact{Key: "position", Value: position, Label: "岗位", Page: page, SourceRef: sourceRef})
+	}
+	if start := firstRegexSubmatch(text, `实习时间[:：]?\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)`); start != "" {
+		facts = append(facts, domain.DocumentFact{Key: "internship_start", Value: normalizeChineseDate(start), Label: "实习开始时间", Page: page, SourceRef: sourceRef})
+	}
+	if end := firstRegexSubmatch(text, `至\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)\s*截止`); end != "" {
+		facts = append(facts, domain.DocumentFact{Key: "internship_end", Value: normalizeChineseDate(end), Label: "实习结束时间", Page: page, SourceRef: sourceRef})
+	}
+	if proofDate := lastRegexSubmatch(text, `\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日`); proofDate != "" {
+		facts = append(facts, domain.DocumentFact{Key: "proof_date", Value: normalizeChineseDate(proofDate), Label: "证明日期", Page: page, SourceRef: sourceRef})
+	}
+	return dedupeDocumentFacts(facts)
 }
 
 func firstMeaningfulBlockText(blocks []chunkPayload) string {
@@ -578,6 +649,97 @@ func limitRunes(text string, limit int) string {
 		return text
 	}
 	return string(runes[:limit])
+}
+
+func firstRegexSubmatch(text string, pattern string) string {
+	matches := allRegexSubmatches(text, pattern, 1)
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
+}
+
+func lastRegexSubmatch(text string, pattern string) string {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return ""
+	}
+	matches := re.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	last := matches[len(matches)-1]
+	if len(last) > 1 {
+		return strings.TrimSpace(last[1])
+	}
+	return strings.TrimSpace(last[0])
+}
+
+func allRegexSubmatches(text string, pattern string, limit int) []string {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil
+	}
+	matches := re.FindAllStringSubmatch(text, -1)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		value := ""
+		if len(match) > 1 {
+			value = strings.TrimSpace(match[1])
+		} else if len(match) > 0 {
+			value = strings.TrimSpace(match[0])
+		}
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func normalizeChineseDate(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func dedupeDocumentEntities(items []domain.DocumentEntity, _ string) []domain.DocumentEntity {
+	seen := map[string]struct{}{}
+	out := make([]domain.DocumentEntity, 0, len(items))
+	for _, item := range items {
+		item.Type = strings.TrimSpace(item.Type)
+		item.Value = strings.TrimSpace(item.Value)
+		if item.Type == "" || item.Value == "" {
+			continue
+		}
+		key := item.Type + "\x00" + item.Value
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func dedupeDocumentFacts(items []domain.DocumentFact) []domain.DocumentFact {
+	seen := map[string]struct{}{}
+	out := make([]domain.DocumentFact, 0, len(items))
+	for _, item := range items {
+		item.Key = strings.TrimSpace(item.Key)
+		item.Value = strings.TrimSpace(item.Value)
+		if item.Key == "" || item.Value == "" {
+			continue
+		}
+		key := item.Key + "\x00" + item.Value
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func sha256Hex(text string) string {

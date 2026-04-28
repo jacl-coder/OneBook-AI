@@ -45,30 +45,32 @@ const (
 )
 
 type Book struct {
-	ID                   string     `json:"id"`
-	OwnerID              string     `json:"ownerId"`
-	Title                string     `json:"title"`
-	OriginalFilename     string     `json:"originalFilename"`
-	PrimaryCategory      string     `json:"primaryCategory"`
-	Tags                 []string   `json:"tags"`
-	Format               string     `json:"format"`
-	Language             string     `json:"language"`
-	DocumentType         string     `json:"documentType,omitempty"`
-	DocumentSummary      string     `json:"documentSummary,omitempty"`
-	FirstPageText        string     `json:"firstPageText,omitempty"`
-	Keywords             []string   `json:"keywords,omitempty"`
-	StorageKey           string     `json:"-"`
-	Status               BookStatus `json:"status"`
-	ErrorMessage         string     `json:"errorMessage,omitempty"`
-	SizeBytes            int64      `json:"sizeBytes"`
-	CreatedAt            time.Time  `json:"createdAt"`
-	UpdatedAt            time.Time  `json:"updatedAt"`
-	DeletedAt            *time.Time `json:"deletedAt,omitempty"`
-	CleanupStatus        string     `json:"cleanupStatus,omitempty"`
-	CleanupError         string     `json:"cleanupError,omitempty"`
-	CleanupAttempts      int        `json:"cleanupAttempts,omitempty"`
-	CleanupUpdatedAt     *time.Time `json:"cleanupUpdatedAt,omitempty"`
-	ProcessingGeneration int64      `json:"-"`
+	ID                   string           `json:"id"`
+	OwnerID              string           `json:"ownerId"`
+	Title                string           `json:"title"`
+	OriginalFilename     string           `json:"originalFilename"`
+	PrimaryCategory      string           `json:"primaryCategory"`
+	Tags                 []string         `json:"tags"`
+	Format               string           `json:"format"`
+	Language             string           `json:"language"`
+	DocumentType         string           `json:"documentType,omitempty"`
+	DocumentSummary      string           `json:"documentSummary,omitempty"`
+	FirstPageText        string           `json:"firstPageText,omitempty"`
+	Keywords             []string         `json:"keywords,omitempty"`
+	DocumentEntities     []DocumentEntity `json:"documentEntities,omitempty"`
+	DocumentFacts        []DocumentFact   `json:"documentFacts,omitempty"`
+	StorageKey           string           `json:"-"`
+	Status               BookStatus       `json:"status"`
+	ErrorMessage         string           `json:"errorMessage,omitempty"`
+	SizeBytes            int64            `json:"sizeBytes"`
+	CreatedAt            time.Time        `json:"createdAt"`
+	UpdatedAt            time.Time        `json:"updatedAt"`
+	DeletedAt            *time.Time       `json:"deletedAt,omitempty"`
+	CleanupStatus        string           `json:"cleanupStatus,omitempty"`
+	CleanupError         string           `json:"cleanupError,omitempty"`
+	CleanupAttempts      int              `json:"cleanupAttempts,omitempty"`
+	CleanupUpdatedAt     *time.Time       `json:"cleanupUpdatedAt,omitempty"`
+	ProcessingGeneration int64            `json:"-"`
 }
 
 type BookDocumentProfile struct {
@@ -76,6 +78,23 @@ type BookDocumentProfile struct {
 	DocumentSummary string
 	FirstPageText   string
 	Keywords        []string
+	Entities        []DocumentEntity
+	Facts           []DocumentFact
+}
+
+type DocumentEntity struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
+	Page  string `json:"page,omitempty"`
+}
+
+type DocumentFact struct {
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Label     string `json:"label,omitempty"`
+	Page      string `json:"page,omitempty"`
+	SourceRef string `json:"sourceRef,omitempty"`
 }
 
 type User struct {
@@ -140,15 +159,23 @@ type UserIdentity struct {
 }
 
 type Message struct {
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversationId,omitempty"`
-	UserID         string    `json:"userId,omitempty"`
-	BookID         string    `json:"bookId"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	Sources        []Source  `json:"sources,omitempty"`
-	Abstained      bool      `json:"abstained,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             string          `json:"id"`
+	ConversationID string          `json:"conversationId,omitempty"`
+	UserID         string          `json:"userId,omitempty"`
+	BookID         string          `json:"bookId"`
+	Role           string          `json:"role"`
+	Content        string          `json:"content"`
+	Sources        []Source        `json:"sources,omitempty"`
+	Metadata       MessageMetadata `json:"metadata,omitempty"`
+	Abstained      bool            `json:"abstained,omitempty"`
+	CreatedAt      time.Time       `json:"createdAt"`
+}
+
+type MessageMetadata struct {
+	QueryPlan        *QueryPlan       `json:"queryPlan,omitempty"`
+	AnswerTrace      *AnswerTrace     `json:"answerTrace,omitempty"`
+	KeyEntities      []DocumentEntity `json:"keyEntities,omitempty"`
+	SelectedChunkIDs []string         `json:"selectedChunkIds,omitempty"`
 }
 
 type Conversation struct {
@@ -172,13 +199,48 @@ type Answer struct {
 }
 
 type Source struct {
-	Label     string  `json:"label"`
-	Location  string  `json:"location"`
-	Snippet   string  `json:"snippet"`
-	ChunkID   string  `json:"chunkId,omitempty"`
-	SourceRef string  `json:"sourceRef,omitempty"`
-	Score     float64 `json:"score,omitempty"`
-	Language  string  `json:"language,omitempty"`
+	Label        string  `json:"label"`
+	Location     string  `json:"location"`
+	Snippet      string  `json:"snippet"`
+	ChunkID      string  `json:"chunkId,omitempty"`
+	SourceRef    string  `json:"sourceRef,omitempty"`
+	Score        float64 `json:"score,omitempty"`
+	Language     string  `json:"language,omitempty"`
+	SourceReason string  `json:"sourceReason,omitempty"`
+	EvidenceType string  `json:"evidenceType,omitempty"`
+}
+
+type QueryPlan struct {
+	Route                 string   `json:"route"`
+	QuestionType          string   `json:"questionType"`
+	OriginalQuestion      string   `json:"originalQuestion"`
+	StandaloneQuestion    string   `json:"standaloneQuestion"`
+	RetrievalQueries      []string `json:"retrievalQueries,omitempty"`
+	RequiredEvidenceCount int      `json:"requiredEvidenceCount"`
+	ReuseChunkIDs         []string `json:"reuseChunkIds,omitempty"`
+	NeedsRetrieval        bool     `json:"needsRetrieval"`
+	NeedsHistory          bool     `json:"needsHistory"`
+}
+
+type Evidence struct {
+	ChunkID      string  `json:"chunkId"`
+	Page         string  `json:"page,omitempty"`
+	Location     string  `json:"location,omitempty"`
+	Snippet      string  `json:"snippet"`
+	Score        float64 `json:"score,omitempty"`
+	SourceReason string  `json:"sourceReason"`
+	EvidenceType string  `json:"evidenceType"`
+}
+
+type ValidationResult struct {
+	Passed bool   `json:"passed"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type AnswerTrace struct {
+	QueryPlan        QueryPlan        `json:"queryPlan"`
+	SelectedEvidence []Evidence       `json:"selectedEvidence,omitempty"`
+	ValidationResult ValidationResult `json:"validationResult"`
 }
 
 type RetrievalHit struct {
@@ -190,12 +252,20 @@ type RetrievalHit struct {
 }
 
 type RetrievalDebug struct {
-	Language string         `json:"language"`
-	Queries  []string       `json:"queries"`
-	Dense    []RetrievalHit `json:"dense"`
-	Lexical  []RetrievalHit `json:"lexical"`
-	Fused    []RetrievalHit `json:"fused"`
-	Reranked []RetrievalHit `json:"reranked"`
+	Language              string         `json:"language"`
+	Queries               []string       `json:"queries"`
+	Route                 string         `json:"route,omitempty"`
+	QuestionType          string         `json:"questionType,omitempty"`
+	StandaloneQuestion    string         `json:"standaloneQuestion,omitempty"`
+	RequiredEvidenceCount int            `json:"requiredEvidenceCount,omitempty"`
+	SelectedChunkIDs      []string       `json:"selectedChunkIds,omitempty"`
+	SelectedEvidence      []Evidence     `json:"selectedEvidence,omitempty"`
+	ValidationReason      string         `json:"validationReason,omitempty"`
+	QueryPlan             *QueryPlan     `json:"queryPlan,omitempty"`
+	Dense                 []RetrievalHit `json:"dense"`
+	Lexical               []RetrievalHit `json:"lexical"`
+	Fused                 []RetrievalHit `json:"fused"`
+	Reranked              []RetrievalHit `json:"reranked"`
 }
 
 type Chunk struct {

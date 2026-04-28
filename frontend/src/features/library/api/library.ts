@@ -15,11 +15,28 @@ export type LibraryBook = {
   documentSummary?: string
   firstPageText?: string
   keywords?: string[]
+  documentEntities?: DocumentEntity[]
+  documentFacts?: DocumentFact[]
   status: BookStatus
   errorMessage?: string
   sizeBytes: number
   createdAt: string
   updatedAt: string
+}
+
+export type DocumentEntity = {
+  type: string
+  value: string
+  label?: string
+  page?: string
+}
+
+export type DocumentFact = {
+  key: string
+  value: string
+  label?: string
+  page?: string
+  sourceRef?: string
 }
 
 export type ListBooksResponse = {

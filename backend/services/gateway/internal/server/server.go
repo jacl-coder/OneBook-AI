@@ -1021,6 +1021,36 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	parts := strings.Split(path, "/")
+	if len(parts) == 1 {
+		conversationID := strings.TrimSpace(parts[0])
+		if conversationID == "" {
+			writeErrorWithCode(w, r, http.StatusBadRequest, "conversation ID is required", "CHAT_CONVERSATION_ID_REQUIRED")
+			return
+		}
+		switch r.Method {
+		case http.MethodPatch:
+			var req renameConversationRequest
+			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+				writeErrorWithCode(w, r, http.StatusBadRequest, "invalid JSON body", "CHAT_INVALID_REQUEST")
+				return
+			}
+			conversation, err := s.chat.RenameConversation(util.RequestIDFromRequest(r), ctx.AccessToken, conversationID, req.Title)
+			if err != nil {
+				writeChatError(w, r, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, conversation)
+		case http.MethodDelete:
+			if err := s.chat.DeleteConversation(util.RequestIDFromRequest(r), ctx.AccessToken, conversationID); err != nil {
+				writeChatError(w, r, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		default:
+			methodNotAllowed(w, r)
+		}
+		return
+	}
 	if len(parts) != 2 || parts[1] != "messages" {
 		writeErrorWithCode(w, r, http.StatusNotFound, "not found", "CHAT_CONVERSATION_NOT_FOUND")
 		return
@@ -1586,6 +1616,10 @@ type chatRequest struct {
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
 	Debug          bool   `json:"debug,omitempty"`
+}
+
+type renameConversationRequest struct {
+	Title string `json:"title"`
 }
 
 type authRequest struct {

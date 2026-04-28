@@ -379,12 +379,15 @@ func (a *App) processBatch(ctx context.Context, batch []domain.Chunk) error {
 			Dense:  embedding,
 			Sparse: retrieval.BuildSparseVector(batch[i].Content, language),
 			Payload: map[string]any{
-				"chunk_id":     batch[i].ID,
-				"book_id":      batch[i].BookID,
-				"chunk_family": strings.TrimSpace(batch[i].Metadata["chunk_family"]),
-				"section_id":   strings.TrimSpace(batch[i].Metadata["section_id"]),
-				"block_type":   firstNonEmpty(batch[i].Metadata["block_type"], batch[i].Metadata["source_type"]),
-				"language":     language,
+				"chunk_id":      batch[i].ID,
+				"book_id":       batch[i].BookID,
+				"chunk_family":  strings.TrimSpace(batch[i].Metadata["chunk_family"]),
+				"section_id":    strings.TrimSpace(batch[i].Metadata["section_id"]),
+				"block_type":    firstNonEmpty(batch[i].Metadata["block_type"], batch[i].Metadata["source_type"]),
+				"language":      language,
+				"is_first_page": strings.TrimSpace(batch[i].Metadata["is_first_page"]),
+				"entities":      strings.TrimSpace(batch[i].Metadata["entities"]),
+				"facts":         strings.TrimSpace(batch[i].Metadata["facts"]),
 			},
 		})
 	}
@@ -412,6 +415,9 @@ func (a *App) indexLexical(ctx context.Context, chunks []domain.Chunk) error {
 			"tags":          strings.TrimSpace(chunk.Metadata["tags"]),
 			"block_type":    firstNonEmpty(chunk.Metadata["block_type"], chunk.Metadata["source_type"]),
 			"language":      language,
+			"is_first_page": strings.TrimSpace(chunk.Metadata["is_first_page"]),
+			"entities":      strings.TrimSpace(chunk.Metadata["entities"]),
+			"facts":         strings.TrimSpace(chunk.Metadata["facts"]),
 		}
 		docs = append(docs, retrieval.LexicalDocument{
 			ID:      chunk.ID,

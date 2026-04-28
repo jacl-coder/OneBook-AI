@@ -224,6 +224,32 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	parts := strings.Split(path, "/")
+	if len(parts) == 1 {
+		conversationID := parts[0]
+		switch r.Method {
+		case http.MethodPatch:
+			var req renameConversationRequest
+			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid JSON body")
+				return
+			}
+			conversation, err := s.app.RenameConversation(user, conversationID, req.Title)
+			if err != nil {
+				writeConversationError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, conversation)
+		case http.MethodDelete:
+			if err := s.app.DeleteConversation(user, conversationID); err != nil {
+				writeConversationError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		default:
+			methodNotAllowed(w)
+		}
+		return
+	}
 	if len(parts) != 2 || parts[1] != "messages" {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -251,6 +277,16 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request, 
 	})
 }
 
+func writeConversationError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	if errors.Is(err, app.ErrConversationNotFound) {
+		status = http.StatusNotFound
+	} else if errors.Is(err, app.ErrConversationForbidden) {
+		status = http.StatusForbidden
+	}
+	writeError(w, status, err.Error())
+}
+
 func readLimitParam(values url.Values, fallback int, max int) int {
 	raw := strings.TrimSpace(values.Get("limit"))
 	if raw == "" {
@@ -275,6 +311,10 @@ type chatRequest struct {
 	BookID         string `json:"bookId"`
 	Question       string `json:"question"`
 	Debug          bool   `json:"debug,omitempty"`
+}
+
+type renameConversationRequest struct {
+	Title string `json:"title"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

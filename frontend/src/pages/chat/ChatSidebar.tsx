@@ -65,12 +65,26 @@ const sidebarTw = {
   sidebarHistoryToggle:
     'group/expando-btn inline-flex w-full cursor-pointer items-center justify-start gap-[2px] rounded-none border-0 bg-transparent px-4 py-[6px] text-left text-[#737373] hover:text-[#5f5f5f]',
   sidebarHistoryTitle: 'm-0 text-[14px] leading-4 font-medium tracking-[0]',
-  sidebarThreadList: 'mb-2 grid gap-0 px-2',
+  sidebarThreadHistory: 'mb-2 px-2',
+  sidebarThreadList: 'm-0 list-none p-0',
+  sidebarThreadItem: 'list-none',
   sidebarThreadButton:
-    'group/thread relative block min-h-[34px] cursor-pointer rounded-[10px] border-0 bg-transparent px-[9px] pr-[30px] text-left text-[#0d0d0d] transition-colors duration-120 hover:bg-[#ececec] focus:outline-none',
+    'group/thread group __menu-item hoverable relative flex min-h-[34px] w-full cursor-pointer items-center justify-between gap-0 rounded-[10px] border-0 bg-transparent px-2 py-0 text-left text-[#0d0d0d] transition-all duration-150 hover:bg-[#ececec] focus-visible:bg-[#ececec] focus-visible:outline-none',
   sidebarThreadButtonActive: '!bg-[#ececec] hover:!bg-[#ececec]',
+  sidebarThreadMain: 'flex min-w-0 grow items-center gap-2.5',
+  sidebarThreadGrow: 'flex min-w-0 grow items-center gap-2.5',
   sidebarThreadTitle:
-    'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] leading-[34px] font-normal',
+    'truncate text-[14px] leading-[34px] font-normal',
+  sidebarThreadTrailing:
+    'trailing highlight inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center text-[#737373] opacity-0 transition-opacity duration-150 group-hover/thread:opacity-100 group-focus-within/thread:opacity-100',
+  sidebarThreadOptionsButton:
+    'inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent p-0 text-[#737373] hover:bg-[#dfdfdf] focus-visible:bg-[#dfdfdf] focus-visible:outline-none',
+  sidebarThreadMenu:
+    'absolute right-2 top-[30px] z-40 grid min-w-[150px] overflow-hidden rounded-[12px] border border-[rgba(0,0,0,0.10)] bg-white py-1 shadow-[0_12px_34px_rgba(0,0,0,0.16)]',
+  sidebarThreadMenuButton:
+    'grid min-h-9 w-full cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-center gap-2 border-0 bg-transparent px-3 text-left text-[13px] text-[#171717] hover:bg-[#f1f1f1] focus-visible:bg-[#f1f1f1] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45',
+  sidebarThreadMenuDanger:
+    'text-[#a4161a] hover:bg-[#fff1f1] focus-visible:bg-[#fff1f1]',
   sidebarAccountPanel:
     'sticky bottom-0 z-30 bg-[#f9f9f9] p-2 pt-2 shadow-[0_-18px_26px_rgba(249,249,249,0.92)]',
   sidebarAccountCard:
@@ -136,6 +150,7 @@ export type SidebarThreadItem = {
   title: string
   preview?: string
   active?: boolean
+  bookId?: string
 }
 
 type ChatSidebarProps = {
@@ -153,6 +168,9 @@ type ChatSidebarProps = {
   onToggleHistoryExpanded: () => void
   threads: SidebarThreadItem[]
   onThreadClick: (threadID: string) => void
+  onRenameThread?: (threadID: string, title: string) => void
+  onDeleteThread?: (threadID: string) => void
+  onOpenThreadBook?: (bookID: string) => void
   onNewChatClick: () => void
   onLibraryClick: () => void
   isLibraryActive?: boolean
@@ -184,6 +202,9 @@ export function ChatSidebar({
   onToggleHistoryExpanded,
   threads,
   onThreadClick,
+  onRenameThread,
+  onDeleteThread,
+  onOpenThreadBook,
   onNewChatClick,
   onLibraryClick,
   isLibraryActive = false,
@@ -208,6 +229,7 @@ export function ChatSidebar({
   const [displayNameDraft, setDisplayNameDraft] = useState(sessionUser?.displayName ?? '')
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false)
+  const [openThreadMenuId, setOpenThreadMenuId] = useState('')
   const displayName = sessionUser?.displayName?.trim() || accountEmail
   const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
   const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
@@ -241,6 +263,30 @@ export function ChatSidebar({
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [isProfileMenuOpen])
+
+  useEffect(() => {
+    if (!openThreadMenuId) return undefined
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement | null
+      if (!target?.closest('[data-thread-menu-root="true"]')) {
+        setOpenThreadMenuId('')
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpenThreadMenuId('')
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openThreadMenuId])
 
   useEffect(() => {
     if (!isProfileDialogOpen) return undefined
@@ -521,33 +567,126 @@ export function ChatSidebar({
           </div>
 
           {isHistoryExpanded ? (
-            <div className={sidebarTw.sidebarThreadList}>
-              {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className={cx(
-                    sidebarTw.sidebarThreadButton,
-                    thread.active && sidebarTw.sidebarThreadButtonActive,
-                  )}
-                  aria-current={thread.active ? 'true' : undefined}
-                  onClick={() => onThreadClick(thread.id)}
-                  title={thread.preview || undefined}
-                >
-                  <span className={sidebarTw.sidebarThreadTitle}>{thread.title}</span>
-                  <span
-                    className={cx(
-                      'pointer-events-none absolute right-[6px] top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-[6px] text-[#8c8c8c] opacity-0 transition-opacity duration-140 group-hover/thread:opacity-100',
-                      thread.active && 'opacity-100',
-                    )}
-                    aria-hidden="true"
-                  >
-                    <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={sidebarTw.iconBlockH14W14}>
-                      <path d="M5 10a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 5 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 10 10Zm5 0a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 15 10Z" fill="currentColor" />
-                    </svg>
-                  </span>
-                </button>
-              ))}
+            <div id="history" className={sidebarTw.sidebarThreadHistory}>
+              <ul className={sidebarTw.sidebarThreadList}>
+                {threads.map((thread) => (
+                  <li key={thread.id} className={sidebarTw.sidebarThreadItem}>
+                    <div
+                      className={cx(
+                        sidebarTw.sidebarThreadButton,
+                        thread.active && sidebarTw.sidebarThreadButtonActive,
+                      )}
+                      tabIndex={0}
+                      role="link"
+                      draggable
+                      data-active={thread.active ? '' : undefined}
+                      data-fill=""
+                      data-discover="true"
+                      data-sidebar-item="true"
+                      aria-current={thread.active ? 'true' : undefined}
+                      aria-label={thread.title}
+                      onClick={() => onThreadClick(thread.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onThreadClick(thread.id)
+                        }
+                      }}
+                      title={thread.preview || undefined}
+                      data-thread-menu-root="true"
+                    >
+                      <div className={sidebarTw.sidebarThreadMain}>
+                        <div className={sidebarTw.sidebarThreadGrow}>
+                          <div className={sidebarTw.sidebarThreadTitle}>
+                            <span dir="auto">{thread.title}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className={cx(sidebarTw.sidebarThreadTrailing, thread.active && 'opacity-100')}>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className={sidebarTw.sidebarThreadOptionsButton}
+                            data-trailing-button=""
+                            data-testid={`history-item-${thread.id}-options`}
+                            data-conversation-options-trigger={thread.id}
+                            aria-label={`打开“${thread.title}”的对话选项`}
+                            aria-haspopup="menu"
+                            aria-expanded={openThreadMenuId === thread.id}
+                            data-state={openThreadMenuId === thread.id ? 'open' : 'closed'}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              setOpenThreadMenuId((current) => (current === thread.id ? '' : thread.id))
+                            }}
+                          >
+                            <div>
+                              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={sidebarTw.iconBlockH5W5}>
+                                <path d="M5 11.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z" fill="currentColor" />
+                              </svg>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                      {openThreadMenuId === thread.id ? (
+                        <div
+                          className={sidebarTw.sidebarThreadMenu}
+                          role="menu"
+                          aria-label={`“${thread.title}”的对话选项`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className={sidebarTw.sidebarThreadMenuButton}
+                            role="menuitem"
+                            onClick={() => {
+                              setOpenThreadMenuId('')
+                              onRenameThread?.(thread.id, thread.title)
+                            }}
+                          >
+                            <span aria-hidden="true">Aa</span>
+                            <span>重命名</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={sidebarTw.sidebarThreadMenuButton}
+                            role="menuitem"
+                            disabled={!thread.bookId}
+                            onClick={() => {
+                              if (!thread.bookId) return
+                              setOpenThreadMenuId('')
+                              onOpenThreadBook?.(thread.bookId)
+                            }}
+                          >
+                            <span aria-hidden="true">
+                              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={sidebarTw.iconBlockH14W14}>
+                                <use href={`${CHAT_ICON_SPRITE_URL}#chat-library`} fill="currentColor" />
+                              </svg>
+                            </span>
+                            <span>打开书籍</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={cx(sidebarTw.sidebarThreadMenuButton, sidebarTw.sidebarThreadMenuDanger)}
+                            role="menuitem"
+                            onClick={() => {
+                              setOpenThreadMenuId('')
+                              onDeleteThread?.(thread.id)
+                            }}
+                          >
+                            <span aria-hidden="true">
+                              <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" className={sidebarTw.iconBlockH14W14}>
+                                <path d="M6.5 5.5h7m-5.5 0V4.25A1.25 1.25 0 0 1 9.25 3h1.5A1.25 1.25 0 0 1 12 4.25V5.5m-5 0 .45 10A1.5 1.5 0 0 0 8.95 17h2.1a1.5 1.5 0 0 0 1.5-1.5l.45-10M8.75 8.25v5.5m2.5-5.5v5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                              </svg>
+                            </span>
+                            <span>删除</span>
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
         </div>

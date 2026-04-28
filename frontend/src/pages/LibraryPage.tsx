@@ -6,7 +6,9 @@ import { getApiErrorMessage, logout } from '@/features/auth/api/auth'
 import { useSessionStore } from '@/features/auth/store/session'
 import {
   conversationQueryKeys,
+  deleteConversation,
   fetchConversationSummaries,
+  renameConversation,
   useChatSidebarState,
 } from '@/pages/chat/shared'
 import {
@@ -134,6 +136,12 @@ const libraryTw = {
     'inline-flex items-center rounded-[9999px] bg-[#f4f4f4] px-2 py-[3px] text-[11px] font-medium text-[#4f4f4f]',
   tagPill:
     'inline-flex items-center rounded-[9999px] border border-[rgba(0,0,0,0.08)] bg-[#fafafa] px-2 py-[3px] text-[11px] text-[#4f4f4f]',
+  documentProfile:
+    'mt-3 grid gap-2 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-[#fbfbfb] px-3 py-2',
+  documentProfileSummary: 'line-clamp-3 text-[12px] leading-5 text-[#555]',
+  documentProfileRow: 'flex flex-wrap gap-1.5',
+  documentProfilePill:
+    'inline-flex rounded-full bg-[#eeeeee] px-2 py-[3px] text-[11px] text-[#4f4f4f]',
   editPanel:
     'mt-3 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-[#fafafa] p-3',
   empty:
@@ -339,6 +347,7 @@ export function LibraryPage() {
       (conversationsQuery.data ?? []).map((item) => ({
         id: item.id,
         title: item.title || '新对话',
+        bookId: item.bookId,
         updatedAt: Date.parse(item.lastMessageAt || item.updatedAt) || Date.now(),
         preview: '',
       })),
@@ -359,6 +368,7 @@ export function LibraryPage() {
         id: thread.id,
         title: thread.title,
         preview: thread.preview,
+        bookId: thread.bookId,
       })),
     [filteredChatThreads],
   )
@@ -389,6 +399,33 @@ export function LibraryPage() {
       navigate(`/chat/${threadID}`)
     },
     [navigate],
+  )
+  const handleRenameThread = useCallback(
+    async (threadID: string, currentTitle: string) => {
+      const nextTitle = window.prompt('重命名对话', currentTitle)?.trim()
+      if (!nextTitle || nextTitle === currentTitle) return
+      try {
+        await renameConversation(threadID, { title: nextTitle })
+        await queryClient.invalidateQueries({ queryKey: conversationQueryKeys.list(sessionUser?.id ?? '', 100) })
+      } catch (error) {
+        setActionErrorText(getApiErrorMessage(error, '重命名对话失败，请稍后重试。'))
+      }
+    },
+    [queryClient, sessionUser?.id],
+  )
+  const handleDeleteThread = useCallback(
+    async (threadID: string) => {
+      const target = sidebarThreads.find((thread) => thread.id === threadID)
+      const confirmed = window.confirm(`删除“${target?.title ?? '该对话'}”吗？此操作不可撤销。`)
+      if (!confirmed) return
+      try {
+        await deleteConversation(threadID)
+        await queryClient.invalidateQueries({ queryKey: conversationQueryKeys.list(sessionUser?.id ?? '', 100) })
+      } catch (error) {
+        setActionErrorText(getApiErrorMessage(error, '删除对话失败，请稍后重试。'))
+      }
+    },
+    [queryClient, sessionUser?.id, sidebarThreads],
   )
 
   useEffect(() => {
@@ -560,6 +597,9 @@ export function LibraryPage() {
         onToggleHistoryExpanded={toggleHistoryExpanded}
         threads={sidebarThreads}
         onThreadClick={handleSidebarThreadClick}
+        onRenameThread={(threadID, title) => void handleRenameThread(threadID, title)}
+        onDeleteThread={(threadID) => void handleDeleteThread(threadID)}
+        onOpenThreadBook={handleGoChat}
         onNewChatClick={handleGoChat}
         onLibraryClick={handleOpenLibrary}
         isLibraryActive
@@ -793,6 +833,36 @@ export function LibraryPage() {
                             </div>
                             {book.status === 'failed' && book.errorMessage ? (
                               <p className="mt-1 text-[12px] text-[#b42318]">{book.errorMessage}</p>
+                            ) : null}
+                            {book.status === 'ready' &&
+                            (book.documentSummary || book.documentType || book.keywords?.length || book.documentEntities?.length || book.documentFacts?.length) ? (
+                              <div className={libraryTw.documentProfile}>
+                                {book.documentType ? (
+                                  <div className={libraryTw.documentProfileRow}>
+                                    <span className={libraryTw.documentProfilePill}>类型：{book.documentType}</span>
+                                  </div>
+                                ) : null}
+                                {book.documentSummary ? (
+                                  <p className={libraryTw.documentProfileSummary}>{book.documentSummary}</p>
+                                ) : null}
+                                <div className={libraryTw.documentProfileRow}>
+                                  {(book.keywords ?? []).slice(0, 5).map((keyword) => (
+                                    <span key={keyword} className={libraryTw.documentProfilePill}>
+                                      {keyword}
+                                    </span>
+                                  ))}
+                                  {(book.documentEntities ?? []).slice(0, 4).map((entity) => (
+                                    <span key={`${entity.type}-${entity.value}`} className={libraryTw.documentProfilePill}>
+                                      {entity.label || entity.type}: {entity.value}
+                                    </span>
+                                  ))}
+                                  {(book.documentFacts ?? []).slice(0, 4).map((fact) => (
+                                    <span key={`${fact.key}-${fact.value}`} className={libraryTw.documentProfilePill}>
+                                      {fact.label || fact.key}: {fact.value}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
                             ) : null}
                             {editingBookID === book.id ? (
                               <div className={libraryTw.editPanel}>

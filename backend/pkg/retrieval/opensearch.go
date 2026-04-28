@@ -125,6 +125,9 @@ func (c *OpenSearchClient) IndexDocuments(ctx context.Context, docs []LexicalDoc
 			"tags":          strings.TrimSpace(anyString(doc.Payload["tags"])),
 			"block_type":    strings.TrimSpace(anyString(doc.Payload["block_type"])),
 			"language":      strings.TrimSpace(anyString(doc.Payload["language"])),
+			"is_first_page": strings.TrimSpace(anyString(doc.Payload["is_first_page"])),
+			"entities":      strings.TrimSpace(anyString(doc.Payload["entities"])),
+			"facts":         strings.TrimSpace(anyString(doc.Payload["facts"])),
 		}
 		if err := enc.Encode(source); err != nil {
 			return err
@@ -222,6 +225,9 @@ func (c *OpenSearchClient) QueryBM25(ctx context.Context, bookID, terms string, 
 			"tags":          strings.TrimSpace(anyString(hit.Source["tags"])),
 			"block_type":    strings.TrimSpace(anyString(hit.Source["block_type"])),
 			"language":      strings.TrimSpace(anyString(hit.Source["language"])),
+			"is_first_page": strings.TrimSpace(anyString(hit.Source["is_first_page"])),
+			"entities":      strings.TrimSpace(anyString(hit.Source["entities"])),
+			"facts":         strings.TrimSpace(anyString(hit.Source["facts"])),
 		}
 		points = append(points, Point{
 			ID:      strings.TrimSpace(anyString(payload["chunk_id"])),

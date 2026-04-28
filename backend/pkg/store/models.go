@@ -57,6 +57,8 @@ type BookModel struct {
 	DocumentSummary      string         `gorm:"type:text;not null;default:''"`
 	FirstPageText        string         `gorm:"type:text;not null;default:''"`
 	Keywords             datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	DocumentEntities     datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	DocumentFacts        datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'"`
 	StorageKey           string
 	Status               string `gorm:"not null"`
 	ErrorMessage         string
@@ -89,6 +91,7 @@ type MessageModel struct {
 	Role           string         `gorm:"not null"`
 	Content        string         `gorm:"not null"`
 	Sources        datatypes.JSON `gorm:"type:jsonb"`
+	Metadata       datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt      time.Time      `gorm:"not null;index"`
 }
 

@@ -24,6 +24,8 @@ export type ThreadSource = {
   label: string
   location: string
   snippet?: string
+  sourceReason?: string
+  evidenceType?: string
 }
 
 export type ThreadMessage = {
@@ -32,6 +34,7 @@ export type ThreadMessage = {
   text: string
   createdAt: number
   sources?: ThreadSource[]
+  debug?: RetrievalDebug
 }
 
 export type ThreadStatus = 'idle' | 'sending' | 'error'
@@ -59,6 +62,12 @@ export type BookSummary = {
   id: string
   title: string
   status: 'queued' | 'processing' | 'ready' | 'failed'
+  documentType?: string
+  documentSummary?: string
+  firstPageText?: string
+  keywords?: string[]
+  documentEntities?: DocumentEntity[]
+  documentFacts?: DocumentFact[]
 }
 
 export type ListBooksResponse = {
@@ -86,41 +95,74 @@ export type ChatAnswer = {
     sourceRef?: string
     score?: number
     language?: string
+    sourceReason?: string
+    evidenceType?: string
   }>
   abstained: boolean
-  retrievalDebug?: {
-    language: string
-    queries: string[]
-    lexical?: Array<{
-      chunkId: string
-      sourceRef?: string
-      score: number
-      stage: string
-      snippet?: string
-    }>
-    dense?: Array<{
-      chunkId: string
-      sourceRef?: string
-      score: number
-      stage: string
-      snippet?: string
-    }>
-    fused?: Array<{
-      chunkId: string
-      sourceRef?: string
-      score: number
-      stage: string
-      snippet?: string
-    }>
-    reranked?: Array<{
-      chunkId: string
-      sourceRef?: string
-      score: number
-      stage: string
-      snippet?: string
-    }>
-  }
+  retrievalDebug?: RetrievalDebug
   createdAt: string
+}
+
+export type DocumentEntity = {
+  type: string
+  value: string
+  label?: string
+  page?: string
+}
+
+export type DocumentFact = {
+  key: string
+  value: string
+  label?: string
+  page?: string
+  sourceRef?: string
+}
+
+export type QueryPlan = {
+  route: string
+  questionType: string
+  originalQuestion: string
+  standaloneQuestion: string
+  retrievalQueries?: string[]
+  requiredEvidenceCount: number
+  reuseChunkIds?: string[]
+  needsRetrieval: boolean
+  needsHistory: boolean
+}
+
+export type RetrievalEvidence = {
+  chunkId: string
+  page?: string
+  location?: string
+  snippet: string
+  score?: number
+  sourceReason: string
+  evidenceType: string
+}
+
+export type RetrievalHit = {
+  chunkId: string
+  sourceRef?: string
+  score: number
+  stage: string
+  snippet?: string
+}
+
+export type RetrievalDebug = {
+  language: string
+  queries: string[]
+  route?: string
+  questionType?: string
+  standaloneQuestion?: string
+  requiredEvidenceCount?: number
+  selectedChunkIds?: string[]
+  selectedEvidence?: RetrievalEvidence[]
+  validationReason?: string
+  queryPlan?: QueryPlan
+  lexical?: RetrievalHit[]
+  dense?: RetrievalHit[]
+  fused?: RetrievalHit[]
+  reranked?: RetrievalHit[]
 }
 
 export function nowTimestamp(): number {
@@ -210,6 +252,14 @@ export type ConversationSummary = {
   updatedAt: string
 }
 
+export type RenameConversationPayload = {
+  title: string
+}
+
+export type DeleteConversationResponse = {
+  status: string
+}
+
 type ListConversationsResponse = {
   items: ConversationSummary[]
   count: number
@@ -222,6 +272,16 @@ export const conversationQueryKeys = {
 export async function fetchConversationSummaries(limit: number): Promise<ConversationSummary[]> {
   const { data } = await http.get<ListConversationsResponse>(`/api/conversations?limit=${limit}`)
   return Array.isArray(data.items) ? data.items : []
+}
+
+export async function renameConversation(id: string, payload: RenameConversationPayload): Promise<ConversationSummary> {
+  const { data } = await http.patch<ConversationSummary>(`/api/conversations/${encodeURIComponent(id)}`, payload)
+  return data
+}
+
+export async function deleteConversation(id: string): Promise<DeleteConversationResponse> {
+  const { data } = await http.delete<DeleteConversationResponse>(`/api/conversations/${encodeURIComponent(id)}`)
+  return data
 }
 
 type UseChatSidebarStateResult = {

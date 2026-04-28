@@ -252,6 +252,95 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /conversations/{id}:
+    patch:
+      tags: [chat-internal]
+      summary: Rename a conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameConversationRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationSummary"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [chat-internal]
+      summary: Delete a conversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                required: [status]
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /conversations/{id}/messages:
     get:
       tags: [chat-internal]
@@ -793,6 +882,14 @@ components:
           type: array
           items:
             type: string
+        documentEntities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentEntity"
+        documentFacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentFact"
         status:
           type: string
           enum: [queued, processing, ready, failed]
@@ -808,6 +905,32 @@ components:
           type: string
           format: date-time
       required: [id, ownerId, title, originalFilename, primaryCategory, tags, format, language, status, sizeBytes, createdAt, updatedAt]
+    DocumentEntity:
+      type: object
+      properties:
+        type:
+          type: string
+        value:
+          type: string
+        label:
+          type: string
+        page:
+          type: string
+      required: [type, value]
+    DocumentFact:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        label:
+          type: string
+        page:
+          type: string
+        sourceRef:
+          type: string
+      required: [key, value]
     InternalBookFileResponse:
       type: object
       properties:
@@ -844,7 +967,100 @@ components:
           type: string
         snippet:
           type: string
+        chunkId:
+          type: string
+        sourceRef:
+          type: string
+        score:
+          type: number
+          format: double
+        language:
+          type: string
+        sourceReason:
+          type: string
+        evidenceType:
+          type: string
       required: [label, location, snippet]
+    QueryPlan:
+      type: object
+      properties:
+        route:
+          type: string
+        questionType:
+          type: string
+        originalQuestion:
+          type: string
+        standaloneQuestion:
+          type: string
+        retrievalQueries:
+          type: array
+          items:
+            type: string
+        requiredEvidenceCount:
+          type: integer
+        reuseChunkIds:
+          type: array
+          items:
+            type: string
+        needsRetrieval:
+          type: boolean
+        needsHistory:
+          type: boolean
+      required: [route, questionType, originalQuestion, standaloneQuestion, requiredEvidenceCount, needsRetrieval, needsHistory]
+    Evidence:
+      type: object
+      properties:
+        chunkId:
+          type: string
+        page:
+          type: string
+        location:
+          type: string
+        snippet:
+          type: string
+        score:
+          type: number
+          format: double
+        sourceReason:
+          type: string
+        evidenceType:
+          type: string
+      required: [chunkId, snippet, sourceReason, evidenceType]
+    ValidationResult:
+      type: object
+      properties:
+        passed:
+          type: boolean
+        reason:
+          type: string
+      required: [passed]
+    AnswerTrace:
+      type: object
+      properties:
+        queryPlan:
+          $ref: "#/components/schemas/QueryPlan"
+        selectedEvidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        validationResult:
+          $ref: "#/components/schemas/ValidationResult"
+      required: [queryPlan, validationResult]
+    MessageMetadata:
+      type: object
+      properties:
+        queryPlan:
+          $ref: "#/components/schemas/QueryPlan"
+        answerTrace:
+          $ref: "#/components/schemas/AnswerTrace"
+        keyEntities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentEntity"
+        selectedChunkIds:
+          type: array
+          items:
+            type: string
     Answer:
       type: object
       properties:
@@ -860,6 +1076,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Source"
+        metadata:
+          $ref: "#/components/schemas/MessageMetadata"
         createdAt:
           type: string
           format: date-time
@@ -876,6 +1094,12 @@ components:
         debug:
           type: boolean
       required: [bookId, question]
+    RenameConversationRequest:
+      type: object
+      properties:
+        title:
+          type: string
+      required: [title]
     ConversationSummary:
       type: object
       properties:

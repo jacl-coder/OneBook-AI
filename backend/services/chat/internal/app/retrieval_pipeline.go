@@ -135,8 +135,236 @@ func (a *App) buildRetrievalQueries(ctx context.Context, question string) []stri
 	return uniqueRetrievalQueries(queries)
 }
 
+func (a *App) contextualizeRetrievalQuestion(ctx context.Context, book domain.Book, question string, history []domain.Message) string {
+	question = strings.TrimSpace(question)
+	if question == "" || !needsConversationAwareRetrieval(question, history) {
+		return question
+	}
+	historyText := recentHistoryForRetrievalRewrite(history, 4, 1400)
+	if historyText == "" {
+		return question
+	}
+	if a.generator != nil {
+		prompt := fmt.Sprintf(
+			"书名：%s\n文件名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n请把当前问题改写成一个可直接检索文档内容的独立中文问题。只输出改写后的问题，不要解释。",
+			firstNonEmpty(book.Title, book.OriginalFilename),
+			book.OriginalFilename,
+			historyText,
+			question,
+		)
+		out, err := a.generator.GenerateText(ctx, "你负责把多轮对话中的省略追问改写成独立检索问题。必须保留用户原始意图，不回答问题。", prompt)
+		if err == nil {
+			if rewritten := cleanStandaloneRetrievalQuestion(out); rewritten != "" {
+				return rewritten
+			}
+		}
+	}
+	return fallbackContextualRetrievalQuestion(book, question, historyText)
+}
+
+func (a *App) requiredEvidenceCount(question string, retrievalQuestion string) int {
+	minEvidenceCount := a.minEvidenceCount
+	if minEvidenceCount <= 0 {
+		minEvidenceCount = 2
+	}
+	if isSingleFactQuestion(question) || isSingleFactQuestion(retrievalQuestion) {
+		return 1
+	}
+	return minEvidenceCount
+}
+
+func isSingleFactQuestion(question string) bool {
+	normalized := normalizeRouterText(question)
+	if normalized == "" {
+		return false
+	}
+	if len([]rune(normalized)) > 42 {
+		return false
+	}
+	complexTerms := []string{
+		"为什么",
+		"原因",
+		"分析",
+		"评价",
+		"比较",
+		"区别",
+		"总结",
+		"概括",
+		"主要",
+		"详细",
+		"展开",
+		"如何",
+		"怎么",
+		"影响",
+		"意义",
+		"关系",
+	}
+	for _, term := range complexTerms {
+		if strings.Contains(normalized, normalizeRouterText(term)) {
+			return false
+		}
+	}
+	factTerms := []string{
+		"谁",
+		"哪位",
+		"哪个",
+		"什么时间",
+		"什么时候",
+		"何时",
+		"多少",
+		"姓名",
+		"名字",
+		"学生",
+		"同学",
+		"人员",
+		"单位",
+		"学校",
+		"部门",
+		"岗位",
+		"日期",
+		"时间",
+		"地点",
+		"编号",
+		"号码",
+		"电话",
+		"邮箱",
+	}
+	for _, term := range factTerms {
+		if strings.Contains(normalized, normalizeRouterText(term)) {
+			return true
+		}
+	}
+	return false
+}
+
+func needsConversationAwareRetrieval(question string, history []domain.Message) bool {
+	normalized := normalizeRouterText(question)
+	if normalized == "" || !hasRecentAssistantReply(history) {
+		return false
+	}
+	if looksLikeConversationReference(normalized) {
+		return true
+	}
+	if len([]rune(normalized)) > 36 {
+		return false
+	}
+	tokens := []string{
+		"谁",
+		"什么",
+		"哪个",
+		"哪位",
+		"多少",
+		"几",
+		"什么时候",
+		"何时",
+		"学生",
+		"同学",
+		"人员",
+		"姓名",
+		"时间",
+		"单位",
+		"岗位",
+		"部门",
+		"它",
+		"他",
+		"她",
+		"这个",
+		"这份",
+		"该",
+	}
+	for _, token := range tokens {
+		if strings.Contains(normalized, normalizeRouterText(token)) {
+			return true
+		}
+	}
+	return false
+}
+
+func recentHistoryForRetrievalRewrite(history []domain.Message, maxMessages int, maxRunes int) string {
+	if maxMessages <= 0 || maxRunes <= 0 {
+		return ""
+	}
+	selected := make([]domain.Message, 0, maxMessages)
+	for i := len(history) - 1; i >= 0 && len(selected) < maxMessages; i-- {
+		if strings.TrimSpace(history[i].Content) == "" {
+			continue
+		}
+		selected = append(selected, history[i])
+	}
+	if len(selected) == 0 {
+		return ""
+	}
+	for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
+		selected[i], selected[j] = selected[j], selected[i]
+	}
+	text := buildHistory(selected)
+	if len([]rune(text)) <= maxRunes {
+		return text
+	}
+	runes := []rune(text)
+	return string(runes[len(runes)-maxRunes:])
+}
+
+func cleanStandaloneRetrievalQuestion(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, "` \t\r\n")
+	text = strings.Trim(text, "\"'“”‘’")
+	if text == "" {
+		return ""
+	}
+	if idx := strings.IndexAny(text, "\r\n"); idx >= 0 {
+		text = strings.TrimSpace(text[:idx])
+	}
+	text = strings.TrimPrefix(text, "问题：")
+	text = strings.TrimPrefix(text, "改写：")
+	text = strings.TrimSpace(text)
+	if text == "" || strings.Contains(text, "无法") || strings.Contains(text, "证据不足") {
+		return ""
+	}
+	if len([]rune(text)) > 180 {
+		runes := []rune(text)
+		text = string(runes[:180])
+	}
+	return text
+}
+
+func fallbackContextualRetrievalQuestion(book domain.Book, question string, historyText string) string {
+	parts := []string{
+		strings.TrimSpace(book.Title),
+		strings.TrimSpace(book.OriginalFilename),
+		limitRewriteContextRunes(historyText, 700),
+		strings.TrimSpace(question),
+	}
+	return strings.Join(normalizeRetrievalQueries(parts), " ")
+}
+
+func limitRewriteContextRunes(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if limit <= 0 || len([]rune(text)) <= limit {
+		return text
+	}
+	runes := []rune(text)
+	return string(runes[len(runes)-limit:])
+}
+
 func (a *App) retrieveEvidence(ctx context.Context, book domain.Book, question string) ([]retrieval.StageHit, *domain.RetrievalDebug, error) {
 	queries := a.buildRetrievalQueries(ctx, question)
+	return a.retrieveEvidenceWithQueries(ctx, book, question, queries)
+}
+
+func (a *App) retrieveEvidenceForPlan(ctx context.Context, book domain.Book, plan domain.QueryPlan) ([]retrieval.StageHit, *domain.RetrievalDebug, error) {
+	question := strings.TrimSpace(plan.StandaloneQuestion)
+	if question == "" {
+		question = strings.TrimSpace(plan.OriginalQuestion)
+	}
+	queries := plan.RetrievalQueries
+	if len(queries) == 0 {
+		queries = a.buildRetrievalQueries(ctx, question)
+	}
+	return a.retrieveEvidenceWithQueries(ctx, book, question, queries)
+}
+
+func (a *App) retrieveEvidenceWithQueries(ctx context.Context, book domain.Book, question string, queries []string) ([]retrieval.StageHit, *domain.RetrievalDebug, error) {
 	pipeline := retrieval.Pipeline{
 		Dense: func(ctx context.Context, query, _ string, topK int) ([]retrieval.StageHit, error) {
 			vector, err := a.embedder.EmbedText(ctx, query, "RETRIEVAL_QUERY")
@@ -228,6 +456,9 @@ func pointMetadata(payload map[string]any) map[string]string {
 		"title":          strings.TrimSpace(anyString(payload["title"])),
 		"section_title":  strings.TrimSpace(anyString(payload["section_title"])),
 		"block_type":     strings.TrimSpace(anyString(payload["block_type"])),
+		"is_first_page":  strings.TrimSpace(anyString(payload["is_first_page"])),
+		"entities":       strings.TrimSpace(anyString(payload["entities"])),
+		"facts":          strings.TrimSpace(anyString(payload["facts"])),
 	}
 }
 

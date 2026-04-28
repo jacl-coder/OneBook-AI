@@ -299,54 +299,64 @@ func (a *App) askQuestion(
 		}
 	}
 	historyText := buildHistory(history)
-	decision := decideQueryRoute(question, history)
+	plan := a.buildQueryPlan(ctx, book, question, history)
 
 	var (
 		answerText string
 		abstained  bool
 		citations  []domain.Source
 		debugInfo  *domain.RetrievalDebug
+		trace      domain.AnswerTrace
 	)
-	switch decision.Route {
+	switch queryRoute(plan.Route) {
 	case queryRouteHistoryOnly:
 		answerText, citations, abstained, err = a.answerFromHistoryWithChunk(ctx, book, question, historyText, history, onChunk)
 		if err != nil {
 			return domain.Answer{}, false, err
 		}
+		trace = domain.AnswerTrace{QueryPlan: plan, ValidationResult: domain.ValidationResult{Passed: !abstained, Reason: validationReason(abstained, "history only answer")}}
 	case queryRouteDocumentOverview:
 		answerText, citations, abstained, err = a.answerDocumentOverview(ctx, book, question, onChunk)
 		if err != nil {
 			return domain.Answer{}, false, err
 		}
+		trace = domain.AnswerTrace{QueryPlan: plan, SelectedEvidence: sourcesToEvidence(citations, "document_overview"), ValidationResult: domain.ValidationResult{Passed: !abstained, Reason: validationReason(abstained, "document overview answer")}}
 	case queryRouteOutOfScopeReject:
 		if a.abstainEnabled {
-			answerText = outOfScopeAbstainAnswer
+			answerText = outOfScopeAbstainAnswer + "\n\n缺少证据原因：这个问题超出当前上传文档和会话上下文。"
 			abstained = true
+			trace = domain.AnswerTrace{QueryPlan: plan, ValidationResult: domain.ValidationResult{Passed: false, Reason: "out of scope"}}
 			break
 		}
 		fallthrough
 	default:
-		retrieved, routeDebug, routeErr := a.retrieveEvidence(ctx, book, question)
+		retrieved, routeDebug, routeErr := a.retrieveEvidenceForPlan(ctx, book, plan)
 		if routeErr != nil {
 			return domain.Answer{}, false, routeErr
 		}
+		selectedEvidence := []domain.Evidence{}
+		retrieved, selectedEvidence, err = a.selectEvidence(ctx, book, plan, retrieved, history)
+		if err != nil {
+			return domain.Answer{}, false, err
+		}
 		debugInfo = routeDebug
-		contextText, routeCitations := buildContext(retrieved)
+		contextText, routeCitations := buildContextWithEvidence(retrieved, selectedEvidence)
 		citations = routeCitations
-		abstained = a.abstainEnabled && len(retrieved) < a.minEvidenceCount
-		answerText = defaultAbstainAnswer
+		validation := validateEvidenceSelection(plan, retrieved, citations, a.abstainEnabled)
+		abstained = !validation.Passed
+		answerText = abstainAnswerForPlan(plan, validation.Reason)
 		if !abstained {
 			var userPrompt string
-			promptRequirement := "要求：只基于证据回答；引用相关编号；证据不足则明确拒答。"
-			systemPrompt := "你是一个严格基于证据回答的读书助手。不要使用证据外知识。每个结论都必须可由提供证据支持。"
+			promptRequirement := answerRequirementForPlan(plan)
+			systemPrompt := "你是一个严格基于证据回答的文档专家。不要使用证据外知识。每个结论都必须可由提供证据支持；引用相关编号。"
 			if !a.abstainEnabled {
 				promptRequirement = "要求：优先基于证据回答；引用相关编号；证据不足时可以给出谨慎的最佳努力回答，并明确说明不确定性，但不要编造引用。"
 				systemPrompt = "你是一个优先基于证据回答的读书助手。可以在证据不足时给出谨慎的最佳努力回答，但必须明确不确定性，且不要虚构引用或把证据外信息说成确定事实。"
 			}
 			if historyText != "" {
-				userPrompt = fmt.Sprintf("书名：%s\n对话历史：\n%s\n\n当前问题：%s\n\n证据：\n%s\n\n%s", book.Title, historyText, question, contextText, promptRequirement)
+				userPrompt = buildStructuredAnswerPrompt(book, plan, historyText, contextText, promptRequirement)
 			} else {
-				userPrompt = fmt.Sprintf("书名：%s\n问题：%s\n\n证据：\n%s\n\n%s", book.Title, question, contextText, promptRequirement)
+				userPrompt = buildStructuredAnswerPrompt(book, plan, "", contextText, promptRequirement)
 			}
 			response, genErr := a.generateAnswerText(ctx, systemPrompt, userPrompt, onChunk)
 			if genErr == nil {
@@ -356,14 +366,22 @@ func (a *App) askQuestion(
 			}
 			if strings.TrimSpace(answerText) == "" {
 				abstained = true
-				answerText = defaultAbstainAnswer
+				validation = domain.ValidationResult{Passed: false, Reason: "模型没有生成可用回答"}
+				answerText = abstainAnswerForPlan(plan, validation.Reason)
 			}
 			if !abstained && a.abstainEnabled && !a.validator.Validate(question, answerText, citations) {
 				abstained = true
-				answerText = defaultAbstainAnswer
+				validation = domain.ValidationResult{Passed: false, Reason: "回答没有充分绑定到已选证据"}
+				answerText = abstainAnswerForPlan(plan, validation.Reason)
 				citations = nil
+				selectedEvidence = nil
 			}
 		}
+		if !abstained && validation.Reason == "" {
+			validation = domain.ValidationResult{Passed: true, Reason: "selected evidence satisfies answer policy"}
+		}
+		trace = domain.AnswerTrace{QueryPlan: plan, SelectedEvidence: selectedEvidence, ValidationResult: validation}
+		enrichRetrievalDebug(debugInfo, trace)
 	}
 	answer := domain.Answer{
 		Conversation: conversation,
@@ -384,6 +402,7 @@ func (a *App) askQuestion(
 		BookID:         book.ID,
 		Role:           "user",
 		Content:        question,
+		Metadata:       domain.MessageMetadata{QueryPlan: &plan},
 		CreatedAt:      userMessageTime,
 	}
 	assistantMessageTime := time.Now().UTC()
@@ -395,6 +414,7 @@ func (a *App) askQuestion(
 		Role:           "assistant",
 		Content:        answer.Answer,
 		Sources:        answer.Citations,
+		Metadata:       domain.MessageMetadata{AnswerTrace: &trace, KeyEntities: book.DocumentEntities, SelectedChunkIDs: selectedChunkIDs(trace.SelectedEvidence)},
 		Abstained:      abstained,
 		CreatedAt:      assistantMessageTime,
 	}
@@ -495,6 +515,62 @@ func (a *App) ListConversations(user domain.User, limit int) ([]domain.Conversat
 		return nil, fmt.Errorf("list conversations: %w", err)
 	}
 	return items, nil
+}
+
+// RenameConversation updates the title of a conversation owned by the current user.
+func (a *App) RenameConversation(user domain.User, conversationID string, title string) (domain.Conversation, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	title = strings.TrimSpace(title)
+	if conversationID == "" {
+		return domain.Conversation{}, fmt.Errorf("conversation id required")
+	}
+	if title == "" {
+		return domain.Conversation{}, fmt.Errorf("conversation title required")
+	}
+	runes := []rune(strings.Join(strings.Fields(title), " "))
+	if len(runes) > 80 {
+		title = string(runes[:80])
+	} else {
+		title = string(runes)
+	}
+	conversation, ok, err := a.store.GetConversation(conversationID)
+	if err != nil {
+		return domain.Conversation{}, fmt.Errorf("load conversation: %w", err)
+	}
+	if !ok {
+		return domain.Conversation{}, ErrConversationNotFound
+	}
+	if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
+		return domain.Conversation{}, ErrConversationForbidden
+	}
+	if err := a.store.UpdateConversation(conversationID, title, time.Time{}); err != nil {
+		return domain.Conversation{}, fmt.Errorf("rename conversation: %w", err)
+	}
+	conversation.Title = title
+	conversation.UpdatedAt = time.Now().UTC()
+	return conversation, nil
+}
+
+// DeleteConversation removes a conversation owned by the current user.
+func (a *App) DeleteConversation(user domain.User, conversationID string) error {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return fmt.Errorf("conversation id required")
+	}
+	conversation, ok, err := a.store.GetConversation(conversationID)
+	if err != nil {
+		return fmt.Errorf("load conversation: %w", err)
+	}
+	if !ok {
+		return ErrConversationNotFound
+	}
+	if conversation.UserID != user.ID && user.Role != domain.RoleAdmin {
+		return ErrConversationForbidden
+	}
+	if err := a.store.DeleteConversation(conversationID); err != nil {
+		return fmt.Errorf("delete conversation: %w", err)
+	}
+	return nil
 }
 
 // GetConversationBookID returns the bookId stored on an existing conversation.
