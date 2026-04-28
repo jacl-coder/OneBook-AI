@@ -84,7 +84,7 @@ const sidebarTw = {
   sidebarProfileMenu:
     'absolute bottom-full left-0 right-0 mb-2 grid max-h-[min(520px,calc(100vh-96px))] min-w-[calc(100%-4px)] gap-0 overflow-auto rounded-[16px] border border-[rgba(0,0,0,0.10)] bg-white py-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.16)]',
   sidebarProfileMenuHeader:
-    'mx-1.5 grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[#f1f1f1]',
+    'mx-1.5 grid min-h-11 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[#f1f1f1]',
   sidebarProfileMenuAvatar:
     'inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d0d0d] text-[11px] font-semibold text-white',
   sidebarProfileMenuName: 'truncate text-[13px] font-medium leading-5 text-[#171717]',
@@ -564,11 +564,6 @@ export function ChatSidebar({
                           <span className={sidebarTw.sidebarProfileMenuName}>{displayName}</span>
                           <span className={sidebarTw.sidebarProfileMenuSub}>{accountEmail || accountRoleLabel}</span>
                         </span>
-                        <span className={sidebarTw.sidebarMenuTrailing} aria-hidden="true">
-                          <svg viewBox="0 0 20 20" className="h-4 w-4">
-                            <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </span>
                       </div>
                       <div className={sidebarTw.sidebarMenuDivider} />
                       <button
@@ -598,11 +593,6 @@ export function ChatSidebar({
                           </svg>
                         </span>
                         <span>个人资料</span>
-                        <span className={sidebarTw.sidebarMenuTrailing} aria-hidden="true">
-                          <svg viewBox="0 0 20 20" className="h-4 w-4">
-                            <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </span>
                       </button>
                       <div className={sidebarTw.sidebarMenuDivider} />
                       <button

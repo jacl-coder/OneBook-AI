@@ -35,7 +35,7 @@ const layoutTw = {
   profileMenu:
     'absolute bottom-full left-0 right-0 z-40 mb-2 grid max-h-[min(520px,calc(100vh-96px))] gap-0 overflow-auto rounded-[16px] border border-[rgba(0,0,0,0.10)] bg-white py-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.16)]',
   profileMenuHeader:
-    'mx-1.5 grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[#f1f1f1]',
+    'mx-1.5 grid min-h-11 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[#f1f1f1]',
   profileMenuAvatar:
     'inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#222] text-[11px] font-semibold text-white',
   profileMenuName: 'truncate text-[13px] font-medium leading-5 text-[#171717]',
@@ -225,11 +225,6 @@ export function AdminLayout() {
                     <span className={layoutTw.profileMenuName}>{displayName}</span>
                     <span className={layoutTw.profileMenuSub}>{sessionUser?.email || '管理员'}</span>
                   </span>
-                  <span className={layoutTw.menuTrailing} aria-hidden="true">
-                    <svg viewBox="0 0 20 20" className="h-4 w-4">
-                      <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
                 </div>
                 <div className={layoutTw.menuDivider} />
                 <button
@@ -255,11 +250,6 @@ export function AdminLayout() {
                     </svg>
                   </span>
                   <span>个人资料</span>
-                  <span className={layoutTw.menuTrailing} aria-hidden="true">
-                    <svg viewBox="0 0 20 20" className="h-4 w-4">
-                      <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
                 </button>
                 <div className={layoutTw.menuDivider} />
                 <button
