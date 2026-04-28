@@ -4,6 +4,7 @@ import type { AuthUser } from '@/features/auth/store/session'
 import type { BookFormat, BookLanguage, BookPrimaryCategory } from '@/features/library/books'
 
 export type AdminUser = AuthUser & {
+  phone: string
   createdAt: string
   updatedAt: string
 }
@@ -174,6 +175,8 @@ export type ListAdminAuditLogsParams = {
 }
 
 export type AdminUserUpdatePayload = {
+  email?: string
+  phone?: string
   role?: 'user' | 'admin'
   status?: 'active' | 'disabled'
 }
@@ -246,6 +249,11 @@ export async function getAdminUser(id: string): Promise<AdminUser> {
 
 export async function updateAdminUser(id: string, payload: AdminUserUpdatePayload): Promise<AdminUser> {
   const { data } = await http.patch<AdminUser>(`/api/admin/users/${id}`, payload)
+  return data
+}
+
+export async function deleteAdminUser(id: string): Promise<{ status: string; deletedBookIds?: string[] }> {
+  const { data } = await http.delete<{ status: string; deletedBookIds?: string[] }>(`/api/admin/users/${id}`)
   return data
 }
 

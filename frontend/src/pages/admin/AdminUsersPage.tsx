@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getApiErrorMessage } from '@/features/auth/api/auth'
 import {
   adminQueryKeys,
-  disableAdminUser,
-  enableAdminUser,
+  deleteAdminUser,
   listAdminUsers,
   updateAdminUser,
+  type AdminUser,
   type ListAdminUsersParams,
 } from '@/features/admin/api/admin'
 
@@ -24,11 +24,24 @@ const usersTw = {
   table: 'min-w-[920px] w-full border-collapse text-left',
   th: 'border-b border-[rgba(0,0,0,0.08)] bg-[#fafafa] px-3 py-2 text-[12px] font-medium text-[#666]',
   td: 'border-b border-[rgba(0,0,0,0.06)] px-3 py-2 text-[13px]',
-  actions: 'inline-flex flex-wrap items-center gap-2',
+  actions: 'inline-flex items-center gap-2',
   actionBtn:
     'inline-flex h-8 items-center rounded-[9999px] border border-[rgba(0,0,0,0.12)] px-[10px] text-[12px] hover:bg-[#f5f5f5] disabled:opacity-50',
+  dangerBtn:
+    'inline-flex h-8 items-center rounded-[9999px] border border-[#f2a6a6] px-[10px] text-[12px] text-[#a4161a] hover:bg-[#fff1f1] disabled:opacity-50',
   notice: 'mb-3 rounded-[12px] border border-[#f4b0b4] bg-[#fff5f6] px-3 py-[10px] text-[13px] text-[#9f1820]',
   pager: 'mt-3 flex items-center justify-between text-[12px] text-[#666]',
+  modalBackdrop: 'fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-4',
+  modalPanel: 'w-full max-w-[520px] rounded-[14px] bg-white p-5 shadow-xl',
+  modalTitle: 'text-[16px] font-semibold text-[#1f1f1f]',
+  modalGrid: 'mt-4 grid gap-3',
+  modalSection: 'mt-4 grid gap-3 border-t border-[rgba(0,0,0,0.08)] pt-4',
+  label: 'grid gap-1 text-[12px] font-medium text-[#555]',
+  segmented: 'grid grid-cols-2 gap-2',
+  segmentBtn:
+    'h-9 rounded-[10px] border border-[rgba(0,0,0,0.12)] px-3 text-[13px] hover:bg-[#f5f5f5] disabled:opacity-50',
+  segmentBtnActive: 'border-[#222] bg-[#222] text-white hover:bg-[#222]',
+  modalActions: 'mt-5 flex justify-end gap-2',
 }
 
 function initialParams(): ListAdminUsersParams {
@@ -47,6 +60,13 @@ export function AdminUsersPage() {
   const queryClient = useQueryClient()
   const [filters, setFilters] = useState<ListAdminUsersParams>(initialParams)
   const [errorText, setErrorText] = useState('')
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
+  const [editForm, setEditForm] = useState({
+    email: '',
+    phone: '',
+    role: 'user' as AdminUser['role'],
+    status: 'active' as AdminUser['status'],
+  })
 
   const queryKey = useMemo(() => adminQueryKeys.users(filters), [filters])
 
@@ -56,10 +76,22 @@ export function AdminUsersPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, role, status }: { id: string; role?: 'user' | 'admin'; status?: 'active' | 'disabled' }) =>
-      updateAdminUser(id, { role, status }),
+    mutationFn: ({
+      id,
+      email,
+      phone,
+      role,
+      status,
+    }: {
+      id: string
+      email?: string
+      phone?: string
+      role?: 'user' | 'admin'
+      status?: 'active' | 'disabled'
+    }) => updateAdminUser(id, { email, phone, role, status }),
     onSuccess: async () => {
       setErrorText('')
+      setEditingUser(null)
       await queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     },
     onError: (error) => {
@@ -67,15 +99,14 @@ export function AdminUsersPage() {
     },
   })
 
-  const toggleStatusMutation = useMutation({
-    mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
-      disabled ? disableAdminUser(id) : enableAdminUser(id),
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteAdminUser(id),
     onSuccess: async () => {
       setErrorText('')
       await queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     },
     onError: (error) => {
-      setErrorText(getApiErrorMessage(error, '用户状态更新失败，请稍后重试。'))
+      setErrorText(getApiErrorMessage(error, '用户删除失败，请稍后重试。'))
     },
   })
 
@@ -84,6 +115,16 @@ export function AdminUsersPage() {
   const page = usersQuery.data?.page ?? filters.page ?? 1
   const pageSize = usersQuery.data?.pageSize ?? filters.pageSize ?? 20
   const totalPages = usersQuery.data?.totalPages ?? 1
+
+  function openEditor(user: AdminUser) {
+    setEditingUser(user)
+    setEditForm({
+      email: user.email ?? '',
+      phone: user.phone ?? '',
+      role: user.role,
+      status: user.status,
+    })
+  }
 
   return (
     <div className={usersTw.panel}>
@@ -95,7 +136,7 @@ export function AdminUsersPage() {
       <div className={usersTw.filters}>
         <input
           className={usersTw.input}
-          placeholder="搜索邮箱或用户ID"
+          placeholder="搜索邮箱、手机号或用户ID"
           value={filters.query ?? ''}
           onChange={(event) => setFilters((prev) => ({ ...prev, query: event.target.value, page: 1 }))}
         />
@@ -140,6 +181,7 @@ export function AdminUsersPage() {
             <tr>
               <th className={usersTw.th}>用户ID</th>
               <th className={usersTw.th}>邮箱</th>
+              <th className={usersTw.th}>手机号</th>
               <th className={usersTw.th}>角色</th>
               <th className={usersTw.th}>状态</th>
               <th className={usersTw.th}>创建时间</th>
@@ -149,71 +191,52 @@ export function AdminUsersPage() {
           <tbody>
             {usersQuery.isLoading ? (
               <tr>
-                <td className={usersTw.td} colSpan={6}>
+                <td className={usersTw.td} colSpan={7}>
                   正在加载...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td className={usersTw.td} colSpan={6}>
+                <td className={usersTw.td} colSpan={7}>
                   暂无数据
                 </td>
               </tr>
             ) : (
-              items.map((item) => (
-                <tr key={item.id}>
-                  <td className={usersTw.td}>{item.id}</td>
-                  <td className={usersTw.td}>{item.email}</td>
-                  <td className={usersTw.td}>{item.role}</td>
-                  <td className={usersTw.td}>{item.status}</td>
-                  <td className={usersTw.td}>{new Date(item.createdAt).toLocaleString()}</td>
-                  <td className={usersTw.td}>
-                    <div className={usersTw.actions}>
-                      <button
-                        type="button"
-                        className={usersTw.actionBtn}
-                        disabled={updateMutation.isPending || item.role === 'admin'}
-                        onClick={() =>
-                          void updateMutation.mutateAsync({
-                            id: item.id,
-                            role: item.role === 'admin' ? 'admin' : 'admin',
-                          })
-                        }
-                      >
-                        设为管理员
-                      </button>
-                      <button
-                        type="button"
-                        className={usersTw.actionBtn}
-                        disabled={updateMutation.isPending || item.role === 'user'}
-                        onClick={() => void updateMutation.mutateAsync({ id: item.id, role: 'user' })}
-                      >
-                        设为用户
-                      </button>
-                      <button
-                        type="button"
-                        className={usersTw.actionBtn}
-                        disabled={toggleStatusMutation.isPending || item.status === 'disabled'}
-                        onClick={() => {
-                          const confirmed = window.confirm(`确认禁用用户 ${item.email} 吗？`)
-                          if (!confirmed) return
-                          void toggleStatusMutation.mutateAsync({ id: item.id, disabled: true })
-                        }}
-                      >
-                        禁用
-                      </button>
-                      <button
-                        type="button"
-                        className={usersTw.actionBtn}
-                        disabled={toggleStatusMutation.isPending || item.status === 'active'}
-                        onClick={() => void toggleStatusMutation.mutateAsync({ id: item.id, disabled: false })}
-                      >
-                        启用
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              items.map((item) => {
+                const userLabel = item.email || item.phone || item.id
+
+                return (
+                  <tr key={item.id}>
+                    <td className={usersTw.td}>{item.id}</td>
+                    <td className={usersTw.td}>{item.email || '-'}</td>
+                    <td className={usersTw.td}>{item.phone || '-'}</td>
+                    <td className={usersTw.td}>{item.role}</td>
+                    <td className={usersTw.td}>{item.status}</td>
+                    <td className={usersTw.td}>{new Date(item.createdAt).toLocaleString()}</td>
+                    <td className={usersTw.td}>
+                      <div className={usersTw.actions}>
+                        <button type="button" className={usersTw.actionBtn} onClick={() => openEditor(item)}>
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className={usersTw.dangerBtn}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              `确认删除用户 ${userLabel} 吗？该用户的书籍会进入删除清理流程。`,
+                            )
+                            if (!confirmed) return
+                            void deleteMutation.mutateAsync(item.id)
+                          }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -255,6 +278,105 @@ export function AdminUsersPage() {
           </select>
         </div>
       </div>
+
+      {editingUser ? (
+        <div className={usersTw.modalBackdrop} role="dialog" aria-modal="true" aria-labelledby="admin-user-edit-title">
+          <div className={usersTw.modalPanel}>
+            <div id="admin-user-edit-title" className={usersTw.modalTitle}>
+              编辑用户
+            </div>
+            <div className="mt-1 break-all text-[12px] text-[#777]">{editingUser.id}</div>
+            <div className={usersTw.modalGrid}>
+              <label className={usersTw.label}>
+                邮箱
+                <input
+                  className={usersTw.input}
+                  value={editForm.email}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="留空则移除邮箱登录"
+                />
+              </label>
+              <label className={usersTw.label}>
+                手机号
+                <input
+                  className={usersTw.input}
+                  value={editForm.phone}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))}
+                  placeholder="留空则移除手机号登录"
+                />
+              </label>
+            </div>
+            <div className={usersTw.modalSection}>
+              <div className={usersTw.label}>
+                角色
+                <div className={usersTw.segmented}>
+                  <button
+                    type="button"
+                    className={`${usersTw.segmentBtn} ${editForm.role === 'user' ? usersTw.segmentBtnActive : ''}`}
+                    onClick={() => setEditForm((prev) => ({ ...prev, role: 'user' }))}
+                  >
+                    普通用户
+                  </button>
+                  <button
+                    type="button"
+                    className={`${usersTw.segmentBtn} ${editForm.role === 'admin' ? usersTw.segmentBtnActive : ''}`}
+                    onClick={() => setEditForm((prev) => ({ ...prev, role: 'admin' }))}
+                  >
+                    管理员
+                  </button>
+                </div>
+              </div>
+              <div className={usersTw.label}>
+                状态
+                <div className={usersTw.segmented}>
+                  <button
+                    type="button"
+                    className={`${usersTw.segmentBtn} ${editForm.status === 'active' ? usersTw.segmentBtnActive : ''}`}
+                    onClick={() => setEditForm((prev) => ({ ...prev, status: 'active' }))}
+                  >
+                    启用
+                  </button>
+                  <button
+                    type="button"
+                    className={`${usersTw.segmentBtn} ${
+                      editForm.status === 'disabled' ? usersTw.segmentBtnActive : ''
+                    }`}
+                    onClick={() => setEditForm((prev) => ({ ...prev, status: 'disabled' }))}
+                  >
+                    禁用
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className={usersTw.modalActions}>
+              <button
+                type="button"
+                className={usersTw.button}
+                disabled={updateMutation.isPending}
+                onClick={() => setEditingUser(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className={usersTw.button}
+                disabled={updateMutation.isPending}
+                onClick={() =>
+                  void updateMutation.mutateAsync({
+                    id: editingUser.id,
+                    email: editForm.email,
+                    phone: editForm.phone,
+                    role: editForm.role,
+                    status: editForm.status,
+                  })
+                }
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
