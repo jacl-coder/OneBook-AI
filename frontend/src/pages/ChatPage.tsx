@@ -1158,7 +1158,7 @@ export function ChatPage() {
       <div
         className={cx(
           'grid h-screen overflow-hidden bg-white text-[#0d0d0d] max-[767px]:grid-cols-[minmax(0,1fr)]',
-          isDesktopSidebarCollapsed ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[260px_minmax(0,1fr)]',
+          isDesktopSidebarCollapsed ? 'grid-cols-[52px_minmax(0,1fr)]' : 'grid-cols-[260px_minmax(0,1fr)]',
         )}
         style={chatUiSansStyle}
       >
@@ -1167,6 +1167,7 @@ export function ChatPage() {
           isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
           isSidebarExpanded={isSidebarExpanded}
           onCloseSidebar={handleCloseSidebar}
+          onOpenSidebar={handleOpenSidebar}
           onMaskClick={() => setIsSidebarOpen(false)}
           searchInputId="chat-thread-search"
           searchInputRef={threadSearchInputRef}
@@ -1197,7 +1198,6 @@ export function ChatPage() {
                 type="button"
                 className={cx(
                   'hidden h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent text-[#0d0d0d] hover:bg-[#f1f1f1] max-[767px]:inline-flex',
-                  isDesktopSidebarCollapsed && 'md:inline-flex',
                 )}
                 aria-label="打开会话侧栏"
                 onClick={handleOpenSidebar}

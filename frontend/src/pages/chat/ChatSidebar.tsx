@@ -27,16 +27,29 @@ const sidebarTw = {
   iconBlockH5W5: 'block h-5 w-5',
   iconBlockH14W14: 'block h-[14px] w-[14px]',
   roleMuted: 'text-[11px] leading-[14px] text-[#6f6f6f]',
-  sidebarHeader: 'block px-4 pt-2',
+  sidebarShell:
+    'relative flex h-full min-h-0 flex-col bg-[#f9f9f9]',
+  sidebarRail:
+    'hidden h-full w-[52px] shrink-0 flex-col items-center bg-transparent pb-2 md:flex',
+  sidebarRailHeader: 'flex h-[52px] items-center justify-center',
+  sidebarRailSection: 'mt-[14px] grid gap-1',
+  sidebarRailGrow: 'flex-1',
+  sidebarRailButton:
+    'inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border-0 bg-transparent p-0 text-[#525252] hover:bg-[#ececec] focus-visible:bg-[#ececec] focus-visible:outline-none disabled:opacity-50',
+  sidebarRailAvatar:
+    'inline-flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full border-0 bg-[#222] p-0 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-50',
+  sidebarContent:
+    'flex h-full min-h-0 w-full flex-col overflow-x-clip overflow-y-auto bg-[#f9f9f9] text-clip whitespace-nowrap opacity-100 transition-opacity duration-150 ease-linear',
+  sidebarHeader: 'sticky top-0 z-30 block bg-[#f9f9f9] px-2 pt-2',
   sidebarHeaderRow: 'flex items-center justify-between',
   sidebarHomeLink:
-    'm-0 inline-flex h-9 w-9 flex-[0_0_36px] items-center justify-center rounded-[10px] p-0 leading-none',
+    'm-0 inline-flex h-9 w-9 flex-[0_0_36px] items-center justify-center rounded-[10px] p-0 leading-none hover:bg-[#ececec] focus-visible:bg-[#ececec]',
   sidebarHomeLogo: 'block h-9 w-9',
   sidebarCloseButton:
-    'mr-[-8px] inline-flex h-9 w-9 shrink-0 cursor-[w-resize] items-center justify-center rounded-[8px] border-0 bg-transparent text-[#737373] hover:bg-[#ececec] focus-visible:bg-[#ececec] max-[767px]:h-10 max-[767px]:w-10',
+    'inline-flex h-9 w-9 shrink-0 cursor-[w-resize] items-center justify-center rounded-[10px] border-0 bg-transparent text-[#737373] hover:bg-[#ececec] focus-visible:bg-[#ececec] max-[767px]:h-10 max-[767px]:w-10',
   sidebarCloseDesktopIcon: 'block h-5 w-5 max-[767px]:hidden',
   sidebarCloseMobileIcon: 'hidden h-5 w-5 max-[767px]:block',
-  sidebarScrollArea: 'grid min-h-0 content-start gap-0 overflow-auto p-0',
+  sidebarScrollArea: 'grid min-h-0 flex-1 content-start gap-0 overflow-visible p-0',
   sidebarListAside: 'pt-0',
   sidebarMenuList: 'mt-[14px] grid gap-0 p-0',
   sidebarNewChatButton:
@@ -58,9 +71,10 @@ const sidebarTw = {
   sidebarThreadButtonActive: '!bg-[#ececec] hover:!bg-[#ececec]',
   sidebarThreadTitle:
     'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] leading-[34px] font-normal',
-  sidebarAccountPanel: 'grid gap-[6px] p-2',
+  sidebarAccountPanel:
+    'sticky bottom-0 z-30 grid gap-[6px] bg-[#f9f9f9] p-2 pt-2 shadow-[0_-18px_26px_rgba(249,249,249,0.92)]',
   sidebarAccountCard:
-    'mt-[6px] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[12px] border border-[rgba(0,0,0,0.08)] bg-white p-2',
+    'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border-0 bg-transparent p-2 hover:bg-[#ececec]',
   sidebarAvatar:
     'inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-[9999px] border-0 bg-[#0d0d0d] p-0 text-[12px] font-semibold text-white',
   sidebarAvatarImg: 'h-full w-full object-cover',
@@ -87,6 +101,7 @@ type ChatSidebarProps = {
   isDesktopSidebarCollapsed: boolean
   isSidebarExpanded: boolean
   onCloseSidebar: () => void
+  onOpenSidebar: () => void
   onMaskClick: () => void
   searchInputId: string
   searchInputRef: RefObject<HTMLInputElement | null>
@@ -117,6 +132,7 @@ export function ChatSidebar({
   isDesktopSidebarCollapsed,
   isSidebarExpanded,
   onCloseSidebar,
+  onOpenSidebar,
   onMaskClick,
   searchInputId,
   searchInputRef,
@@ -150,6 +166,7 @@ export function ChatSidebar({
   const displayName = sessionUser?.displayName?.trim() || accountEmail
   const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
   const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
+  const showCollapsedRail = isDesktopSidebarCollapsed && !isSidebarOpen
 
   useEffect(() => {
     return () => {
@@ -205,13 +222,66 @@ export function ChatSidebar({
       <aside
         id="stage-slideover-sidebar"
         className={cx(
-          'grid grid-rows-[auto_minmax(0,1fr)_auto] bg-[#f7f7f7] p-0 max-[767px]:fixed max-[767px]:bottom-0 max-[767px]:left-0 max-[767px]:top-0 max-[767px]:z-[39] max-[767px]:w-[min(82vw,300px)] max-[767px]:-translate-x-[104%] max-[767px]:shadow-[6px_0_30px_rgba(0,0,0,0.15)] max-[767px]:transition-transform max-[767px]:duration-180',
+          'relative z-[21] h-full shrink-0 overflow-hidden border-r border-[rgba(0,0,0,0.10)] bg-[#f9f9f9] p-0 print:hidden max-[767px]:fixed max-[767px]:bottom-0 max-[767px]:left-0 max-[767px]:top-0 max-[767px]:z-[39] max-[767px]:w-[min(82vw,300px)] max-[767px]:-translate-x-[104%] max-[767px]:shadow-[6px_0_30px_rgba(0,0,0,0.15)] max-[767px]:transition-transform max-[767px]:duration-180',
           isSidebarOpen && 'max-[767px]:translate-x-0',
-          isDesktopSidebarCollapsed && 'md:hidden',
         )}
         aria-label="会话侧边栏"
       >
-        <div className={sidebarTw.sidebarHeader}>
+        <div className={sidebarTw.sidebarShell}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+          {showCollapsedRail ? (
+            <div className={sidebarTw.sidebarRail} aria-label="折叠会话侧边栏">
+              <div className={sidebarTw.sidebarRailHeader}>
+                <button
+                  type="button"
+                  className={sidebarTw.sidebarRailButton}
+                  aria-label="打开边栏"
+                  aria-expanded={false}
+                  aria-controls="stage-slideover-sidebar"
+                  onClick={onOpenSidebar}
+                >
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={sidebarTw.iconBlockH5W5}>
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-sidebar-close-desktop`} fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
+              <div className={sidebarTw.sidebarRailSection}>
+                <button type="button" className={sidebarTw.sidebarRailButton} aria-label="新聊天" onClick={onNewChatClick}>
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={sidebarTw.iconBlockH5W5}>
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-new-chat`} fill="currentColor" />
+                  </svg>
+                </button>
+                <button type="button" className={sidebarTw.sidebarRailButton} aria-label="搜索聊天" onClick={onOpenSidebar}>
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={sidebarTw.iconBlockH5W5}>
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-search`} fill="currentColor" />
+                  </svg>
+                </button>
+                <button type="button" className={sidebarTw.sidebarRailButton} aria-label="书库管理" onClick={onLibraryClick}>
+                  <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className={sidebarTw.iconBlockH5W5}>
+                    <use href={`${CHAT_ICON_SPRITE_URL}#chat-library`} fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
+              <div className={sidebarTw.sidebarRailGrow} />
+              <button
+                type="button"
+                className={sidebarTw.sidebarRailAvatar}
+                aria-label="上传头像"
+                disabled={avatarMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
+              </button>
+            </div>
+          ) : (
+            <div className={sidebarTw.sidebarContent}>
+              <div className={sidebarTw.sidebarHeader}>
           <div className={sidebarTw.sidebarHeaderRow}>
             <Link to="/chat" className={sidebarTw.sidebarHomeLink} aria-label="OneBook AI">
               <img src={onebookLogoMark} alt="" aria-hidden="true" className={sidebarTw.sidebarHomeLogo} />
@@ -247,7 +317,7 @@ export function ChatSidebar({
           </div>
         </div>
 
-        <div className={sidebarTw.sidebarScrollArea} role={scrollAreaRole} aria-label={scrollAreaLabel}>
+              <div className={sidebarTw.sidebarScrollArea} role={scrollAreaRole} aria-label={scrollAreaLabel}>
           <aside className={sidebarTw.sidebarListAside}>
             <div className={sidebarTw.sidebarMenuList}>
               <button type="button" className={sidebarTw.sidebarNewChatButton} onClick={onNewChatClick}>
@@ -393,7 +463,7 @@ export function ChatSidebar({
           ) : null}
         </div>
 
-        <div className={sidebarTw.sidebarAccountPanel}>
+              <div className={sidebarTw.sidebarAccountPanel}>
           <div className={sidebarTw.sidebarAccountCard}>
             <button
               type="button"
@@ -404,13 +474,6 @@ export function ChatSidebar({
             >
               {avatarUrl ? <img src={avatarUrl} alt="" className={sidebarTw.sidebarAvatarImg} /> : avatarLetter}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
             <div className={sidebarTw.sidebarAccountMeta}>
               <span className={sidebarTw.sidebarAccountEmail} title={accountEmail}>{displayName}</span>
               <span className={sidebarTw.roleMuted}>{accountRoleLabel}</span>
@@ -437,6 +500,9 @@ export function ChatSidebar({
             </button>
           </div>
           {uploadError ? <div className={sidebarTw.sidebarUploadError}>{uploadError}</div> : null}
+        </div>
+            </div>
+          )}
         </div>
       </aside>
     </>

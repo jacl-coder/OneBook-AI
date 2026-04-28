@@ -541,7 +541,7 @@ export function LibraryPage() {
     <div
       className={cx(
         'grid min-h-screen bg-white text-[#0d0d0d] max-[767px]:grid-cols-[minmax(0,1fr)]',
-        isDesktopSidebarCollapsed ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[260px_minmax(0,1fr)]',
+        isDesktopSidebarCollapsed ? 'grid-cols-[52px_minmax(0,1fr)]' : 'grid-cols-[260px_minmax(0,1fr)]',
       )}
       style={uiSansStyle}
     >
@@ -550,6 +550,7 @@ export function LibraryPage() {
         isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
         isSidebarExpanded={isSidebarExpanded}
         onCloseSidebar={handleCloseSidebar}
+        onOpenSidebar={handleOpenSidebar}
         onMaskClick={() => setIsSidebarOpen(false)}
         searchInputId="library-chat-search"
         searchInputRef={chatSearchInputRef}
@@ -577,10 +578,7 @@ export function LibraryPage() {
           <div className={libraryTw.topBarLeft}>
             <button
               type="button"
-              className={cx(
-                libraryTw.sidebarOpenButton,
-                isDesktopSidebarCollapsed && 'md:inline-flex',
-              )}
+              className={libraryTw.sidebarOpenButton}
               aria-label="打开会话侧栏"
               onClick={handleOpenSidebar}
             >
