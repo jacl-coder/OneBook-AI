@@ -82,23 +82,27 @@ const sidebarTw = {
   sidebarAccountEmail:
     'overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-5 text-[#171717]',
   sidebarProfileMenu:
-    'absolute bottom-full left-2 right-2 mb-2 grid gap-2 rounded-[14px] border border-[rgba(0,0,0,0.10)] bg-white p-2 shadow-[0_16px_48px_rgba(0,0,0,0.16)]',
+    'absolute bottom-full left-0 right-0 mb-2 grid max-h-[min(520px,calc(100vh-96px))] min-w-[calc(100%-4px)] gap-0 overflow-auto rounded-[16px] border border-[rgba(0,0,0,0.10)] bg-white py-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.16)]',
   sidebarProfileMenuHeader:
-    'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[10px] px-2 py-2',
+    'mx-1.5 grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[#f1f1f1]',
   sidebarProfileMenuAvatar:
-    'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d0d0d] text-[13px] font-semibold text-white',
+    'inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#0d0d0d] text-[11px] font-semibold text-white',
   sidebarProfileMenuName: 'truncate text-[13px] font-medium leading-5 text-[#171717]',
   sidebarProfileMenuSub: 'truncate text-[12px] leading-4 text-[#777]',
   sidebarLogoutButton:
     'h-8 cursor-pointer rounded-[8px] border-0 bg-transparent px-2 text-[12px] text-[#474747] hover:bg-[#efefef] hover:text-[#0d0d0d]',
+  sidebarProfileEditor: 'mx-1.5 grid gap-2 rounded-[10px] bg-[#f7f7f7] p-2',
   sidebarProfileRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
   sidebarProfileInput:
     'h-8 min-w-0 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-2 text-[12px] outline-none focus:border-[rgba(0,0,0,0.28)]',
   sidebarMenuButton:
-    'flex h-9 w-full cursor-pointer items-center justify-start rounded-[10px] border-0 bg-transparent px-2 text-left text-[13px] text-[#171717] hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-55',
+    'mx-1.5 grid min-h-9 w-[calc(100%-12px)] cursor-pointer grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border-0 bg-transparent px-2 text-left text-[13px] text-[#171717] hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-55',
+  sidebarMenuIcon:
+    'inline-flex h-5 w-5 items-center justify-center text-[#5f5f5f]',
+  sidebarMenuTrailing: 'inline-flex h-4 w-4 items-center justify-center text-[#858585]',
   sidebarMenuDanger:
     'text-[#a4161a] hover:bg-[#fff1f1]',
-  sidebarMenuDivider: 'h-px bg-[rgba(0,0,0,0.08)]',
+  sidebarMenuDivider: 'mx-4 my-1 h-px bg-[rgba(0,0,0,0.08)]',
   sidebarUploadError: 'px-1 text-[11px] leading-4 text-[#a4161a]',
 } as const
 
@@ -178,6 +182,7 @@ export function ChatSidebar({
   const [uploadError, setUploadError] = useState('')
   const [displayNameDraft, setDisplayNameDraft] = useState(sessionUser?.displayName ?? '')
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false)
   const displayName = sessionUser?.displayName?.trim() || accountEmail
   const avatarLetter = (displayName || accountEmail || 'U').slice(0, 1).toUpperCase()
   const avatarUrl = previewUrl || resolveApiAssetURL(sessionUser?.avatarUrl)
@@ -201,6 +206,7 @@ export function ChatSidebar({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsProfileMenuOpen(false)
+        setIsProfileEditorOpen(false)
       }
     }
 
@@ -217,6 +223,7 @@ export function ChatSidebar({
     onSuccess: (user) => {
       setUploadError('')
       setSession({ user })
+      setIsProfileEditorOpen(false)
     },
     onError: (error) => {
       setUploadError(getApiErrorMessage(error, '头像上传失败，请稍后重试。'))
@@ -513,40 +520,81 @@ export function ChatSidebar({
                           <span className={sidebarTw.sidebarProfileMenuName}>{displayName}</span>
                           <span className={sidebarTw.sidebarProfileMenuSub}>{accountEmail || accountRoleLabel}</span>
                         </span>
+                        <span className={sidebarTw.sidebarMenuTrailing} aria-hidden="true">
+                          <svg viewBox="0 0 20 20" className="h-4 w-4">
+                            <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
                       </div>
-                      <div className={sidebarTw.sidebarProfileRow}>
-                        <input
-                          className={sidebarTw.sidebarProfileInput}
-                          value={displayNameDraft}
-                          maxLength={80}
-                          placeholder="显示名"
-                          onChange={(event) => setDisplayNameDraft(event.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className={sidebarTw.sidebarLogoutButton}
-                          disabled={profileMutation.isPending}
-                          onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
-                        >
-                          保存
-                        </button>
-                      </div>
+                      <div className={sidebarTw.sidebarMenuDivider} />
                       <button
                         type="button"
                         className={sidebarTw.sidebarMenuButton}
                         disabled={avatarMutation.isPending}
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        更换头像
+                        <span className={sidebarTw.sidebarMenuIcon} aria-hidden="true">
+                          <svg viewBox="0 0 20 20" className="h-5 w-5">
+                            <path d="M4.5 6.5h2l1-1.5h5l1 1.5h2a1.5 1.5 0 0 1 1.5 1.5v5.5A1.5 1.5 0 0 1 15.5 15h-11A1.5 1.5 0 0 1 3 13.5V8a1.5 1.5 0 0 1 1.5-1.5Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                            <circle cx="10" cy="10.8" r="2.3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                          </svg>
+                        </span>
+                        <span>更换头像</span>
                       </button>
                       {uploadError ? <div className={sidebarTw.sidebarUploadError}>{uploadError}</div> : null}
+                      <button
+                        type="button"
+                        className={sidebarTw.sidebarMenuButton}
+                        aria-expanded={isProfileEditorOpen}
+                        onClick={() => setIsProfileEditorOpen((prev) => !prev)}
+                      >
+                        <span className={sidebarTw.sidebarMenuIcon} aria-hidden="true">
+                          <svg viewBox="0 0 20 20" className="h-5 w-5">
+                            <path d="M10 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                            <path d="M4.5 16c.8-2.4 2.7-3.7 5.5-3.7s4.7 1.3 5.5 3.7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                          </svg>
+                        </span>
+                        <span>个人资料</span>
+                        <span className={sidebarTw.sidebarMenuTrailing} aria-hidden="true">
+                          <svg viewBox="0 0 20 20" className={cx('h-4 w-4 transition-transform', isProfileEditorOpen && 'rotate-90')}>
+                            <path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                      </button>
+                      {isProfileEditorOpen ? (
+                        <div className={sidebarTw.sidebarProfileEditor}>
+                          <div className={sidebarTw.sidebarProfileRow}>
+                            <input
+                              className={sidebarTw.sidebarProfileInput}
+                              value={displayNameDraft}
+                              maxLength={80}
+                              placeholder="显示名"
+                              onChange={(event) => setDisplayNameDraft(event.target.value)}
+                            />
+                            <button
+                              type="button"
+                              className={sidebarTw.sidebarLogoutButton}
+                              disabled={profileMutation.isPending}
+                              onClick={() => void profileMutation.mutateAsync({ displayName: displayNameDraft })}
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className={sidebarTw.sidebarMenuDivider} />
                       <button
                         type="button"
                         className={cx(sidebarTw.sidebarMenuButton, sidebarTw.sidebarMenuDanger)}
                         onClick={onLogout}
                       >
-                        退出登录
+                        <span className={sidebarTw.sidebarMenuIcon} aria-hidden="true">
+                          <svg viewBox="0 0 20 20" className="h-5 w-5">
+                            <path d="M8.5 4.5h-2A1.5 1.5 0 0 0 5 6v8a1.5 1.5 0 0 0 1.5 1.5h2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            <path d="M10.5 10h6M14 7l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                        <span>退出登录</span>
                       </button>
                     </div>
                   ) : null}
