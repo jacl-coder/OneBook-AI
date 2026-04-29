@@ -99,6 +99,13 @@ export const router = createBrowserRouter([
           return { Component: module.LibraryPage }
         },
       },
+      {
+        path: '/books/:bookId',
+        lazy: async () => {
+          const module = await import('@/pages/BookReaderPage')
+          return { Component: module.BookReaderPage }
+        },
+      },
     ],
   },
   {

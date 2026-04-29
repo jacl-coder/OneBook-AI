@@ -151,9 +151,9 @@ const libraryTw = {
   table:
     'overflow-hidden rounded-[14px] border border-[rgba(0,0,0,0.08)] bg-white',
   tableHeader:
-    'grid grid-cols-[minmax(0,2fr)_110px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] bg-[#fafafa] px-4 py-3 text-[12px] font-medium text-[#6d6d6d] max-[980px]:hidden',
+    'grid grid-cols-[minmax(0,2fr)_110px_90px_280px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] bg-[#fafafa] px-4 py-3 text-[12px] font-medium text-[#6d6d6d] max-[980px]:hidden',
   row:
-    'grid grid-cols-[minmax(0,2fr)_110px_90px_220px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 last:border-b-0 max-[980px]:grid-cols-1 max-[980px]:gap-2 max-[980px]:px-3',
+    'grid grid-cols-[minmax(0,2fr)_110px_90px_280px] items-center gap-3 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 last:border-b-0 max-[980px]:grid-cols-1 max-[980px]:gap-2 max-[980px]:px-3',
   titleCell: 'min-w-0',
   titleText:
     'block overflow-hidden text-ellipsis whitespace-nowrap text-[14px] font-medium text-[#0d0d0d]',
@@ -394,6 +394,12 @@ export function LibraryPage() {
     },
     [navigate],
   )
+  const handleOpenBook = useCallback(
+    (bookId: string) => {
+      navigate(`/books/${encodeURIComponent(bookId)}`)
+    },
+    [navigate],
+  )
   const handleSidebarThreadClick = useCallback(
     (threadID: string) => {
       navigate(`/chat/${threadID}`)
@@ -599,7 +605,7 @@ export function LibraryPage() {
         onThreadClick={handleSidebarThreadClick}
         onRenameThread={(threadID, title) => void handleRenameThread(threadID, title)}
         onDeleteThread={(threadID) => void handleDeleteThread(threadID)}
-        onOpenThreadBook={handleGoChat}
+        onOpenThreadBook={handleOpenBook}
         onNewChatClick={handleGoChat}
         onLibraryClick={handleOpenLibrary}
         isLibraryActive
@@ -924,6 +930,14 @@ export function LibraryPage() {
                           </div>
 
                           <div className={libraryTw.actions}>
+                            <button
+                              type="button"
+                              className={libraryTw.actionBtn}
+                              onClick={() => handleOpenBook(book.id)}
+                              disabled={book.status !== 'ready'}
+                            >
+                              打开
+                            </button>
                             <button
                               type="button"
                               className={libraryTw.actionBtn}

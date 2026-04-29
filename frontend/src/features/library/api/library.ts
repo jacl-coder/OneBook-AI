@@ -1,4 +1,5 @@
 import { http } from '@/shared/lib/http/client'
+import { env } from '@/shared/config/env'
 import { createIdempotencyKey } from '@/shared/lib/http/idempotency'
 import type { BookFormat, BookLanguage, BookPrimaryCategory, BookStatus } from '@/features/library/books'
 
@@ -55,6 +56,7 @@ export type DeleteBookResponse = {
 
 export const libraryQueryKeys = {
   books: (params: ListBooksParams) => ['library', 'books', params] as const,
+  book: (id: string) => ['library', 'book', id] as const,
 }
 
 export type ListBooksParams = {
@@ -102,6 +104,11 @@ export async function listBooks(params: ListBooksParams = {}): Promise<ListBooks
   return data
 }
 
+export async function getBook(id: string): Promise<LibraryBook> {
+  const { data } = await http.get<LibraryBook>(`/api/books/${id}`)
+  return data
+}
+
 export async function uploadBook(payload: UploadBookPayload): Promise<LibraryBook> {
   const formData = new FormData()
   formData.append('file', payload.file)
@@ -130,6 +137,10 @@ export async function updateBook(id: string, payload: UpdateBookPayload): Promis
 export async function getBookDownloadURL(id: string): Promise<DownloadBookResponse> {
   const { data } = await http.get<DownloadBookResponse>(`/api/books/${id}/download`)
   return data
+}
+
+export function getBookContentURL(id: string): string {
+  return new URL(`/api/books/${encodeURIComponent(id)}/content`, env.apiBaseUrl).toString()
 }
 
 export function isBookPending(status: BookStatus): boolean {

@@ -269,7 +269,7 @@ func (s *Server) authenticated(next authHandler) http.Handler {
 		if err != nil {
 			s.audit(r, "gateway.authorize", "fail")
 			if errors.Is(err, errSessionUnauthorized) {
-				s.clearAuthCookies(w)
+				s.clearAccessCookie(w)
 				writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 				return
 			}
@@ -287,7 +287,7 @@ func (s *Server) adminOnly(next authHandler) http.Handler {
 		if err != nil {
 			s.audit(r, "gateway.admin.authorize", "fail", "reason", err.Error())
 			if errors.Is(err, errSessionUnauthorized) {
-				s.clearAuthCookies(w)
+				s.clearAccessCookie(w)
 				writeErrorWithCode(w, r, http.StatusUnauthorized, "authentication required", "AUTH_INVALID_TOKEN")
 				return
 			}
@@ -803,7 +803,7 @@ func (s *Server) handleBooks(w http.ResponseWriter, r *http.Request, ctx authCon
 	}
 }
 
-// /api/books/{id} or /api/books/{id}/download
+// /api/books/{id} or /api/books/{id}/download or /api/books/{id}/content
 func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, ctx authContext) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/books/")
 	parts := strings.SplitN(path, "/", 2)
@@ -816,6 +816,10 @@ func (s *Server) handleBookByID(w http.ResponseWriter, r *http.Request, ctx auth
 	// Handle /api/books/{id}/download
 	if len(parts) == 2 && parts[1] == "download" {
 		s.handleDownloadBook(w, r, ctx.AccessToken, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "content" {
+		s.handleBookContent(w, r, ctx.AccessToken, id)
 		return
 	}
 	if len(parts) == 2 {
@@ -870,6 +874,57 @@ func (s *Server) handleDownloadBook(w http.ResponseWriter, r *http.Request, toke
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleBookContent proxies the original book file through the gateway so the
+// reader can use a stable same-origin URL and browser range requests.
+func (s *Server) handleBookContent(w http.ResponseWriter, r *http.Request, token, id string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		methodNotAllowed(w, r)
+		return
+	}
+	download, err := s.books.GetDownloadURL(util.RequestIDFromRequest(r), token, id)
+	if err != nil {
+		writeBookError(w, r, err)
+		return
+	}
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, download.URL, nil)
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusInternalServerError, "failed to create content request", "BOOK_CONTENT_REQUEST_FAILED")
+		return
+	}
+	if rangeHeader := strings.TrimSpace(r.Header.Get("Range")); rangeHeader != "" {
+		upstreamReq.Header.Set("Range", rangeHeader)
+	}
+	upstreamResp, err := (&http.Client{Timeout: 5 * time.Minute}).Do(upstreamReq)
+	if err != nil {
+		writeErrorWithCode(w, r, http.StatusBadGateway, "failed to fetch book content", "BOOK_CONTENT_FETCH_FAILED")
+		return
+	}
+	defer upstreamResp.Body.Close()
+
+	copyHeader := func(name string) {
+		if value := upstreamResp.Header.Get(name); value != "" {
+			w.Header().Set(name, value)
+		}
+	}
+	copyHeader("Accept-Ranges")
+	copyHeader("Content-Range")
+	copyHeader("Content-Length")
+	copyHeader("Content-Type")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	filename := strings.ReplaceAll(download.Filename, `"`, "")
+	if strings.TrimSpace(filename) == "" {
+		filename = "document"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+	w.WriteHeader(upstreamResp.StatusCode)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.Copy(w, upstreamResp.Body)
 }
 
 func (s *Server) handleUploadBook(w http.ResponseWriter, r *http.Request, token string) {
