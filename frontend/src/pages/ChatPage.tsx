@@ -222,6 +222,8 @@ type ConversationMessage = {
     label: string
     location: string
     snippet?: string
+    chunkId?: string
+    sourceRef?: string
     sourceReason?: string
     evidenceType?: string
   }>
@@ -283,6 +285,11 @@ function evidenceReasonLabel(reason?: string, evidenceType?: string): string {
   if (sourceReason === 'ranked as relevant evidence') return '重排相关证据'
   if (sourceReason === 'hybrid retrieval') return '混合检索命中'
   return sourceReason || type || ''
+}
+
+function sourcePageHint(value: string): string {
+  const match = value.match(/page\s*(\d+)|第\s*(\d+)\s*页/i)
+  return match?.[1] || match?.[2] || ''
 }
 
 type ChatRequestPayload = {
@@ -475,8 +482,10 @@ export function ChatPage() {
   const authEditorRef = useRef<HTMLDivElement>(null)
   const authInputRef = useRef<HTMLInputElement>(null)
   const threadSearchInputRef = useRef<HTMLInputElement>(null)
+  const conversationScrollerRef = useRef<HTMLDivElement>(null)
   const uploadGuestInputRef = useRef<HTMLInputElement>(null)
   const uploadAuthInputRef = useRef<HTMLInputElement>(null)
+  const pendingBottomScrollThreadRef = useRef('')
   const pendingAskIdRef = useRef(0)
   const pendingAskAbortRef = useRef<AbortController | null>(null)
 
@@ -678,6 +687,8 @@ export function ChatPage() {
           label: source.label,
           location: source.location,
           snippet: source.snippet,
+          chunkId: source.chunkId,
+          sourceRef: source.sourceRef,
           sourceReason: source.sourceReason,
           evidenceType: source.evidenceType,
         })),
@@ -714,6 +725,23 @@ export function ChatPage() {
     }
   }, [])
 
+  const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    requestAnimationFrame(() => {
+      const scroller = conversationScrollerRef.current
+      if (!scroller) return
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!activeThread) return
+    if (pendingBottomScrollThreadRef.current !== activeThread.id) return
+    if (!activeThread.messages.length) return
+
+    scrollConversationToBottom()
+    pendingBottomScrollThreadRef.current = ''
+  }, [activeThread, scrollConversationToBottom])
+
   useEffect(() => {
     if (activeThreadId) return
     if (!threads.length) return
@@ -738,6 +766,7 @@ export function ChatPage() {
   useEffect(() => {
     if (!sessionUser) return
     if (!routeConversationId) return
+    pendingBottomScrollThreadRef.current = routeConversationId
     setActiveThreadId(routeConversationId)
     void loadConversationMessages(routeConversationId)
   }, [sessionUser, routeConversationId, loadConversationMessages])
@@ -915,6 +944,8 @@ export function ChatPage() {
                     label: source.label,
                     location: source.location,
                     snippet: source.snippet,
+                    chunkId: source.chunkId,
+                    sourceRef: source.sourceRef,
                     sourceReason: source.sourceReason,
                     evidenceType: source.evidenceType,
                   })),
@@ -1046,6 +1077,7 @@ export function ChatPage() {
   }, [activeThread, navigate, resetAuthComposer, setIsSidebarOpen])
 
   const handleThreadSelect = (threadId: string) => {
+    pendingBottomScrollThreadRef.current = threadId
     setActiveThreadId(threadId)
     navigate(`/chat/${threadId}`)
     setIsSidebarOpen(false)
@@ -1107,11 +1139,30 @@ export function ChatPage() {
 
   const handleOpenThreadBook = useCallback(
     (bookId: string) => {
-      setSelectedBookId(bookId)
-      navigate(`/chat?bookId=${encodeURIComponent(bookId)}`)
+      navigate(`/books/${encodeURIComponent(bookId)}`)
       setIsSidebarOpen(false)
     },
     [navigate, setIsSidebarOpen],
+  )
+
+  const handleOpenSource = useCallback(
+    (source: NonNullable<ChatThread['messages'][number]['sources']>[number]) => {
+      const bookId = activeThread?.bookId || selectedBookId
+      if (!bookId) return
+      const params = new URLSearchParams()
+      params.set('citation', source.chunkId || source.sourceRef || `${source.label}-${source.location}`)
+      if (source.label) params.set('label', source.label)
+      if (source.location) params.set('location', source.location)
+      if (source.snippet) {
+        params.set('snippet', source.snippet)
+        params.set('highlight', source.snippet.slice(0, 48))
+      }
+      if (source.sourceReason) params.set('reason', evidenceReasonLabel(source.sourceReason, source.evidenceType))
+      const page = sourcePageHint(`${source.label} ${source.location}`)
+      if (page) params.set('page', page)
+      navigate(`/books/${encodeURIComponent(bookId)}?${params.toString()}`)
+    },
+    [activeThread?.bookId, navigate, selectedBookId],
   )
 
   const handleLogout = async () => {
@@ -1358,7 +1409,7 @@ export function ChatPage() {
           {hasActiveConversation ? (
             <>
               <section className={chatTw.chatConversationSection} aria-label="会话内容">
-                <div className={chatTw.chatConversationScroller}>
+                <div ref={conversationScrollerRef} className={chatTw.chatConversationScroller}>
                   <div className={chatTw.chatConversationStack}>
                     {activeThread ? (
                       <>
@@ -1418,7 +1469,12 @@ export function ChatPage() {
                                 {message.sources?.length ? (
                                   <div className={chatTw.sourceList}>
                                     {message.sources.map((source) => (
-                                      <button key={`${source.label}-${source.location}`} type="button" className={chatTw.sourceCard}>
+                                      <button
+                                        key={`${source.label}-${source.location}`}
+                                        type="button"
+                                        className={chatTw.sourceCard}
+                                        onClick={() => handleOpenSource(source)}
+                                      >
                                         <span className={chatTw.sourceCardTitle}>{source.label}</span>
                                         <span className={chatTw.sourceCardLocation}>{source.location}</span>
                                         {evidenceReasonLabel(source.sourceReason, source.evidenceType) ? (

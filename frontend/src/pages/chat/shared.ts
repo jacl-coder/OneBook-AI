@@ -24,6 +24,8 @@ export type ThreadSource = {
   label: string
   location: string
   snippet?: string
+  chunkId?: string
+  sourceRef?: string
   sourceReason?: string
   evidenceType?: string
 }
