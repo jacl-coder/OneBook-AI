@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-ARG OCR_PADDLE_PACKAGE=paddlepaddle==3.0.0
-ARG OCR_PADDLE_INDEX=https://www.paddlepaddle.org.cn/packages/stable/cpu/
+ARG OCR_PADDLE_PACKAGE=paddlepaddle-gpu==3.3.0
+ARG OCR_PADDLE_INDEX=https://www.paddlepaddle.org.cn/packages/stable/cu126/
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -21,15 +21,14 @@ ENV UV_LINK_MODE=copy \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project \
     && /app/.venv/bin/python -m ensurepip --upgrade \
-    && /app/.venv/bin/python -m pip uninstall -y paddlepaddle paddlepaddle-gpu >/dev/null 2>&1 || true \
+    && (/app/.venv/bin/python -m pip uninstall -y paddlepaddle paddlepaddle-gpu >/dev/null 2>&1 || true) \
     && /app/.venv/bin/python -m pip install --no-cache-dir --timeout 180 --retries 10 -i "${OCR_PADDLE_INDEX}" "${OCR_PADDLE_PACKAGE}"
 
 COPY app.py .
 
-# Pre-warm models at build time so the first request is fast
-# Set env to skip model source connectivity check
+# Validate installed package versions. GPU imports and model initialisation happen at runtime.
 ENV PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
-RUN OCR_DEVICE=cpu OCR_ENABLE_HPI=false python -c "from paddleocr import PaddleOCR; PaddleOCR(device='cpu', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)" || true
+RUN python -c "import importlib.metadata as md; print('paddlepaddle-gpu', md.version('paddlepaddle-gpu')); print('paddleocr', md.version('paddleocr'))"
 
 EXPOSE 8087
 

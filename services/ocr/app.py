@@ -56,7 +56,7 @@ def env_bool(name: str, default: bool = False) -> bool:
 def get_ocr() -> PaddleOCR:
     global _ocr
     if _ocr is None:
-        device = os.getenv("OCR_DEVICE", "cpu").strip() or "cpu"
+        device = os.getenv("OCR_DEVICE", "gpu:0").strip() or "gpu:0"
         enable_hpi = env_bool("OCR_ENABLE_HPI")
         logger.info(
             "Initialising PaddleOCR (first call, may download models)… device=%s enable_hpi=%s",

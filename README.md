@@ -435,7 +435,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `INGEST_LEXICAL_CHUNK_OVERLAP` | `30` | lexical chunk 重叠大小（runes） |
 | `INGEST_OCR_ENABLED` | `true` | 是否启用 OCR |
 | `INGEST_OCR_SERVICE_URL` | `http://localhost:8087` | OCR Docker 服务地址 |
-| `INGEST_OCR_DEVICE` | `cpu` | OCR 设备（cpu / gpu） |
+| `INGEST_OCR_DEVICE` | `gpu:0` | OCR 设备 |
 | `INGEST_OCR_TIMEOUT_SECONDS` | `300` | OCR 超时（秒） |
 | `INGEST_PDF_MIN_PAGE_RUNES` | `80` | PDF 低质量页判断阈值（字符数） |
 | `INGEST_PDF_MIN_PAGE_SCORE` | `0.45` | PDF 低质量页判断阈值（质量分 0~1） |
@@ -522,7 +522,7 @@ cd backend/services/indexer && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
-如果宿主机已安装 NVIDIA 驱动和 `nvidia-container-toolkit`，`scripts/start-backend.sh` 会自动叠加 `docker-compose.gpu.yml`，让 `ocr-service` 使用官方支持的 CUDA 12.6 GPU 轮子并以 `gpu:0` 运行；否则保留 CPU 配置。
+`ocr-service` 仅支持 GPU 运行，默认使用官方支持的 CUDA 12.6 GPU 轮子并以 `gpu:0` 启动。宿主机需要 NVIDIA 驱动和 `nvidia-container-toolkit`；缺少 GPU runtime 时，`scripts/start-backend.sh` 会直接退出。
 
 Ubuntu / Debian 上可先执行：
 

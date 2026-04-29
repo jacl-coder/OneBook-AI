@@ -156,7 +156,7 @@ func New(cfg Config) (*App, error) {
 	}
 	ocrDevice := strings.TrimSpace(cfg.OCRDevice)
 	if ocrDevice == "" {
-		ocrDevice = "cpu"
+		ocrDevice = "gpu:0"
 	}
 	ocrTimeoutSeconds := cfg.OCRTimeoutSeconds
 	if ocrTimeoutSeconds <= 0 {

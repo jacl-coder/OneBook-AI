@@ -80,24 +80,24 @@ configure_ocr_runtime() {
   COMPOSE_ARGS=(-f "$ROOT_DIR/docker-compose.yml")
 
   if ! command -v nvidia-smi >/dev/null 2>&1; then
-    echo "NVIDIA GPU not detected on host; OCR service will run on CPU."
-    return
+    echo "NVIDIA GPU not detected on host; OCR service requires GPU."
+    exit 1
   fi
 
   if ! command -v docker >/dev/null 2>&1; then
-    echo "docker not found; OCR GPU auto-detection skipped."
-    return
+    echo "docker not found; OCR service requires Docker with NVIDIA GPU support."
+    exit 1
   fi
 
   if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then
-    echo "NVIDIA GPU runtime detected; enabling OCR GPU override."
-    COMPOSE_ARGS+=(-f "$ROOT_DIR/docker-compose.gpu.yml")
+    echo "NVIDIA GPU runtime detected; OCR service will run on gpu:0."
     return
   fi
 
   echo "NVIDIA GPU detected, but Docker is not configured for GPU containers."
-  echo "OCR service will run on CPU."
+  echo "OCR service requires NVIDIA Container Toolkit."
   echo "To enable GPU support, run: sudo ./scripts/setup-nvidia-container-toolkit.sh"
+  exit 1
 }
 
 clear_onebook_env

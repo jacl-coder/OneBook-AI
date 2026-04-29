@@ -11,7 +11,7 @@ func TestLoadChunkEnvOverrides(t *testing.T) {
 	t.Setenv("INGEST_CHUNK_OVERLAP", "256")
 	t.Setenv("INGEST_OCR_ENABLED", "true")
 	t.Setenv("INGEST_OCR_COMMAND", "paddleocr")
-	t.Setenv("INGEST_OCR_DEVICE", "cpu")
+	t.Setenv("INGEST_OCR_DEVICE", "gpu:0")
 	t.Setenv("INGEST_OCR_TIMEOUT_SECONDS", "180")
 	t.Setenv("INGEST_PDF_MIN_PAGE_RUNES", "96")
 	t.Setenv("INGEST_PDF_MIN_PAGE_SCORE", "0.55")
@@ -51,8 +51,8 @@ chunkOverlap: 120
 	if cfg.OCRCommand != "paddleocr" {
 		t.Fatalf("ocrCommand = %q, want %q", cfg.OCRCommand, "paddleocr")
 	}
-	if cfg.OCRDevice != "cpu" {
-		t.Fatalf("ocrDevice = %q, want %q", cfg.OCRDevice, "cpu")
+	if cfg.OCRDevice != "gpu:0" {
+		t.Fatalf("ocrDevice = %q, want %q", cfg.OCRDevice, "gpu:0")
 	}
 	if cfg.OCRTimeoutSeconds != 180 {
 		t.Fatalf("ocrTimeoutSeconds = %d, want 180", cfg.OCRTimeoutSeconds)

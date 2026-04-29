@@ -23,7 +23,7 @@ semanticChunkSize: 480
 semanticChunkOverlap: 80
 ocrEnabled: false
 ocrCommand: "paddleocr"
-ocrDevice: "cpu"
+ocrDevice: "gpu:0"
 ocrTimeoutSeconds: 120
 # ocrServiceURL: "http://localhost:8087"  # Docker OCR service (preferred when set)
 pdfMinPageRunes: 80
