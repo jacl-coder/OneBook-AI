@@ -1,7 +1,7 @@
 # OneBook-AI Project Instructions
 
 Scope:
-- Applies to all work under `/Users/jacl/Documents/Code/Golang/OneBook-AI`.
+- Applies to all work under `/home/jacl/Documents/code/OneBook-AI`.
 
 Core principles:
 - Prefer security, maintainability, testability, and behavior consistency.

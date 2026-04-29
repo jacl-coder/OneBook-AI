@@ -18,7 +18,7 @@
 10. [前端说明](#10-前端说明)
 11. [安全机制](#11-安全机制)
 12. [可观测性与日志](#12-可观测性与日志)
-13. [RAG 演进路线（Advanced RAG 蓝图）](#13-rag-演进路线advanced-rag-蓝图)
+13. [RAG 当前状态](#13-rag-当前状态)
 14. [开发规范（AI Agent 必读）](#14-开发规范ai-agent-必读)
 15. [待办事项](#15-待办事项)
 
@@ -30,12 +30,14 @@
 
 | 功能域 | 说明 |
 |---|---|
-| 书籍管理 | 上传 PDF/EPUB/TXT（最大 50MB），书库列表/查询/删除，预签名下载 URL（含原始文件名） |
-| 解析与分块 | PDF 优先 `pdftotext`，失败回退 Go PDF 库；扫描版 PDF 可用 PaddleOCR Docker 服务按页质量融合；EPUB/TXT 语义分块 |
+| 书籍管理 | 上传 PDF/EPUB/TXT（最大 50MB），书库列表/查询/删除，书籍元数据编辑，预签名下载 URL，同源文件内容代理 |
+| 文档阅读 | 前端提供书籍阅读页，优先通过 `/api/books/{id}/content` 代理原文件内容，支持浏览器 Range 请求 |
+| 解析与分块 | PDF 优先 `pdftotext`，失败回退 Go PDF 库；扫描版 PDF 可用 PaddleOCR Docker 服务按页质量融合；EPUB/TXT 语义分块；生成文档摘要、关键词、实体与事实画像 |
 | 检索索引 | Ollama 本地 Embedding + OpenSearch BM25，语义向量写入 Qdrant、词法索引写入 OpenSearch；书籍状态自动流转 |
-| RAG 对话 | Dense + Sparse 混合检索，证据约束生成，答案含引用及拒答支持；消息入库可续聊 |
-| 认证与鉴权 | RS256 JWT（Access 15 分钟）+ Refresh Token 轮换（Redis 原子 CAS + 重放检测）；统一 Cookie 会话 |
-| 管理后台 | 用户/书籍管理、重处理、操作审计日志、系统概览、RAG 评测中心（Admin Eval Center） |
+| RAG 对话 | Dense + BM25 混合检索，query rewrite / multi-query / rerank，证据约束生成，答案含引用及拒答支持；支持 JSON 与 SSE 流式响应 |
+| 认证与鉴权 | RS256 JWT（Access 15 分钟）+ Refresh Token 轮换（Redis 原子 CAS + 重放检测）；统一 Cookie 会话；支持密码、验证码、Google/Microsoft OAuth |
+| 用户资料 | 当前用户信息更新、头像上传与头像代理访问 |
+| 管理后台 | 用户/书籍管理、用户删除、重处理、索引状态/修复、操作审计日志、系统概览、RAG 评测中心（Admin Eval Center） |
 | 速率限制 | Gateway/Auth 使用 Redis 分布式固定窗口限流；Redis 异常时拒绝请求（fail-closed） |
 | 可靠性 | RabbitMQ 持久队列（Ingest/Indexer），任务状态与去重落 Postgres，失败重试 + RabbitMQ 原生 DLQ |
 
@@ -96,7 +98,7 @@ Eval Worker         │                    TextGenerator (Gemini/Ollama/OpenAI)
 
 | 组件 | 技术选型 |
 |---|---|
-| 语言/框架 | Go（标准库 `net/http`），无第三方 Web 框架 |
+| 语言/框架 | Go 1.25.3（标准库 `net/http`），无第三方 Web 框架 |
 | ORM | GORM |
 | JWT | `github.com/golang-jwt/jwt/v5`（RS256 + JWKS） |
 | 对象存储 | MinIO SDK（`minio-go/v7`） |
@@ -315,7 +317,9 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/users/me` | 获取当前用户信息 |
-| PATCH | `/api/users/me` | 更新邮箱 |
+| PATCH | `/api/users/me` | 更新邮箱或展示名 |
+| POST | `/api/users/me/avatar` | 上传当前用户头像（`multipart/form-data`，字段 `file`，最大 5MB） |
+| GET | `/api/users/{id}/avatar` | 代理读取用户头像 |
 | POST | `/api/users/me/password` | 修改密码 |
 
 ### 书籍（需登录）
@@ -327,6 +331,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | GET | `/api/books/{id}` | 查询单本书状态 |
 | PATCH | `/api/books/{id}` | 更新书名/主分类/标签 |
 | GET | `/api/books/{id}/download` | 获取预签名下载链接 |
+| GET/HEAD | `/api/books/{id}/content` | 通过 Gateway 代理原始书籍文件，支持 `Range`，供阅读器同源访问 |
 | DELETE | `/api/books/{id}` | 删除书籍 |
 
 ### 对话（需登录，书籍须 `ready`）
@@ -335,6 +340,8 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 |---|---|---|
 | POST | `/api/chats` | 发起问答（body: `bookId`, `question`, 可选 `conversationId`, `debug`） |
 | GET | `/api/conversations` | 会话列表 |
+| PATCH | `/api/conversations/{id}` | 重命名会话 |
+| DELETE | `/api/conversations/{id}` | 删除会话 |
 | GET | `/api/conversations/{id}/messages` | 单会话消息列表 |
 
 ### 管理员（需 admin 角色）
@@ -345,6 +352,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | GET | `/api/admin/users` | 用户分页列表（支持多维度筛选/排序） |
 | GET | `/api/admin/users/{id}` | 查看单用户 |
 | PATCH | `/api/admin/users/{id}` | 更新用户角色/状态 |
+| DELETE | `/api/admin/users/{id}` | 删除用户，并删除该用户名下书籍 |
 | POST | `/api/admin/users/{id}/disable` | 禁用用户 |
 | POST | `/api/admin/users/{id}/enable` | 启用用户 |
 | GET | `/api/admin/books` | 书籍分页列表（支持多维度筛选/排序） |
@@ -408,7 +416,7 @@ EvalDataset / EvalRun  (在 Auth 服务管理)
 | `JWT_ISSUER` | `onebook-auth` | JWT iss |
 | `JWT_AUDIENCE` | `onebook-api` | JWT aud |
 | `JWT_LEEWAY` | `30s` | 时钟偏差容忍 |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:8089` | 允许的 CORS 来源（逗号分隔） |
+| `CORS_ALLOWED_ORIGINS` | `.env.example` 为 `*`；未设置 `.env` 时启动脚本回退到 `http://localhost:8089,http://localhost:5173` | 允许的 CORS 来源（逗号分隔） |
 | `CORS_ALLOW_CREDENTIALS` | `true` | 允许 Cookie 跨域 |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO 地址 |
 | `MINIO_ACCESS_KEY` | `onebook` | MinIO 访问密钥 |
@@ -522,7 +530,7 @@ cd backend/services/indexer && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd
 cd backend/services/gateway && GOCACHE=$(pwd)/../../.cache/go-build go run ./cmd/server
 ```
 
-`ocr-service` 仅支持 GPU 运行，默认使用官方支持的 CUDA 12.6 GPU 轮子并以 `gpu:0` 启动。宿主机需要 NVIDIA 驱动和 `nvidia-container-toolkit`；缺少 GPU runtime 时，`scripts/start-backend.sh` 会直接退出。
+`ocr-service` 仅支持 GPU 运行，默认使用官方支持的 CUDA 12.6 GPU 轮子并以 `gpu:0` 启动。宿主机需要 NVIDIA 驱动和 `nvidia-container-toolkit`；缺少 GPU runtime 时，`scripts/start-backend.sh` 会直接退出。当前启动脚本会固定启动 `ocr-service`，因此即使业务配置中关闭 OCR，也仍需要主机具备 Docker GPU runtime；无 GPU 环境建议手动按需启动依赖和 Go 服务。
 
 Ubuntu / Debian 上可先执行：
 
@@ -615,6 +623,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 | `/log-in-or-create-account` 等 | `LoginPage` | 登录/注册/验证码/密码重置/OAuth 错误页（多步骤，统一组件） |
 | `/library` | `LibraryPage` | 书库管理 |
 | `/chat`、`/chat/:conversationId` | `ChatPage` | 对话页面 |
+| `/books/:bookId` | `BookReaderPage` | 原文件阅读页 |
 | `/admin/overview` | `AdminOverviewPage` | 管理后台概览 |
 | `/admin/users` | `AdminUsersPage` | 管理后台用户管理 |
 | `/admin/books` | `AdminBooksPage` | 管理后台书籍管理 |
@@ -628,6 +637,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 收到 `401` 时触发 `POST /api/auth/refresh`（**Single-flight**：并发 401 只发一次 refresh），成功后自动重放原请求。
 - 上传书籍后轮询 `GET /api/books/{id}`（建议每 2~3 秒）直到 `status` 为 `ready` 或 `failed`。
 - 仅 `ready` 书籍可发起 `POST /api/chats`。
+- `POST /api/chats` 在普通 JSON 请求下返回完整答案；请求头 `Accept: text/event-stream` 时返回 SSE，事件类型包括 `chunk`、`final`、`error`。
 - `POST /api/books`、`POST /api/admin/books/{id}/reprocess`、`POST /api/admin/books/{id}/repair-index` 强制要求请求头 `Idempotency-Key`。
 
 ---
@@ -686,7 +696,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 - 离线 `rag_eval` CLI 与一键脚本已可运行。
 
 ### 当前未闭环重点
-- 增量重建 / 索引修复链路仍需补齐。
+- 索引修复接口当前通过整书重处理实现，尚未做到按 chunk 的细粒度增量修复。
 - RAG 指标尚未接入 CI 阈值阻断。
 
 ## 14. 开发规范（AI Agent 必读）
@@ -735,7 +745,7 @@ docker build -f backend/Dockerfile -t onebook-gateway \
 按优先级排序：
 
 1. **可观测性**：Metrics / Tracing 引入，队列与索引进度监控。
-2. **检索质量（M1~M3）**：查询改写、多查询召回、混合检索、重排、去重、拒答优化。
+2. **检索质量**：扩大黄金测试集，优化 rerank、grounding 校验、拒答阈值与多轮追问稳定性。
 3. **安全与配额**：细粒度权限、密钥轮换自动化、用量配额管理。
 4. **内容处理**：表格与公式高保真解析，多格式扩展。
 5. **前端体验**：上传进度展示、失败重试 UI、任务进度看板。
